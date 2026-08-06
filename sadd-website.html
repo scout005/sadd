@@ -117,7 +117,6 @@
 
   /* back row */
   .back-row{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
-  .back-btn{width:34px;height:34px;border-radius:9px;border:1.5px solid var(--border);background:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text);}
 
   /* social buttons */
   .social-row{display:flex;gap:10px;}
@@ -455,7 +454,6 @@ body{font-family:'Nunito',system-ui,sans-serif;overflow-x:hidden;}
 .app-content .split-desk{border:1.5px solid var(--border);border-radius:22px;overflow:hidden;background:#fff;min-height:560px;}
 .app-content .dash-main{padding:0 !important;max-width:none !important;}
 
-/* keep back-btn usable inside the shell for narrow task screens (points back via JS backMap) */
 .app-content .back-row{margin-bottom:4px;}
 .page-crumb{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:var(--muted);cursor:pointer;margin-bottom:18px;}
 .page-crumb:hover{color:var(--teal-dark);}
@@ -624,13 +622,6 @@ body{font-family:'Nunito',system-ui,sans-serif;overflow-x:hidden;}
     welcome:'signup', login:'dashboard', signup:'mfa', mfa:'setup',
     setup:'discover', discover:'success', success:'dashboard'
   };
-  const backMap = {
-    signup:'welcome', mfa:'signup', setup:'mfa', discover:'setup',
-    guest:'settings', help:'dashboard', settings:'dashboard',
-    advhub:'settings', advnetwork:'advhub', advfirewall:'advhub', advqos:'advhub',
-    advwan:'advhub', advlogs:'advhub', advapi:'advhub', advvpn:'advhub',
-    adblock:'security', devcontrols:'parental', connectdevice:'devices', laptopvpn:'vpn'
-  };
   const textLinkMap = {
     'Devices':'devices','Parental Controls':'parental','Security':'security',
     'Connect a laptop or PC':'laptopvpn','Network & VLANs':'advnetwork',
@@ -716,10 +707,6 @@ body{font-family:'Nunito',system-ui,sans-serif;overflow-x:hidden;}
       listItem.classList.add('active');
       return;
     }
-
-    // back arrow
-    const back = e.target.closest('.back-btn');
-    if(back){ goTo(backMap[state.screen]); return; }
 
     // primary continue button (only acts if current screen has a forward destination)
     const primary = e.target.closest('.btn-primary');
