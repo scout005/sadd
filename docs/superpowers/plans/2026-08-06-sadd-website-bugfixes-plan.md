@@ -516,3 +516,127 @@ Navigate to Parental Controls → select a child profile → confirm the Bedtime
 ```bash
 cd "c:\Users\hamzaz.SQU\Documents\projects\router" && git push origin main
 ```
+
+---
+
+### Task 7: Remove the remaining 5 dead chevrons
+
+**Files:**
+- Modify: `sadd-website.html` (the `screens` object, keys `settings` ×3, `devices`, `advapi`)
+
+**Context:** Task 4's code quality reviewer found the same non-functional-chevron pattern (a trailing right-chevron `<svg>` on a `.setting-row`, implying a drill-down that doesn't exist — no `data-goto`, no `textLinkMap` entry) on 5 more rows, out of scope for Task 4 but flagged as a follow-up:
+- `settings` screen: "Wi-Fi name & password" row (value "Smith Family")
+- `settings` screen: "Update router" row (value "Up to date")
+- `settings` screen: "Notifications" row (value "3 enabled")
+- `devices` screen: "Group" row in the per-device detail pane (value "Kids")
+- `advapi` screen: "Send events to a URL" (Webhooks) row (value "Not configured")
+
+None of these have a corresponding destination screen anywhere in the file's 27 screens, so — consistent with Task 4's treatment of the Bedtime row — the fix is to remove the misleading chevron from each, not to build new destination screens (that would be new-feature work, out of scope here).
+
+- [ ] **Step 1: Verify the bug**
+
+Run:
+```bash
+cd "c:\Users\hamzaz.SQU\Documents\projects\router" && python -c "
+import json
+with open('sadd-website.html', encoding='utf-8') as f:
+    lines = f.readlines()
+line = lines[583]
+start = line.index('const screens = ') + len('const screens = ')
+end = line.rstrip().rfind('};')
+obj = json.loads(line[start:end+1])
+checks = [
+    ('settings', '<strong>Wi-Fi name &amp; password</strong><span>Smith Family</span></div><svg'),
+    ('settings', '<strong>Update router</strong><span>Up to date</span></div><svg'),
+    ('settings', '<strong>Notifications</strong><span>3 enabled</span></div><svg'),
+    ('devices', '<strong>Group</strong><span>Kids</span></div><svg'),
+    ('advapi', '<strong>Send events to a URL</strong><span>Not configured</span></div><svg'),
+]
+for key, needle in checks:
+    print(key, repr(needle[:40]), '-> present:', needle in obj[key])
+"
+```
+Expected: all five print `present: True`.
+
+**Note on line indices:** the `screens`/`screenMeta` objects have shifted from lines 586/587 to lines 584/585 (0-indexed `lines[583]`/`lines[584]`) after Task 5 removed 13 lines of CSS/JS above them. Re-confirm with `grep -n "^  const screens = \|^  const screenMeta = " sadd-website.html` before running any script below, and adjust the index if it has moved again.
+
+- [ ] **Step 2: Remove all 5 chevrons**
+
+Run:
+```bash
+cd "c:\Users\hamzaz.SQU\Documents\projects\router" && python -c "
+import json
+
+path = 'sadd-website.html'
+with open(path, encoding='utf-8') as f:
+    lines = f.readlines()
+
+line = lines[583]
+prefix = line[:line.index('const screens = ') + len('const screens = ')]
+start = line.index('const screens = ') + len('const screens = ')
+end = line.rstrip().rfind('};')
+suffix = line[end+1:]
+obj = json.loads(line[start:end+1])
+
+CHEVRON_SVG = '<svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"var(--muted-2)\" stroke-width=\"2\"><path d=\"m9 18 6-6-6-6\"/></svg>'
+
+fixes = [
+    ('settings', '<strong>Wi-Fi name &amp; password</strong><span>Smith Family</span></div>' + CHEVRON_SVG),
+    ('settings', '<strong>Update router</strong><span>Up to date</span></div>' + CHEVRON_SVG),
+    ('settings', '<strong>Notifications</strong><span>3 enabled</span></div>' + CHEVRON_SVG),
+    ('devices', '<strong>Group</strong><span>Kids</span></div>' + CHEVRON_SVG),
+    ('advapi', '<strong>Send events to a URL</strong><span>Not configured</span></div>' + CHEVRON_SVG),
+]
+
+for key, old in fixes:
+    assert obj[key].count(old) == 1, key + ': anchor not found or not unique for ' + old[:50]
+    new = old[:-len(CHEVRON_SVG)]  # strip the trailing chevron, keep everything before it
+    obj[key] = obj[key].replace(old, new)
+
+new_obj_str = json.dumps(obj, ensure_ascii=True)
+lines[583] = prefix + new_obj_str + suffix
+
+with open(path, 'w', encoding='utf-8') as f:
+    f.writelines(lines)
+print('done')
+"
+```
+Expected output: `done`.
+
+- [ ] **Step 3: Verify the fix**
+
+Run:
+```bash
+cd "c:\Users\hamzaz.SQU\Documents\projects\router" && python -c "
+import json
+with open('sadd-website.html', encoding='utf-8') as f:
+    lines = f.readlines()
+line = lines[583]
+start = line.index('const screens = ') + len('const screens = ')
+end = line.rstrip().rfind('};')
+obj = json.loads(line[start:end+1])
+print('JSON valid, keys:', len(obj))
+checks = [
+    ('settings', '<strong>Wi-Fi name &amp; password</strong><span>Smith Family</span></div><svg'),
+    ('settings', '<strong>Update router</strong><span>Up to date</span></div><svg'),
+    ('settings', '<strong>Notifications</strong><span>3 enabled</span></div><svg'),
+    ('devices', '<strong>Group</strong><span>Kids</span></div><svg'),
+    ('advapi', '<strong>Send events to a URL</strong><span>Not configured</span></div><svg'),
+]
+for key, needle in checks:
+    print(key, '-> chevron still present:', needle in obj[key])
+"
+```
+Expected: `JSON valid, keys: 27`, all five `chevron still present: False`.
+
+- [ ] **Step 4: Commit**
+
+```bash
+cd "c:\Users\hamzaz.SQU\Documents\projects\router" && GIT_AUTHOR_NAME="scout005" GIT_AUTHOR_EMAIL="scouts4all@gmail.com" GIT_COMMITTER_NAME="scout005" GIT_COMMITTER_EMAIL="scouts4all@gmail.com" git add sadd-website.html && GIT_AUTHOR_NAME="scout005" GIT_AUTHOR_EMAIL="scouts4all@gmail.com" GIT_COMMITTER_NAME="scout005" GIT_COMMITTER_EMAIL="scouts4all@gmail.com" git commit -m "fix: remove remaining 5 non-functional chevrons (Settings x3, Devices, Developer API)"
+```
+
+- [ ] **Step 5: Push to GitHub**
+
+```bash
+cd "c:\Users\hamzaz.SQU\Documents\projects\router" && git push origin main
+```
