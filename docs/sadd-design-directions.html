@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sadd — Design Direction Options</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700;800&family=Baloo+2:wght@500;600;700;800&family=Nunito:wght@400;600;700;800&family=Space+Grotesk:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Poppins:wght@400;500;600;700;800&family=DM+Sans:wght@400;500;600;700;800&family=Sora:wght@400;500;600;700;800&family=Archivo:wght@500;600;700;800&family=Fredoka:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#F8FAFC; --surface:#FFFFFF; --surface-border:#E2E8F0;
+    --primary:#0D9488; --primary-dark:#0F766E; --primary-tint:#F0FDFA;
+    --accent:#0D9488;
+    --text:#0F172A; --muted:#64748B;
+    --success:#16A34A; --success-tint:#F0FDF4;
+    --warning:#D97706; --warning-tint:#FFFBEB;
+    --radius-lg:18px; --radius-md:13px; --radius-btn:12px;
+    --shadow-card:0 10px 24px -12px rgba(15,23,42,.12);
+    --border-w:1.5px;
+    --font-display:'Inter',sans-serif; --font-body:'Inter',sans-serif;
+    --icon-stroke:1.8;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:var(--font-body);background:#EEF2F6;color:var(--text);transition:background .25s;}
+  svg{display:block;}
+
+  /* ============ PER-STYLE THEMES ============ */
+  body.style-b{
+    --bg:#FFFFFF; --surface:#FFFFFF; --surface-border:#E5E7EB;
+    --primary:#4F46E5; --primary-dark:#4338CA; --primary-tint:#EEF2FF; --accent:#4F46E5;
+    --text:#111827; --muted:#6B7280;
+    --radius-lg:10px; --radius-md:8px; --radius-btn:8px;
+    --shadow-card:none; --border-w:1px;
+    --font-display:'Manrope',sans-serif; --font-body:'Manrope',sans-serif;
+    --icon-stroke:1.5;
+  }
+  body.style-c{
+    --bg:#FFFDF7; --surface:#FFFFFF; --surface-border:#F3E8D9;
+    --primary:#7C3AED; --primary-dark:#6D28D9; --primary-tint:#F5F0FF; --accent:#FBBF24;
+    --text:#3B2A55; --muted:#8B7FA6;
+    --radius-lg:26px; --radius-md:20px; --radius-btn:999px;
+    --shadow-card:0 14px 26px -12px rgba(124,58,237,.22);
+    --border-w:0px;
+    --font-display:'Baloo 2',cursive; --font-body:'Nunito',sans-serif;
+    --icon-stroke:2.4;
+  }
+  body.style-d{
+    --bg:#0B1120; --surface:#151D30; --surface-border:rgba(255,255,255,.09);
+    --primary:#22D3EE; --primary-dark:#06B6D4; --primary-tint:rgba(34,211,238,.12); --accent:#22D3EE;
+    --text:#E7ECF5; --muted:#8B96AC;
+    --radius-lg:16px; --radius-md:12px; --radius-btn:10px;
+    --shadow-card:0 0 0 1px rgba(255,255,255,.06),0 20px 40px -18px rgba(34,211,238,.18);
+    --border-w:1px;
+    --font-display:'Space Grotesk',sans-serif; --font-body:'Inter',sans-serif;
+    --icon-stroke:1.6;
+  }
+  body.style-e{
+    --bg:#F6F1E7; --surface:#FFFDF9; --surface-border:#E7DCC7;
+    --primary:#4B6B53; --primary-dark:#3A5442; --primary-tint:#EAF1EA; --accent:#B4552F;
+    --text:#2B2620; --muted:#8A8272;
+    --radius-lg:14px; --radius-md:10px; --radius-btn:10px;
+    --shadow-card:0 12px 22px -14px rgba(43,38,32,.22);
+    --border-w:1px;
+    --font-display:'Fraunces',serif; --font-body:'Inter',sans-serif;
+    --icon-stroke:1.6;
+  }
+  body.style-f{
+    --bg:#FFF8F5; --surface:#FFFFFF; --surface-border:#FBE0D6;
+    --primary:#F76C5E; --primary-dark:#E2503F; --primary-tint:#FFEDE8; --accent:#F76C5E;
+    --text:#3A2620; --muted:#A08579;
+    --radius-lg:20px; --radius-md:15px; --radius-btn:14px;
+    --shadow-card:0 14px 26px -14px rgba(247,108,94,.28);
+    --border-w:0px;
+    --font-display:'Poppins',sans-serif; --font-body:'Inter',sans-serif;
+    --icon-stroke:1.8;
+  }
+  body.style-g{
+    --bg:#F7FAFF; --surface:#FFFFFF; --surface-border:#DCE7FA;
+    --primary:#2563EB; --primary-dark:#1D4ED8; --primary-tint:#EFF4FF; --accent:#2563EB;
+    --text:#111827; --muted:#5B6B85;
+    --radius-lg:14px; --radius-md:11px; --radius-btn:11px;
+    --shadow-card:0 12px 24px -14px rgba(37,99,235,.18);
+    --border-w:1px;
+    --font-display:'DM Sans',sans-serif; --font-body:'DM Sans',sans-serif;
+    --icon-stroke:1.7;
+  }
+  body.style-h{
+    --bg:#0E1712; --surface:#16211B; --surface-border:rgba(255,255,255,.08);
+    --primary:#4ADE80; --primary-dark:#22C55E; --primary-tint:rgba(74,222,128,.12); --accent:#4ADE80;
+    --text:#E8F3EC; --muted:#8FA69A;
+    --radius-lg:16px; --radius-md:12px; --radius-btn:11px;
+    --shadow-card:0 20px 40px -18px rgba(74,222,128,.15);
+    --border-w:1px;
+    --font-display:'Sora',sans-serif; --font-body:'Inter',sans-serif;
+    --icon-stroke:1.6;
+  }
+  body.style-h .status-card{background:rgba(74,222,128,.08);border-color:rgba(74,222,128,.25);}
+  body.style-h .status-card .s-dot{background:var(--primary);color:#0E1712;}
+  body.style-i{
+    --bg:#FFFFFF; --surface:#FFFFFF; --surface-border:#000000;
+    --primary:#EAB308; --primary-dark:#CA8A04; --primary-tint:#FEF9C3; --accent:#EAB308;
+    --text:#000000; --muted:#525252;
+    --radius-lg:2px; --radius-md:2px; --radius-btn:2px;
+    --shadow-card:none;
+    --border-w:2px;
+    --font-display:'Archivo',sans-serif; --font-body:'Archivo',sans-serif;
+    --icon-stroke:2;
+  }
+  body.style-i .status-card{background:#fff;border-color:#000;}
+  body.style-i .status-card .s-dot{background:#000;}
+  body.style-i .btn-primary{color:#000;}
+  body.style-j{
+    --bg:#FFFFFF; --surface:#FFFFFF; --surface-border:#F1E4F5;
+    --primary:#EC4899; --primary-dark:#DB2777; --primary-tint:#FDF2F8; --accent:#EC4899;
+    --text:#3B2A4A; --muted:#9B8AA8;
+    --radius-lg:26px; --radius-md:20px; --radius-btn:999px;
+    --shadow-card:0 14px 24px -14px rgba(236,72,153,.2);
+    --border-w:0px;
+    --font-display:'Fredoka',sans-serif; --font-body:'Nunito',sans-serif;
+    --icon-stroke:2.2;
+  }
+  body.style-j .nav-card-1{background:#FFF0F6;}
+  body.style-j .nav-card-2{background:#F0F5FF;}
+  body.style-j .nav-card-3{background:#FFFCEB;}
+  body.style-j .nav-card-1 .nc-icon{background:#FFD9E8;color:#DB2777;}
+  body.style-j .nav-card-2 .nc-icon{background:#DCE9FF;color:#2563EB;}
+  body.style-j .nav-card-3 .nc-icon{background:#FFF1BF;color:#CA8A04;}
+
+  /* ============ SWITCHER TOPBAR ============ */
+  .topbar{position:sticky;top:0;z-index:50;background:#0F172A;padding:16px 24px;display:flex;flex-wrap:wrap;gap:14px;align-items:center;justify-content:space-between;}
+  .tb-title{color:#fff;font-family:'Inter',sans-serif;font-weight:700;font-size:15px;}
+  .tb-title small{display:block;font-weight:400;color:#94A3B8;font-size:11.5px;margin-top:1px;}
+  .swatches{display:flex;gap:8px;flex-wrap:wrap;}
+  .swatch-btn{display:flex;align-items:center;gap:8px;background:#1E293B;border:2px solid transparent;border-radius:11px;padding:8px 12px 8px 8px;cursor:pointer;font-family:'Inter',sans-serif;}
+  .swatch-btn.active{border-color:#fff;background:#293548;}
+  .swatch-dots{display:flex;}
+  .swatch-dots span{width:14px;height:14px;border-radius:50%;margin-left:-5px;border:2px solid #1E293B;}
+  .swatch-dots span:first-child{margin-left:0;}
+  .swatch-label{color:#fff;font-size:12px;font-weight:700;text-align:left;line-height:1.2;}
+  .swatch-label small{display:block;color:#94A3B8;font-weight:500;font-size:10px;}
+
+  .desc-bar{background:#fff;border-bottom:1px solid #E2E8F0;padding:16px 24px;font-family:'Inter',sans-serif;}
+  .desc-inner{max-width:1200px;margin:0 auto;display:flex;gap:24px;align-items:center;flex-wrap:wrap;}
+  .desc-inner h2{font-size:16px;margin:0;font-weight:800;}
+  .desc-inner p{font-size:13px;color:#64748B;margin:2px 0 0;}
+  .desc-tag{background:#F1F5F9;color:#475569;font-size:11px;font-weight:700;padding:5px 10px;border-radius:999px;}
+
+  /* ============ STAGE ============ */
+  .stage{padding:44px 24px 100px;background:var(--bg);transition:background .25s;}
+  .stage-inner{max-width:1200px;margin:0 auto;display:flex;gap:32px;align-items:flex-start;justify-content:center;flex-wrap:wrap;}
+
+  /* phone */
+  .phone{width:340px;height:716px;background:#0B1120;border-radius:44px;padding:11px;box-shadow:0 30px 60px -22px rgba(15,23,42,.4);flex-shrink:0;}
+  .phone-inner{width:100%;height:100%;background:var(--bg);border-radius:34px;overflow:hidden;position:relative;display:flex;flex-direction:column;font-family:var(--font-body);}
+  .notch{position:absolute;top:10px;left:50%;transform:translateX(-50%);width:100px;height:20px;background:#0B1120;border-radius:11px;z-index:5;}
+  .statusbar{height:40px;flex-shrink:0;display:flex;align-items:flex-end;justify-content:space-between;padding:0 22px 5px;font-size:12px;font-weight:700;color:var(--text);}
+  .p-scroll{flex:1;overflow-y:auto;}
+  .p-content{padding:6px 18px 20px;}
+
+  /* generic dashboard bits, themed via variables */
+  h1.d-title{font-family:var(--font-display);font-size:19px;font-weight:800;margin:0 0 3px;color:var(--text);}
+  .d-greet{font-size:11.5px;color:var(--muted);}
+  .status-card{background:var(--success-tint);border:var(--border-w) solid #BBF7D0;border-radius:var(--radius-lg);padding:16px;display:flex;align-items:center;gap:12px;margin:14px 0;box-shadow:var(--shadow-card);}
+  body.style-d .status-card{background:rgba(34,211,238,.08);border-color:rgba(34,211,238,.25);}
+  .status-card .s-dot{width:38px;height:38px;border-radius:50%;background:var(--success);display:flex;align-items:center;justify-content:center;color:#fff;flex-shrink:0;}
+  body.style-d .status-card .s-dot{background:var(--primary);}
+  .status-card strong{font-family:var(--font-display);font-size:14px;display:block;color:var(--text);}
+  .status-card span{font-size:11.5px;color:var(--muted);}
+
+  .quick-actions{display:flex;gap:8px;margin-bottom:14px;}
+  .qa-btn{flex:1;background:var(--surface);border:var(--border-w) solid var(--surface-border);border-radius:var(--radius-md);padding:11px 4px;display:flex;flex-direction:column;align-items:center;gap:5px;font-size:10px;font-weight:700;color:var(--text);box-shadow:var(--shadow-card);}
+  .qa-btn svg{color:var(--primary);}
+
+  .nav-card{background:var(--surface);border:var(--border-w) solid var(--surface-border);border-radius:var(--radius-md);padding:13px;display:flex;align-items:center;gap:11px;margin-bottom:9px;box-shadow:var(--shadow-card);}
+  .nav-card .nc-icon{width:36px;height:36px;border-radius:var(--radius-btn);background:var(--primary-tint);color:var(--primary-dark);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .nav-card .nc-main strong{font-family:var(--font-display);display:block;font-size:12.5px;color:var(--text);}
+  .nav-card .nc-main span{font-size:10.5px;color:var(--muted);}
+  .nav-card .nc-chev{color:var(--muted);margin-left:auto;}
+
+  .bottomnav{flex-shrink:0;display:flex;border-top:var(--border-w) solid var(--surface-border);background:var(--surface);padding:7px 6px 12px;}
+  .bottomnav .bn-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:9.5px;font-weight:700;color:var(--muted);}
+  .bottomnav .bn-item.active{color:var(--primary);}
+
+  /* ============ SAMPLER PANEL ============ */
+  .sampler{width:400px;background:var(--surface);border:var(--border-w) solid var(--surface-border);border-radius:var(--radius-lg);padding:26px;box-shadow:var(--shadow-card);flex-shrink:0;}
+  .sampler .sm-eyebrow{font-family:var(--font-body);font-size:10.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--primary-dark);margin-bottom:8px;}
+  .sampler h2{font-family:var(--font-display);font-size:24px;margin:0 0 10px;color:var(--text);font-weight:700;}
+  .sampler p.sm-body{font-family:var(--font-body);font-size:13.5px;color:var(--muted);line-height:1.6;margin:0 0 22px;}
+
+  .sm-row{margin-bottom:20px;}
+  .sm-label{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:9px;}
+  .sm-btns{display:flex;gap:10px;}
+  .btn{font-family:var(--font-body);font-weight:700;font-size:13px;padding:12px 20px;border-radius:var(--radius-btn);border:none;cursor:pointer;}
+  .btn-primary{background:var(--primary);color:#fff;}
+  body.style-d .btn-primary{color:#0B1120;}
+  .btn-secondary{background:transparent;border:var(--border-w) solid var(--surface-border);color:var(--text);}
+
+  .sm-input{width:100%;padding:11px 13px;border:var(--border-w) solid var(--surface-border);border-radius:var(--radius-md);font-family:var(--font-body);font-size:13.5px;background:var(--bg);color:var(--text);}
+  body.style-d .sm-input{background:#0F1728;}
+
+  .sm-toggle-row{display:flex;align-items:center;justify-content:space-between;padding:11px 0;font-size:13px;font-weight:600;color:var(--text);}
+  .switch{width:40px;height:23px;border-radius:20px;background:var(--surface-border);position:relative;flex-shrink:0;}
+  .switch::after{content:'';position:absolute;top:2.5px;left:2.5px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);}
+  .switch.on{background:var(--primary);}
+  .switch.on::after{left:19.5px;}
+
+  .radio-card{display:flex;align-items:center;gap:10px;border:var(--border-w) solid var(--surface-border);border-radius:var(--radius-md);padding:11px 13px;margin-bottom:8px;}
+  .radio-card.active{border-color:var(--primary);background:var(--primary-tint);}
+  .radio-card .rc-dot{width:17px;height:17px;border-radius:50%;border:2px solid var(--surface-border);flex-shrink:0;position:relative;}
+  .radio-card.active .rc-dot{border-color:var(--primary);}
+  .radio-card.active .rc-dot::after{content:'';position:absolute;inset:3px;border-radius:50%;background:var(--primary);}
+  .radio-card strong{font-size:12.5px;display:block;color:var(--text);}
+  .radio-card span{font-size:10.5px;color:var(--muted);}
+
+  .chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;padding:5px 10px;border-radius:999px;}
+  .chip-success{background:var(--success-tint);color:var(--success);}
+  .chip-warning{background:var(--warning-tint);color:var(--warning);}
+
+  .stat-mini{display:flex;align-items:center;gap:12px;background:var(--bg);border:var(--border-w) solid var(--surface-border);border-radius:var(--radius-md);padding:13px;}
+  .stat-mini .sm-icon{width:34px;height:34px;border-radius:var(--radius-btn);background:var(--primary-tint);color:var(--primary-dark);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .stat-mini strong{font-family:var(--font-display);font-size:16px;display:block;color:var(--text);}
+  .stat-mini span{font-size:10.5px;color:var(--muted);}
+</style>
+</head>
+<body class="style-a">
+
+<div class="topbar">
+  <div class="tb-title">Sadd<small>5 design directions — pick one</small></div>
+  <div class="swatches" id="swatches">
+    <button class="swatch-btn active" data-style="style-a">
+      <div class="swatch-dots"><span style="background:#0D9488;"></span><span style="background:#F8FAFC;"></span></div>
+      <div class="swatch-label">Sadd Calm<small>Teal · soft & trustworthy</small></div>
+    </button>
+    <button class="swatch-btn" data-style="style-b">
+      <div class="swatch-dots"><span style="background:#4F46E5;"></span><span style="background:#FFFFFF;"></span></div>
+      <div class="swatch-label">Slate Minimal<small>Indigo · flat & precise</small></div>
+    </button>
+    <button class="swatch-btn" data-style="style-c">
+      <div class="swatch-dots"><span style="background:#7C3AED;"></span><span style="background:#FBBF24;"></span></div>
+      <div class="swatch-label">Meadow Playful<small>Purple · warm & friendly</small></div>
+    </button>
+    <button class="swatch-btn" data-style="style-d">
+      <div class="swatch-dots"><span style="background:#22D3EE;"></span><span style="background:#0B1120;"></span></div>
+      <div class="swatch-label">Midnight Guardian<small>Cyan · premium & serious</small></div>
+    </button>
+    <button class="swatch-btn" data-style="style-e">
+      <div class="swatch-dots"><span style="background:#4B6B53;"></span><span style="background:#B4552F;"></span></div>
+      <div class="swatch-label">Clay &amp; Sage<small>Sage · warm & human</small></div>
+    </button>
+    <button class="swatch-btn" data-style="style-f">
+      <div class="swatch-dots"><span style="background:#F76C5E;"></span><span style="background:#FFF8F5;"></span></div>
+      <div class="swatch-label">Coral Sunrise<small>Coral · upbeat & modern</small></div>
+    </button>
+    <button class="swatch-btn" data-style="style-g">
+      <div class="swatch-dots"><span style="background:#2563EB;"></span><span style="background:#F7FAFF;"></span></div>
+      <div class="swatch-label">Ocean Trust<small>Blue · corporate-safe</small></div>
+    </button>
+    <button class="swatch-btn" data-style="style-h">
+      <div class="swatch-dots"><span style="background:#4ADE80;"></span><span style="background:#0E1712;"></span></div>
+      <div class="swatch-label">Forest Night<small>Green · organic & dark</small></div>
+    </button>
+    <button class="swatch-btn" data-style="style-i">
+      <div class="swatch-dots"><span style="background:#000000;"></span><span style="background:#EAB308;"></span></div>
+      <div class="swatch-label">Sunny Mono<small>Mono + yellow · editorial</small></div>
+    </button>
+    <button class="swatch-btn" data-style="style-j">
+      <div class="swatch-dots"><span style="background:#EC4899;"></span><span style="background:#FFFFFF;"></span></div>
+      <div class="swatch-label">Rounded Candy<small>Pink · cheerful & varied</small></div>
+    </button>
+  </div>
+</div>
+
+<div class="desc-bar">
+  <div class="desc-inner" id="descBar">
+    <h2 id="descTitle">Sadd Calm</h2>
+    <p id="descText">Soft teal, generous rounding, gentle shadows. Calm and reassuring — reads as a health or banking app, not a networking product. Safest default for a broad, non-technical family audience.</p>
+    <span class="desc-tag" id="descTag">Best for: broad family audience</span>
+  </div>
+</div>
+
+<div class="stage" id="stage">
+  <div class="stage-inner">
+
+    <!-- PHONE: Dashboard -->
+    <div class="phone"><div class="notch"></div><div class="phone-inner">
+      <div class="statusbar"><span>9:41</span><span>●●●●  5G  100%</span></div>
+      <div class="p-scroll"><div class="p-content">
+        <div style="margin-top:6px;"><div class="d-greet">Good afternoon</div><h1 class="d-title">Jenna</h1></div>
+
+        <div class="status-card">
+          <div class="s-dot"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+          <div><strong>Everything is working</strong><span>12 devices connected</span></div>
+        </div>
+
+        <div class="quick-actions">
+          <div class="qa-btn"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>Pause All</div>
+          <div class="qa-btn"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8.5s4-5.5 10-5.5 10 5.5 10 5.5M5.5 12s3-4 6.5-4 6.5 4 6.5 4M9 15.5s1.5-2 3-2 3 2 3 2"/></svg>Guest Wi-Fi</div>
+          <div class="qa-btn"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M2.5 22v-6h6"/><path d="M2 11.5a10 10 0 0 1 17-6.5l2.5 2.5M22 12.5a10 10 0 0 1-17 6.5L2.5 16.5"/></svg>Restart</div>
+        </div>
+
+        <div class="nav-card nav-card-1">
+          <div class="nc-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/></svg></div>
+          <div class="nc-main"><strong>Devices</strong><span>12 online · 1 needs attention</span></div>
+          <svg class="nc-chev" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+        </div>
+        <div class="nav-card nav-card-2">
+          <div class="nc-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/></svg></div>
+          <div class="nc-main"><strong>Parental Controls</strong><span>3 devices have bedtime rules</span></div>
+          <svg class="nc-chev" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+        </div>
+        <div class="nav-card nav-card-3">
+          <div class="nc-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11Z"/></svg></div>
+          <div class="nc-main"><strong>Security</strong><span>Protection on · 214 blocked</span></div>
+          <svg class="nc-chev" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+        </div>
+      </div></div>
+      <div class="bottomnav">
+        <div class="bn-item active"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 10.5 9-7.5 9 7.5"/><path d="M5 9v10a1 1 0 0 0 1 1h3v-6h6v6h3a1 1 0 0 0 1-1V9"/></svg>Home</div>
+        <div class="bn-item"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/></svg>Devices</div>
+        <div class="bn-item"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/></svg>Controls</div>
+        <div class="bn-item"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 0 1 5 0c0 1.5-2.5 2-2.5 3.5M12 17h.01"/></svg>Help</div>
+      </div>
+    </div></div>
+
+    <!-- COMPONENT SAMPLER -->
+    <div class="sampler">
+      <div class="sm-eyebrow">Component sampler</div>
+      <h2>Protect your home</h2>
+      <p class="sm-body">This is how headings, body text, and controls look in this style — across buttons, toggles, choices, and status.</p>
+
+      <div class="sm-row">
+        <div class="sm-label">Buttons</div>
+        <div class="sm-btns"><button class="btn btn-primary">Continue</button><button class="btn btn-secondary">Cancel</button></div>
+      </div>
+
+      <div class="sm-row">
+        <div class="sm-label">Input field</div>
+        <input class="sm-input" value="Smith Family">
+      </div>
+
+      <div class="sm-row">
+        <div class="sm-label">Toggles</div>
+        <div class="sm-toggle-row">Ad blocking<div class="switch on"></div></div>
+        <div class="sm-toggle-row">Guest Wi-Fi<div class="switch"></div></div>
+      </div>
+
+      <div class="sm-row">
+        <div class="sm-label">Choice cards</div>
+        <div class="radio-card active"><div class="rc-dot"></div><div><strong>Kid-safe</strong><span>Blocks adult content and social</span></div></div>
+        <div class="radio-card"><div class="rc-dot"></div><div><strong>Teen</strong><span>Blocks adult content only</span></div></div>
+      </div>
+
+      <div class="sm-row" style="display:flex;gap:8px;">
+        <span class="chip chip-success">Protected</span>
+        <span class="chip chip-warning">Needs attention</span>
+      </div>
+
+      <div class="sm-row mb-0">
+        <div class="sm-label">Stat card</div>
+        <div class="stat-mini">
+          <div class="sm-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m4.9 4.9 14.2 14.2"/></svg></div>
+          <div><strong>1,204</strong><span>ads blocked this week</span></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  const styles = {
+    'style-a': {title:'Sadd Calm', text:'Soft teal, generous rounding, gentle shadows. Calm and reassuring — reads as a health or banking app, not a networking product. Safest default for a broad, non-technical family audience.', tag:'Best for: broad family audience'},
+    'style-b': {title:'Slate Minimal', text:'Flat, bordered, no shadows, tight indigo accent. Feels precise and uncluttered — closer to a modern productivity or fintech tool. Appeals to design-conscious parents who want "less app, more done."', tag:'Best for: minimalist, design-aware households'},
+    'style-c': {title:'Meadow Playful', text:'Rounded pill shapes, purple + sunny yellow, chunky friendly type. Feels approachable and a little fun, like a kids’ education app — lowers intimidation for first-time setup, but reads less "serious" for security-heavy screens.', tag:'Best for: younger parents, kid-facing moments'},
+    'style-d': {title:'Midnight Guardian', text:'Dark navy, glassy cards, glowing cyan accent, bold condensed type. Feels premium and serious — like a security operations tool, reassuring for privacy-conscious users who want visible proof this is "real" protection.', tag:'Best for: security-conscious, tech-comfortable parents'},
+    'style-e': {title:'Clay & Sage', text:'Warm oat background, deep sage primary, serif display headings. Feels human and heirloom — like a well-made home appliance rather than a tech product. Warmest, most approachable option for older or less tech-confident users.', tag:'Best for: seniors, least tech-confident users'},
+    'style-f': {title:'Coral Sunrise', text:'Warm coral accent on soft white, rounded but not overplayed, Poppins headings. Upbeat and modern — feels like a well-funded wellness or health app. Friendlier than Ocean Trust, more grown-up than Meadow Playful.', tag:'Best for: modern, approachable everyday feel'},
+    'style-g': {title:'Ocean Trust', text:'Classic trustworthy blue, clean bordered cards, DM Sans throughout. The most "safe corporate" option — reads like an established fintech or insurance app. Highest credibility, lowest personality risk.', tag:'Best for: broadest credibility, lowest risk'},
+    'style-h': {title:'Forest Night', text:'Dark mode with an organic green glow instead of the cyan glow of Midnight Guardian, Sora display type. Premium and calming rather than "techy-serious" — closer to a modern eco or wellness brand than a security tool.', tag:'Best for: dark-mode users who want calm, not alarm'},
+    'style-i': {title:'Sunny Mono', text:'Near-monochrome, hard black borders, sharp corners, one punchy yellow accent, bold Archivo type. Editorial and confident, like a Swiss poster — the biggest personality swing here, best for a brand that wants to stand out sharply.', tag:'Best for: bold differentiation, design-forward brand'},
+    'style-j': {title:'Rounded Candy', text:'Multi-color pastel cards, pill buttons, bubbly Fredoka display type. The most colorful and playful option — closer to a kids’ educational tablet app than a utility. Great warmth for family moments, riskiest for the security-heavy screens.', tag:'Best for: maximum warmth, kid-facing energy'}
+  };
+
+  document.querySelectorAll('.swatch-btn').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      document.querySelectorAll('.swatch-btn').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      document.body.className = btn.dataset.style;
+      const s = styles[btn.dataset.style];
+      document.getElementById('descTitle').textContent = s.title;
+      document.getElementById('descText').textContent = s.text;
+      document.getElementById('descTag').textContent = s.tag;
+    });
+  });
+</script>
+</body>
+</html>
