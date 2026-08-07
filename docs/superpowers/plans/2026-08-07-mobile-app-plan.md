@@ -1,0 +1,648 @@
+# Sadd Mobile App Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Build a new, separate, phone-only prototype (`sadd-mobile-app.html`) implementing the design in `docs/superpowers/specs/2026-08-07-mobile-app-design.md`: barcode/Bluetooth connect onboarding, combined router+admin-password step, Wi-Fi setup, and a minimal Devices/Network/Settings bottom-tab main app with device auto-quarantine and network-category reassignment.
+
+**Architecture:** Same conceptual pattern as `sadd-website.html` (a `screens` object keyed by screen name, a `forwardMap` for primary-button navigation, `data-goto` for explicit links, one delegated click handler) but with one deliberate change: **screen HTML is stored as ES6 template literals (backtick strings) with real embedded newlines, not single-line JSON-escaped strings.** `sadd-website.html`'s `screens` object is JSON-compatible (double-quoted, single-line) specifically so it could be edited via `json.loads`/`json.dumps` — a technique needed because that file already existed with that structure. This is a brand-new file with no such legacy constraint, and two real bugs in this project so far (Phase B's `dashboardOffline`, Phase C's `dashboardFreshSetup`) both came from hand-escaping quotes/Unicode inside single-line JSON strings. Template literals avoid that whole failure class — HTML double-quotes don't need escaping at all, and the only characters requiring care are backtick (`` ` ``) and `${`, neither of which appear in this content.
+
+**Tech Stack:** Plain HTML/CSS/JS, no build step, no test runner, no external JS dependencies. One external resource: Google Fonts (Baloo 2 + Nunito), matching `sadd-website.html`'s existing type treatment, loaded the same way (a `<link>` tag — this file will be opened locally in a browser, same as `sadd-website.html`, not published as a CSP-sandboxed Artifact).
+
+---
+
+## Before you start
+
+Unlike Phases A/B/C, this plan builds a **new file** — no existing content to preserve, no line-number drift to track. Each task either creates the file (Task 1) or extends its `screens` object using the Edit tool with normal multi-line `old_string`/`new_string` blocks (exact text, no JSON escaping needed).
+
+Git identity convention (same as prior phases — no global identity configured, `git config` is off-limits):
+```bash
+GIT_AUTHOR_NAME="scout005" GIT_AUTHOR_EMAIL="scouts4all@gmail.com" GIT_COMMITTER_NAME="scout005" GIT_COMMITTER_EMAIL="scouts4all@gmail.com" git ...
+```
+You have explicit user consent to commit and push directly to `main`.
+
+**Verification technique for this file:** since `screens` is a template-literal object (not JSON), don't use `json.loads` on it. Instead verify with: (a) a Node (or equivalent) `new Function()` parse check on the extracted `<script>` block content, confirming the whole script is syntactically valid JS after every task, and (b) plain string/`grep` presence checks for expected markup.
+
+---
+
+### Task 1: Create the file — shell, CSS, core JS, and the `connect` screen
+
+**Files:**
+- Create: `c:\Users\hamzaz.SQU\Documents\projects\router\sadd-mobile-app.html`
+
+- [ ] **Step 1: Write the complete file**
+
+Use the Write tool to create `sadd-mobile-app.html` with exactly this content:
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sadd</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+
+  :root{
+    --teal:#0D9488; --teal-dark:#0F766E; --teal-light:#CCFBF1; --teal-tint:#F0FDFA;
+    --success:#16A34A; --success-tint:#F0FDF4;
+    --warning:#D97706; --warning-tint:#FFFBEB;
+    --error:#DC2626; --error-tint:#FEF2F2;
+    --bg:#F8FAFC; --card:#FFFFFF; --border:#E2E8F0;
+    --text:#0F172A; --muted:#64748B; --muted-2:#94A3B8;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:'Nunito',system-ui,sans-serif;background:#EEF2F6;color:var(--text);}
+  svg{display:block;}
+  h1,h2,h3,strong,label,.btn{font-family:'Baloo 2',cursive;}
+
+  .phone{width:375px;max-width:100vw;height:790px;max-height:100vh;background:#0B1120;border-radius:52px;padding:12px;margin:20px auto;box-shadow:0 40px 70px -25px rgba(15,23,42,.45);}
+  .phone-inner{width:100%;height:100%;background:var(--bg);border-radius:40px;overflow:hidden;position:relative;display:flex;flex-direction:column;}
+  .notch{position:absolute;top:12px;left:50%;transform:translateX(-50%);width:110px;height:22px;background:#0B1120;border-radius:12px;z-index:5;}
+  .statusbar{height:46px;flex-shrink:0;display:flex;align-items:flex-end;justify-content:space-between;padding:0 26px 6px;font-size:13px;font-weight:600;}
+  .p-scroll{flex:1;overflow-y:auto;}
+  .p-content{padding:8px 22px 32px;}
+
+  .brand-row{display:flex;align-items:center;gap:9px;margin:6px 0 24px;}
+  .brand-mark{width:32px;height:32px;border-radius:10px;background:var(--teal);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .brand-word{font-weight:800;font-size:17px;color:var(--text);}
+
+  h1.scr-title{font-size:21px;font-weight:800;margin:0 0 6px;letter-spacing:-.01em;}
+  p.scr-sub{font-size:13.5px;color:var(--muted);margin:0 0 22px;line-height:1.5;font-family:'Nunito',sans-serif;}
+
+  .field{margin-bottom:16px;}
+  .field label{display:block;font-size:13px;font-weight:600;margin-bottom:7px;color:var(--text);font-family:'Nunito',sans-serif;}
+  .input{width:100%;padding:13px 14px;border:1.5px solid var(--border);border-radius:14px;font-family:'Nunito',sans-serif;font-size:14.5px;color:var(--text);background:#fff;}
+  .input:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px var(--teal-light);}
+
+  .btn{width:100%;border:none;border-radius:999px;font-weight:700;font-size:14.5px;padding:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;}
+  .btn-primary{background:var(--teal);color:#fff;box-shadow:0 8px 18px -8px rgba(13,148,136,.55);}
+  .btn-secondary{background:#fff;color:var(--text);border:1.5px solid var(--border);}
+  .btn-ghost{background:transparent;color:var(--teal-dark);font-weight:700;}
+  .btn-danger-soft{background:var(--error-tint);color:var(--error);}
+  .mt-24{margin-top:24px;}
+
+  .method-card{background:#fff;border:1.5px solid var(--border);border-radius:20px;padding:22px;text-align:center;margin-bottom:14px;cursor:pointer;}
+  .method-card .mc-icon{width:52px;height:52px;border-radius:16px;background:var(--teal-tint);color:var(--teal-dark);display:flex;align-items:center;justify-content:center;margin:0 auto 14px;}
+  .method-card strong{display:block;font-size:15.5px;margin-bottom:4px;}
+  .method-card span{font-size:12.5px;color:var(--muted);font-family:'Nunito',sans-serif;}
+
+  .qr-card{background:#fff;border:1.5px solid var(--border);border-radius:18px;padding:24px;text-align:center;}
+  .qr-box{width:140px;height:140px;background:repeating-linear-gradient(45deg,#0F172A 0 6px,#fff 6px 12px);border-radius:14px;margin:0 auto 16px;}
+
+  .spinner-box{width:80px;height:80px;border-radius:50%;border:5px solid var(--teal-tint);border-top-color:var(--teal);margin:20px auto;animation:spin 1s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  @media (prefers-reduced-motion: reduce){.spinner-box{animation:none;}}
+
+  .scan-banner{display:flex;align-items:center;gap:12px;background:var(--success-tint);border:1px solid #BBF7D0;border-radius:14px;padding:14px 16px;margin-bottom:20px;}
+  .scan-banner .dot{width:36px;height:36px;border-radius:50%;background:var(--success);display:flex;align-items:center;justify-content:center;color:#fff;flex-shrink:0;}
+  .scan-banner strong{display:block;font-size:14px;}
+  .scan-banner span{font-size:12px;color:#166534;font-family:'Nunito',sans-serif;}
+
+  .success-icon{width:88px;height:88px;border-radius:50%;background:var(--success);display:flex;align-items:center;justify-content:center;color:#fff;margin:30px auto 20px;}
+
+  .list-item{display:flex;align-items:center;gap:12px;background:#fff;border:1.5px solid var(--border);border-radius:16px;padding:13px 14px;margin-bottom:10px;cursor:pointer;}
+  .list-item.flagged{background:var(--warning-tint);border-color:#FDE68A;}
+  .li-icon{width:40px;height:40px;border-radius:12px;background:var(--teal-tint);color:var(--teal-dark);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .li-main{flex:1;min-width:0;}
+  .li-main strong{display:block;font-size:14px;}
+  .li-main span{display:block;font-size:11.5px;color:var(--muted);font-family:'Nunito',sans-serif;margin-top:1px;}
+  .badge-new{display:inline-flex;align-items:center;font-size:9.5px;font-weight:800;padding:2px 7px;border-radius:999px;background:var(--warning);color:#fff;text-transform:uppercase;letter-spacing:.03em;margin-left:6px;}
+  .status-pill{font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:999px;white-space:nowrap;}
+  .status-pill.online{background:var(--success-tint);color:var(--success);}
+  .status-pill.quarantine{background:var(--warning-tint);color:var(--warning);}
+
+  .detail-header{display:flex;align-items:center;gap:14px;margin-bottom:22px;}
+  .dh-icon{width:52px;height:52px;border-radius:16px;background:var(--teal-tint);color:var(--teal-dark);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .sec-label{font-size:11.5px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin:20px 0 10px;font-family:'Nunito',sans-serif;}
+  .setting-row{display:flex;align-items:center;gap:12px;background:#fff;border:1.5px solid var(--border);border-radius:14px;padding:13px 15px;margin-bottom:9px;}
+  .sr-icon{width:36px;height:36px;border-radius:11px;background:var(--teal-tint);color:var(--teal-dark);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .sr-main{flex:1;min-width:0;}
+  .sr-main strong{display:block;font-size:13.5px;}
+  .sr-main span{display:block;font-size:11.5px;color:var(--muted);font-family:'Nunito',sans-serif;margin-top:1px;}
+  .switch{width:44px;height:26px;border-radius:999px;background:var(--border);position:relative;flex-shrink:0;cursor:pointer;}
+  .switch.on{background:var(--teal);}
+  .switch::after{content:'';position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;transition:.15s;}
+  .switch.on::after{left:21px;}
+
+  .timer-row{display:flex;gap:8px;margin-bottom:10px;}
+  .timer-chip{flex:1;text-align:center;padding:11px 4px;border:1.5px solid var(--border);border-radius:14px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'Nunito',sans-serif;}
+  .timer-chip.active{background:var(--teal);color:#fff;border-color:var(--teal);}
+
+  .net-option{display:flex;align-items:center;gap:12px;background:#fff;border:1.5px solid var(--border);border-radius:14px;padding:13px 15px;margin-bottom:9px;cursor:pointer;}
+  .net-option.active{border-color:var(--teal);background:var(--teal-tint);}
+  .net-option .no-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0;}
+  .net-option strong{flex:1;font-size:13.5px;}
+
+  .bottomnav{flex-shrink:0;display:flex;border-top:1px solid var(--border);background:#fff;padding:10px 6px 16px;}
+  .bn-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:10.5px;font-weight:700;color:var(--muted-2);cursor:pointer;font-family:'Nunito',sans-serif;}
+  .bn-item.active{color:var(--teal-dark);}
+
+  .page-crumb{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:var(--muted);cursor:pointer;margin-bottom:18px;font-family:'Nunito',sans-serif;}
+
+</style>
+</head>
+<body>
+
+<div class="phone">
+  <div class="phone-inner">
+    <div class="notch"></div>
+    <div class="statusbar"><span>9:41</span><span>●●●●&nbsp;&nbsp;📶&nbsp;&nbsp;🔋</span></div>
+    <div class="p-scroll" id="pScroll"><div class="p-content" id="screenContent"></div></div>
+    <div class="bottomnav" id="bottomNav" style="display:none;">
+      <div class="bn-item" data-tab="devices" data-goto="devices">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M11 18h2"/></svg>
+        <span>Devices</span>
+      </div>
+      <div class="bn-item" data-tab="network" data-goto="network">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8.5s4-5.5 10-5.5 10 5.5 10 5.5M5.5 12s3-4 6.5-4 6.5 4 6.5 4M9 15.5s1.5-2 3-2 3 2 3 2"/><circle cx="12" cy="19" r="1"/></svg>
+        <span>Network</span>
+      </div>
+      <div class="bn-item" data-tab="settings" data-goto="settings">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span>Settings</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+
+  const screens = {
+
+    connect: `
+      <div class="brand-row"><div class="brand-mark"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9v10a1 1 0 0 0 1 1h3v-6h6v6h3a1 1 0 0 0 1-1V9"/></svg></div><div class="brand-word">Sadd</div></div>
+      <h1 class="scr-title">Let's connect to your router</h1>
+      <p class="scr-sub">Choose how you'd like to connect.</p>
+      <div class="method-card" data-goto="scanning">
+        <div class="mc-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="13" rx="2"/><circle cx="12" cy="12.5" r="3.5"/><path d="M8 6l1.5-2h5L16 6"/></svg></div>
+        <strong>Scan Barcode</strong>
+        <span>Use your camera to scan the code on your router</span>
+      </div>
+      <div class="method-card" data-goto="btsearching">
+        <div class="mc-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m6.5 6.5 11 11L12 23V1l5.5 5.5-11 11"/></svg></div>
+        <strong>Connect via Bluetooth</strong>
+        <span>No camera needed &mdash; pair directly</span>
+      </div>
+    `,
+
+  };
+
+  const forwardMap = {
+    scanning:'scanfound', scanfound:'admin',
+    btsearching:'btfound', btfound:'admin',
+    admin:'wifi', wifi:'success', success:'devices'
+  };
+
+  const mainScreens = ['devices','devicedetail','network','settings'];
+
+  const state = { screen: 'connect' };
+
+  function render(){
+    document.getElementById('screenContent').innerHTML = screens[state.screen] || '';
+    const nav = document.getElementById('bottomNav');
+    const isMain = mainScreens.includes(state.screen);
+    nav.style.display = isMain ? 'flex' : 'none';
+    const activeTab = state.screen === 'devicedetail' ? 'devices' : state.screen;
+    document.querySelectorAll('.bn-item').forEach(el=>{
+      el.classList.toggle('active', el.dataset.tab === activeTab);
+    });
+    document.getElementById('pScroll').scrollTop = 0;
+  }
+
+  function goTo(screen){
+    if(screens[screen] === undefined) return;
+    state.screen = screen;
+    render();
+  }
+
+  document.body.addEventListener('click', (e)=>{
+
+    const gotoEl = e.target.closest('[data-goto]');
+    if(gotoEl){ goTo(gotoEl.dataset.goto); return; }
+
+    const sw = e.target.closest('.switch');
+    if(sw){ sw.classList.toggle('on'); return; }
+
+    const timer = e.target.closest('.timer-chip');
+    if(timer){
+      const row = timer.closest('.timer-row');
+      row.querySelectorAll('.timer-chip').forEach(c=>c.classList.remove('active'));
+      timer.classList.add('active');
+      return;
+    }
+
+    const netOpt = e.target.closest('.net-option');
+    if(netOpt){
+      const list = netOpt.closest('.net-option-list');
+      list.querySelectorAll('.net-option').forEach(o=>o.classList.remove('active'));
+      netOpt.classList.add('active');
+      return;
+    }
+
+    const device = e.target.closest('.list-item');
+    if(device){ goTo('devicedetail'); return; }
+
+    const primary = e.target.closest('.btn-primary');
+    if(primary && forwardMap[state.screen]){ goTo(forwardMap[state.screen]); return; }
+
+  });
+
+  render();
+
+</script>
+</body>
+</html>
+```
+
+- [ ] **Step 2: Verify**
+
+```bash
+cd "c:\Users\hamzaz.SQU\Documents\projects\router" && node -e "
+const fs = require('fs');
+const html = fs.readFileSync('sadd-mobile-app.html', 'utf-8');
+const match = html.match(/<script>([\s\S]*)<\/script>/);
+if (!match) { console.log('NO SCRIPT TAG FOUND'); process.exit(1); }
+try { new Function(match[1]); console.log('Script parses as valid JS: true'); }
+catch (e) { console.log('SYNTAX ERROR:', e.message); }
+"
+grep -c "data-goto=\"scanning\"" sadd-mobile-app.html
+grep -c "data-goto=\"btsearching\"" sadd-mobile-app.html
+```
+Expected: `Script parses as valid JS: true`, both grep counts `1`.
+
+- [ ] **Step 3: Commit**
+
+```bash
+cd "c:\Users\hamzaz.SQU\Documents\projects\router" && GIT_AUTHOR_NAME="scout005" GIT_AUTHOR_EMAIL="scouts4all@gmail.com" GIT_COMMITTER_NAME="scout005" GIT_COMMITTER_EMAIL="scouts4all@gmail.com" git add sadd-mobile-app.html && GIT_AUTHOR_NAME="scout005" GIT_AUTHOR_EMAIL="scouts4all@gmail.com" GIT_COMMITTER_NAME="scout005" GIT_COMMITTER_EMAIL="scouts4all@gmail.com" git commit -m "feat: scaffold sadd-mobile-app.html with shell, CSS, core JS, and the Connect screen"
+```
+
+---
+
+### Task 2: Add the remaining onboarding screens
+
+**Files:**
+- Modify: `sadd-mobile-app.html` (add 6 entries to the `screens` object: `scanning`, `scanfound`, `btsearching`, `btfound`, `admin`, `wifi`, `success` — 7 entries)
+
+- [ ] **Step 1: Verify current state**
+
+```bash
+cd "c:\Users\hamzaz.SQU\Documents\projects\router" && grep -c "connect: \`" sadd-mobile-app.html
+grep -c "scanning:" sadd-mobile-app.html
+```
+Expected: `1`, `0` (the `scanning` screen doesn't exist yet, only the `forwardMap` entry referencing it does).
+
+- [ ] **Step 2: Add the 7 onboarding screens**
+
+Use the Edit tool on `sadd-mobile-app.html`:
+- old_string:
+```
+  };
+
+  const forwardMap = {
+```
+- new_string:
+```
+    scanning: `
+      <div class="page-crumb" data-goto="connect"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>Back</div>
+      <h1 class="scr-title">Scanning for your router</h1>
+      <p class="scr-sub">Point your camera at the barcode on the bottom of your router.</p>
+      <div class="qr-card">
+        <div class="qr-box"></div>
+        <span style="font-size:12px;color:var(--muted);">Looking for a barcode&hellip;</span>
+      </div>
+      <button class="btn btn-primary mt-24">Continue</button>
+    `,
+
+    scanfound: `
+      <h1 class="scr-title">Router found!</h1>
+      <p class="scr-sub">Living Room Router is ready to set up.</p>
+      <div class="scan-banner">
+        <div class="dot"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+        <div><strong>Connected</strong><span>Your phone is talking to the router</span></div>
+      </div>
+      <button class="btn btn-primary">Continue</button>
+    `,
+
+    btsearching: `
+      <div class="page-crumb" data-goto="connect"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>Back</div>
+      <h1 class="scr-title">Searching for nearby routers</h1>
+      <p class="scr-sub">Make sure Bluetooth is turned on and you're near your router.</p>
+      <div class="spinner-box"></div>
+      <button class="btn btn-primary mt-24">Continue</button>
+    `,
+
+    btfound: `
+      <h1 class="scr-title">Router found!</h1>
+      <p class="scr-sub">We found a nearby router ready to pair.</p>
+      <div class="setting-row">
+        <div class="sr-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+        <div class="sr-main"><strong>Living Room Router</strong><span>Signal: Strong</span></div>
+      </div>
+      <button class="btn btn-primary mt-24">Connect</button>
+    `,
+
+    admin: `
+      <div class="page-crumb" data-goto="connect"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>Back</div>
+      <h1 class="scr-title">Name your router &amp; set a password</h1>
+      <p class="scr-sub">This protects your router's settings, separate from your Wi-Fi password.</p>
+      <div class="field"><label>Router name</label><input class="input" value="Living Room Router"></div>
+      <div class="field"><label>New admin password</label><input class="input" type="password" value="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;"></div>
+      <button class="btn btn-primary">Continue</button>
+    `,
+
+    wifi: `
+      <div class="page-crumb" data-goto="admin"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>Back</div>
+      <h1 class="scr-title">Set up your Wi-Fi</h1>
+      <p class="scr-sub">This is what you'll use to connect your devices.</p>
+      <div class="field"><label>Wi-Fi name</label><input class="input" value="Smith Family"></div>
+      <div class="field"><label>Wi-Fi password</label><input class="input" type="password" value="RiverOak482!"></div>
+      <button class="btn btn-primary">Continue</button>
+    `,
+
+    success: `
+      <div class="success-icon"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+      <h1 class="scr-title" style="text-align:center;">You're all set!</h1>
+      <p class="scr-sub" style="text-align:center;">Your router is secured and your Wi-Fi is ready. Devices can now connect.</p>
+      <button class="btn btn-primary">Continue</button>
+    `,
+
+  };
+
+  const forwardMap = {
+```
+
+- [ ] **Step 3: Verify**
+
+```bash
+cd "c:\Users\hamzaz.SQU\Documents\projects\router" && node -e "
+const fs = require('fs');
+const html = fs.readFileSync('sadd-mobile-app.html', 'utf-8');
+const match = html.match(/<script>([\s\S]*)<\/script>/);
+try { new Function(match[1]); console.log('Script parses as valid JS: true'); }
+catch (e) { console.log('SYNTAX ERROR:', e.message); }
+"
+for key in scanning scanfound btsearching btfound admin wifi success; do
+  echo -n "$key: "; grep -c "    $key: \`" sadd-mobile-app.html
+done
+```
+Expected: `Script parses as valid JS: true`, and each of the 7 keys returns `1`.
+
+- [ ] **Step 4: Commit**
+
+```bash
+cd "c:\Users\hamzaz.SQU\Documents\projects\router" && GIT_AUTHOR_NAME="scout005" GIT_AUTHOR_EMAIL="scouts4all@gmail.com" GIT_COMMITTER_NAME="scout005" GIT_COMMITTER_EMAIL="scouts4all@gmail.com" git add sadd-mobile-app.html && GIT_AUTHOR_NAME="scout005" GIT_AUTHOR_EMAIL="scouts4all@gmail.com" GIT_COMMITTER_NAME="scout005" GIT_COMMITTER_EMAIL="scouts4all@gmail.com" git commit -m "feat: add remaining onboarding screens (scan/bluetooth paths, admin, wifi, success)"
+```
+
+---
+
+### Task 3: Add Devices and Device Detail screens
+
+**Files:**
+- Modify: `sadd-mobile-app.html` (add `devices` and `devicedetail` entries to `screens`)
+
+- [ ] **Step 1: Verify current state**
+
+```bash
+cd "c:\Users\hamzaz.SQU\Documents\projects\router" && grep -c "success: \`" sadd-mobile-app.html
+grep -c "devices:" sadd-mobile-app.html
+```
+Expected: `1`, `0`.
+
+- [ ] **Step 2: Add the `devices` and `devicedetail` screens**
+
+Use the Edit tool on `sadd-mobile-app.html`:
+- old_string:
+```
+      <button class="btn btn-primary">Continue</button>
+    `,
+
+  };
+
+  const forwardMap = {
+```
+- new_string:
+```
+      <button class="btn btn-primary">Continue</button>
+    `,
+
+    devices: `
+      <div class="brand-row"><div class="brand-mark"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9v10a1 1 0 0 0 1 1h3v-6h6v6h3a1 1 0 0 0 1-1V9"/></svg></div><div class="brand-word">Sadd</div></div>
+      <h1 class="scr-title">Devices</h1>
+      <p class="scr-sub">12 connected</p>
+      <div class="list-item flagged">
+        <div class="li-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/></svg></div>
+        <div class="li-main"><strong>Unknown device<span class="badge-new">New</span></strong><span>Joined just now</span></div>
+        <span class="status-pill quarantine">Quarantine</span>
+      </div>
+      <div class="list-item">
+        <div class="li-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="2"/></svg></div>
+        <div class="li-main"><strong>Emma's iPhone</strong><span>Online</span></div>
+        <span class="status-pill online">Family</span>
+      </div>
+      <div class="list-item">
+        <div class="li-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg></div>
+        <div class="li-main"><strong>Living Room TV</strong><span>Online</span></div>
+        <span class="status-pill online">Family</span>
+      </div>
+      <div class="list-item">
+        <div class="li-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M11 6h2"/></svg></div>
+        <div class="li-main"><strong>Nest Thermostat</strong><span>Online</span></div>
+        <span class="status-pill online">IoT devices</span>
+      </div>
+    `,
+
+    devicedetail: `
+      <div class="page-crumb" data-goto="devices"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>Back</div>
+      <div class="detail-header">
+        <div class="dh-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/></svg></div>
+        <div><strong style="display:block;font-size:16px;">Unknown device<span class="badge-new" style="margin-left:8px;">New</span></strong><span style="display:block;font-size:12px;color:var(--muted);margin-top:2px;">Joined just now &middot; Currently in Quarantine</span></div>
+      </div>
+      <div class="sec-label" style="margin-top:0;">Pause internet</div>
+      <div class="timer-row">
+        <div class="timer-chip">15 min</div>
+        <div class="timer-chip">1 hr</div>
+        <div class="timer-chip">Until tomorrow</div>
+      </div>
+      <div class="setting-row">
+        <div class="sr-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>
+        <div class="sr-main"><strong>Bedtime</strong><span>Off</span></div>
+        <div class="switch"></div>
+      </div>
+      <div class="sec-label">Move to network</div>
+      <div class="net-option-list">
+        <div class="net-option"><span class="no-dot" style="background:#7C3AED;"></span><strong>Kids</strong></div>
+        <div class="net-option"><span class="no-dot" style="background:var(--teal);"></span><strong>Family</strong></div>
+        <div class="net-option"><span class="no-dot" style="background:#D97706;"></span><strong>IoT devices</strong></div>
+        <div class="net-option"><span class="no-dot" style="background:#64748B;"></span><strong>Guest network</strong></div>
+      </div>
+      <button class="btn btn-danger-soft mt-24">Block this device</button>
+      <button class="btn btn-ghost" style="margin-top:10px;">Forget this device</button>
+    `,
+
+  };
+
+  const forwardMap = {
+```
+
+**Note:** none of the 4 `.net-option` rows in `devicedetail` starts with the `active` class — consistent with the design spec's point that Quarantine is the unassigned starting state, not itself one of the four selectable destinations, so no destination should appear pre-selected for a device that hasn't been moved yet.
+
+- [ ] **Step 3: Verify**
+
+```bash
+cd "c:\Users\hamzaz.SQU\Documents\projects\router" && node -e "
+const fs = require('fs');
+const html = fs.readFileSync('sadd-mobile-app.html', 'utf-8');
+const match = html.match(/<script>([\s\S]*)<\/script>/);
+try { new Function(match[1]); console.log('Script parses as valid JS: true'); }
+catch (e) { console.log('SYNTAX ERROR:', e.message); }
+"
+grep -c "    devices: \`" sadd-mobile-app.html
+grep -c "    devicedetail: \`" sadd-mobile-app.html
+grep -c "net-option active" sadd-mobile-app.html
+```
+Expected: `Script parses as valid JS: true`, `devices` grep `1`, `devicedetail` grep `1`, `net-option active` grep `0` (confirms none pre-selected).
+
+- [ ] **Step 4: Commit**
+
+```bash
+cd "c:\Users\hamzaz.SQU\Documents\projects\router" && GIT_AUTHOR_NAME="scout005" GIT_AUTHOR_EMAIL="scouts4all@gmail.com" GIT_COMMITTER_NAME="scout005" GIT_COMMITTER_EMAIL="scouts4all@gmail.com" git add sadd-mobile-app.html && GIT_AUTHOR_NAME="scout005" GIT_AUTHOR_EMAIL="scouts4all@gmail.com" GIT_COMMITTER_NAME="scout005" GIT_COMMITTER_EMAIL="scouts4all@gmail.com" git commit -m "feat: add Devices list and Device Detail screens with quarantine + network reassignment"
+```
+
+---
+
+### Task 4: Add Network and Settings screens
+
+**Files:**
+- Modify: `sadd-mobile-app.html` (add `network` and `settings` entries to `screens`)
+
+- [ ] **Step 1: Verify current state**
+
+```bash
+cd "c:\Users\hamzaz.SQU\Documents\projects\router" && grep -c "devicedetail: \`" sadd-mobile-app.html
+grep -c "    network:" sadd-mobile-app.html
+```
+Expected: `1`, `0`.
+
+- [ ] **Step 2: Add the `network` and `settings` screens**
+
+Use the Edit tool on `sadd-mobile-app.html`:
+- old_string:
+```
+      <button class="btn btn-ghost" style="margin-top:10px;">Forget this device</button>
+    `,
+
+  };
+
+  const forwardMap = {
+```
+- new_string:
+```
+      <button class="btn btn-ghost" style="margin-top:10px;">Forget this device</button>
+    `,
+
+    network: `
+      <div class="brand-row"><div class="brand-mark"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9v10a1 1 0 0 0 1 1h3v-6h6v6h3a1 1 0 0 0 1-1V9"/></svg></div><div class="brand-word">Sadd</div></div>
+      <h1 class="scr-title">Network</h1>
+      <p class="scr-sub">Your Wi-Fi settings.</p>
+      <div class="field"><label>Wi-Fi name</label><input class="input" value="Smith Family"></div>
+      <div class="field"><label>Wi-Fi password</label><input class="input" type="password" value="RiverOak482!"></div>
+      <div class="setting-row" style="margin-top:12px;">
+        <div class="sr-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21a8 8 0 1 0-16 0"/><circle cx="12" cy="7" r="4"/></svg></div>
+        <div class="sr-main"><strong>Guest network</strong><span>Isolated Wi-Fi for visitors</span></div>
+        <div class="switch"></div>
+      </div>
+    `,
+
+    settings: `
+      <div class="brand-row"><div class="brand-mark"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9v10a1 1 0 0 0 1 1h3v-6h6v6h3a1 1 0 0 0 1-1V9"/></svg></div><div class="brand-word">Sadd</div></div>
+      <h1 class="scr-title">Settings</h1>
+      <div class="setting-row">
+        <div class="sr-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+        <div class="sr-main"><strong>Admin password</strong><span>Change your router's admin password</span></div>
+      </div>
+      <div class="setting-row">
+        <div class="sr-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg></div>
+        <div class="sr-main"><strong>Help &amp; About</strong><span>App version 1.0.0</span></div>
+      </div>
+      <button class="btn btn-danger-soft mt-24">Forget this router</button>
+    `,
+
+  };
+
+  const forwardMap = {
+```
+
+- [ ] **Step 3: Verify**
+
+```bash
+cd "c:\Users\hamzaz.SQU\Documents\projects\router" && node -e "
+const fs = require('fs');
+const html = fs.readFileSync('sadd-mobile-app.html', 'utf-8');
+const match = html.match(/<script>([\s\S]*)<\/script>/);
+try { new Function(match[1]); console.log('Script parses as valid JS: true'); }
+catch (e) { console.log('SYNTAX ERROR:', e.message); }
+"
+grep -c "    network: \`" sadd-mobile-app.html
+grep -c "    settings: \`" sadd-mobile-app.html
+```
+Expected: `Script parses as valid JS: true`, both `1`.
+
+- [ ] **Step 4: Commit**
+
+```bash
+cd "c:\Users\hamzaz.SQU\Documents\projects\router" && GIT_AUTHOR_NAME="scout005" GIT_AUTHOR_EMAIL="scouts4all@gmail.com" GIT_COMMITTER_NAME="scout005" GIT_COMMITTER_EMAIL="scouts4all@gmail.com" git add sadd-mobile-app.html && GIT_AUTHOR_NAME="scout005" GIT_AUTHOR_EMAIL="scouts4all@gmail.com" GIT_COMMITTER_NAME="scout005" GIT_COMMITTER_EMAIL="scouts4all@gmail.com" git commit -m "feat: add Network and Settings tab screens"
+```
+
+---
+
+### Task 5: Manual click-through verification and push
+
+**Files:** none (verification only)
+
+- [ ] **Step 1: Full-file sanity check**
+
+```bash
+cd "c:\Users\hamzaz.SQU\Documents\projects\router" && node -e "
+const fs = require('fs');
+const html = fs.readFileSync('sadd-mobile-app.html', 'utf-8');
+const match = html.match(/<script>([\s\S]*)<\/script>/);
+new Function(match[1]);
+const keys = [...match[1].matchAll(/^\s{4}(\w+): \`/gm)].map(m=>m[1]);
+console.log('Screen count:', keys.length, keys.join(', '));
+"
+```
+Expected: `Screen count: 12` and all 12 keys listed (`connect, scanning, scanfound, btsearching, btfound, admin, wifi, success, devices, devicedetail, network, settings`).
+
+- [ ] **Step 2: Open the file in a browser**
+
+```bash
+cd "c:\Users\hamzaz.SQU\Documents\projects\router" && start sadd-mobile-app.html
+```
+
+- [ ] **Step 3: Walk the Scan Barcode path**
+
+From Connect, tap "Scan Barcode" → confirm the scanning screen appears with a back-crumb to Connect → tap Continue → confirm "Router found!" appears → tap Continue → confirm you land on "Name your router & set a password."
+
+- [ ] **Step 4: Walk the Bluetooth path**
+
+Go back to Connect (reload the page). Tap "Connect via Bluetooth" → confirm the searching screen appears with a back-crumb to Connect → tap Continue → confirm "Router found!" (Bluetooth variant, showing "Living Room Router" / "Signal: Strong") → tap Connect → confirm you land on the same "Name your router & set a password" screen as the barcode path.
+
+- [ ] **Step 5: Complete setup and confirm the tab bar appears**
+
+Continue through Wi-Fi setup → confirm "You're all set!" → tap Continue → confirm you land on the Devices tab, the bottom nav bar is now visible with 3 items, and "Devices" is highlighted active.
+
+- [ ] **Step 6: Verify Devices and Device Detail**
+
+Confirm "Unknown device" shows the amber flagged styling, "New" badge, and "Quarantine" status pill. Tap it → confirm the detail screen shows Pause internet timer chips, a Bedtime toggle, 4 "Move to network" options (none pre-selected), and Block/Forget buttons. Tap a timer chip and confirm only one highlights at a time. Tap a network option and confirm only one highlights at a time. Tap the Bedtime switch and confirm it toggles on/off. Use the back-crumb to return to Devices.
+
+- [ ] **Step 7: Verify Network and Settings tabs**
+
+Tap the Network tab → confirm Wi-Fi name/password fields and a Guest network toggle. Tap the Settings tab → confirm Admin password and Help & About rows plus a "Forget this router" button. Confirm the bottom nav correctly highlights whichever tab is active as you switch between them.
+
+- [ ] **Step 8: Push to GitHub**
+
+```bash
+cd "c:\Users\hamzaz.SQU\Documents\projects\router" && git push origin main
+```
