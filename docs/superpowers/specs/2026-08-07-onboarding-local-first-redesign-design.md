@@ -63,7 +63,7 @@ Unchanged. Reached without the user ever having touched an account or MFA screen
 ## Navigation map changes
 
 - `forwardMap`: `welcome → changepassword → setup → recoverycode → discover → wancheck → success → dashboard`. `signup`/`mfa` removed from this chain.
-- `backMap`: updated to match the new forward sequence in reverse.
+- Back-navigation: this file has no `backMap` (removed as dead code during Phase A) — each screen carries its own `.page-crumb` element with an explicit `data-goto` target. Every new/repositioned screen's crumb is updated to point to its new predecessor in the sequence above.
 - `textLinkMap`: no changes needed for onboarding screens (they use `forwardMap`, not text-matched navigation); a new entry is needed for the dashboard's new "Set up remote access" banner → `signup`.
 - `screenMeta`: `changepassword`, `recoverycode`, `wancheck` are all `'auth'` type (same shell as the rest of onboarding).
 
