@@ -822,26 +822,64 @@ Use the Edit tool on `sadd-website.html`:
         : screens[state.screen];
 ```
 
-- [ ] **Step 5: Set `state.freshSetup` when leaving the `success` screen**
+- [ ] **Step 5: Fix `success`'s dead "Go to Dashboard" button, and set `state.freshSetup` for either exit path**
+
+**Context for this step (added after Task 6's code review):** `success` currently has two buttons — `.btn-primary` "Set up parental controls now" (works today, via the generic `forwardMap['success']='dashboard'` handler) and `.btn-secondary` "Go to Dashboard" (currently dead — `.btn-secondary` is never wired to any action anywhere in this file). Since Task 6's `wancheck` screen now tells the user "you can finish setup now," and `success` is the very next screen, a broken "Go to Dashboard" button right at the exit of the flow this plan is building undermines that promise. Fix it by giving it an explicit `data-goto="dashboard"` (the same direct-navigation mechanism `.page-crumb` elements already use file-wide), rather than leaving it to the generic primary-button/forwardMap path.
+
+First, fix the button:
+```bash
+cd "c:\Users\hamzaz.SQU\Documents\projects\router" && grep -n "^  const screens = " sadd-website.html
+```
+```bash
+python -c "
+import json
+
+path = 'sadd-website.html'
+with open(path, encoding='utf-8') as f:
+    lines = f.readlines()
+line = lines[589]
+prefix = line[:line.index('const screens = ') + len('const screens = ')]
+start = line.index('const screens = ') + len('const screens = ')
+end = line.rstrip().rfind('};')
+suffix = line[end+1:]
+obj = json.loads(line[start:end+1])
+
+s = obj['success']
+old = '<button class=\"btn btn-secondary\" style=\"width:auto;padding:13px 26px;\">Go to Dashboard</button>'
+assert s.count(old) == 1, 'Go to Dashboard button not found -- re-inspect obj[success] before proceeding'
+new = '<button class=\"btn btn-secondary\" data-goto=\"dashboard\" style=\"width:auto;padding:13px 26px;\">Go to Dashboard</button>'
+s = s.replace(old, new)
+obj['success'] = s
+
+new_obj_str = json.dumps(obj, ensure_ascii=True)
+lines[589] = prefix + new_obj_str + suffix
+with open(path, 'w', encoding='utf-8') as f:
+    f.writelines(lines)
+print('done')
+"
+```
+Expected: `done`.
+
+Now, set `state.freshSetup` for EITHER exit path from `success` (not just the primary button) — since `data-goto` clicks are handled earlier in the delegated click handler than the primary-button check and `return` immediately, a flag set only near the primary-button check would never fire for the newly-fixed "Go to Dashboard" button. Insert the flag-setting at the very top of the handler instead, so it fires regardless of which of the two buttons is clicked:
 
 ```bash
-cd "c:\Users\hamzaz.SQU\Documents\projects\router" && grep -n "// primary continue button" sadd-website.html
+cd "c:\Users\hamzaz.SQU\Documents\projects\router" && grep -n "document.body.addEventListener('click'" sadd-website.html
 ```
 Use the Edit tool on `sadd-website.html`:
 - old_string:
 ```
-    // primary continue button (only acts if current screen has a forward destination)
-    const primary = e.target.closest('.btn-primary');
-    if(primary && forwardMap[state.screen]){ goTo(forwardMap[state.screen]); return; }
+  document.body.addEventListener('click', (e)=>{
+
+    // offline-mode preview toggle (Help & Fixes)
 ```
 - new_string:
 ```
-    // mark local-only setup as complete (no account yet) when leaving the success screen
-    if(state.screen === 'success' && e.target.closest('.btn-primary')){ state.freshSetup = true; }
+  document.body.addEventListener('click', (e)=>{
 
-    // primary continue button (only acts if current screen has a forward destination)
-    const primary = e.target.closest('.btn-primary');
-    if(primary && forwardMap[state.screen]){ goTo(forwardMap[state.screen]); return; }
+    // mark local-only setup as complete (no account yet) when leaving the success screen
+    if(state.screen === 'success'){ state.freshSetup = true; }
+
+    // offline-mode preview toggle (Help & Fixes)
 ```
 
 - [ ] **Step 6: Add the `textLinkMap` entry for the new banner**
@@ -878,12 +916,13 @@ print('JSON valid, keys:', len(obj))
 print('signup crumb fixed:', 'data-goto=\"dashboard\"' in obj['signup'])
 print('signup old crumb gone:', 'data-goto=\"welcome\"' not in obj['signup'])
 print('dashboard (live) unchanged Remote Access On:', '<div class=\"dcard-big\">On</div><div class=\"dcard-sub\">2 family members connected</div>' in obj['dashboard'])
+print('success Go to Dashboard button now wired:', '<button class=\"btn btn-secondary\" data-goto=\"dashboard\"' in obj['success'])
 "
 grep -c "const dashboardFreshSetup = " sadd-website.html
 grep -c "freshSetup" sadd-website.html
 grep -c "Want to check on things when you.re away" sadd-website.html
 ```
-Expected: `JSON valid, keys: 31`, all three `print` checks `True`, `dashboardFreshSetup` grep `1`, `freshSetup` grep `>=3` (state init, render() check, click-handler set), `Want to check...` grep `2` (banner markup + textLinkMap entry).
+Expected: `JSON valid, keys: 31`, all four `print` checks `True`, `dashboardFreshSetup` grep `1`, `freshSetup` grep `>=3` (state init, render() check, click-handler set), `Want to check...` grep `2` (banner markup + textLinkMap entry).
 
 - [ ] **Step 8: Commit**
 
@@ -915,9 +954,9 @@ Click through `Welcome (Scan QR Code) → Change admin password → Name your Wi
 
 From Welcome, click "Use a cable" — confirm the panel swaps to show "Cable connected" with its own Continue button, and clicking it also advances to "Change admin password."
 
-- [ ] **Step 4: Confirm the dashboard banner appears after fresh setup**
+- [ ] **Step 4: Confirm the dashboard banner appears after fresh setup, via BOTH exit buttons on the success screen**
 
-After reaching "All set," click through to the dashboard. Confirm the teal "Want to check on things when you're away?" banner is visible near the top, and the Remote Access card reads "Off / not set up yet." Click the banner and confirm it opens Create Account → Verify Identity, and confirm each of those screens' own back-crumb now returns to the dashboard (not to Welcome).
+From "All set," click **"Go to Dashboard"** (the secondary button) — confirm it now actually navigates (it was dead before this plan) and lands on the fresh-setup dashboard variant: the teal "Want to check on things when you're away?" banner near the top, and the Remote Access card reading "Off / not set up yet." Then repeat starting from "All set" again, this time clicking **"Set up parental controls now"** (the primary button) — confirm it lands on the same fresh-setup dashboard variant. Click the banner and confirm it opens Create Account → Verify Identity, and confirm each of those screens' own back-crumb now returns to the dashboard (not to Welcome).
 
 - [ ] **Step 5: Confirm the returning-user path is unaffected**
 
