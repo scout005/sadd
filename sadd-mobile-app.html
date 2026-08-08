@@ -151,6 +151,70 @@
       </div>
     `,
 
+    scanning: `
+      <div class="page-crumb" data-goto="connect"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>Back</div>
+      <h1 class="scr-title">Scanning for your router</h1>
+      <p class="scr-sub">Point your camera at the barcode on the bottom of your router.</p>
+      <div class="qr-card">
+        <div class="qr-box"></div>
+        <span style="font-size:12px;color:var(--muted);">Looking for a barcode&hellip;</span>
+      </div>
+      <button class="btn btn-primary mt-24">Continue</button>
+    `,
+
+    scanfound: `
+      <h1 class="scr-title">Router found!</h1>
+      <p class="scr-sub">Living Room Router is ready to set up.</p>
+      <div class="scan-banner">
+        <div class="dot"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+        <div><strong>Connected</strong><span>Your phone is talking to the router</span></div>
+      </div>
+      <button class="btn btn-primary">Continue</button>
+    `,
+
+    btsearching: `
+      <div class="page-crumb" data-goto="connect"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>Back</div>
+      <h1 class="scr-title">Searching for nearby routers</h1>
+      <p class="scr-sub">Make sure Bluetooth is turned on and you're near your router.</p>
+      <div class="spinner-box"></div>
+      <button class="btn btn-primary mt-24">Continue</button>
+    `,
+
+    btfound: `
+      <h1 class="scr-title">Router found!</h1>
+      <p class="scr-sub">We found a nearby router ready to pair.</p>
+      <div class="setting-row">
+        <div class="sr-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+        <div class="sr-main"><strong>Living Room Router</strong><span>Signal: Strong</span></div>
+      </div>
+      <button class="btn btn-primary mt-24">Connect</button>
+    `,
+
+    admin: `
+      <div class="page-crumb" data-goto="connect"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>Back</div>
+      <h1 class="scr-title">Name your router &amp; set a password</h1>
+      <p class="scr-sub">This protects your router's settings, separate from your Wi-Fi password.</p>
+      <div class="field"><label>Router name</label><input class="input" value="Living Room Router"></div>
+      <div class="field"><label>New admin password</label><input class="input" type="password" value="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;"></div>
+      <button class="btn btn-primary">Continue</button>
+    `,
+
+    wifi: `
+      <div class="page-crumb" data-goto="admin"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>Back</div>
+      <h1 class="scr-title">Set up your Wi-Fi</h1>
+      <p class="scr-sub">This is what you'll use to connect your devices.</p>
+      <div class="field"><label>Wi-Fi name</label><input class="input" value="Smith Family"></div>
+      <div class="field"><label>Wi-Fi password</label><input class="input" type="password" value="RiverOak482!"></div>
+      <button class="btn btn-primary">Continue</button>
+    `,
+
+    success: `
+      <div class="success-icon"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+      <h1 class="scr-title" style="text-align:center;">You're all set!</h1>
+      <p class="scr-sub" style="text-align:center;">Your router is secured and your Wi-Fi is ready. Devices can now connect.</p>
+      <button class="btn btn-primary">Continue</button>
+    `,
+
   };
 
   const forwardMap = {
