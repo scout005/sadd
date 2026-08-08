@@ -215,6 +215,60 @@
       <button class="btn btn-primary">Continue</button>
     `,
 
+    devices: `
+      <div class="brand-row"><div class="brand-mark"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9v10a1 1 0 0 0 1 1h3v-6h6v6h3a1 1 0 0 0 1-1V9"/></svg></div><div class="brand-word">Sadd</div></div>
+      <h1 class="scr-title">Devices</h1>
+      <p class="scr-sub">12 connected</p>
+      <div class="list-item flagged">
+        <div class="li-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/></svg></div>
+        <div class="li-main"><strong>Unknown device<span class="badge-new">New</span></strong><span>Joined just now</span></div>
+        <span class="status-pill quarantine">Quarantine</span>
+      </div>
+      <div class="list-item">
+        <div class="li-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="2"/></svg></div>
+        <div class="li-main"><strong>Emma's iPhone</strong><span>Online</span></div>
+        <span class="status-pill online">Family</span>
+      </div>
+      <div class="list-item">
+        <div class="li-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg></div>
+        <div class="li-main"><strong>Living Room TV</strong><span>Online</span></div>
+        <span class="status-pill online">Family</span>
+      </div>
+      <div class="list-item">
+        <div class="li-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M11 6h2"/></svg></div>
+        <div class="li-main"><strong>Nest Thermostat</strong><span>Online</span></div>
+        <span class="status-pill online">IoT devices</span>
+      </div>
+    `,
+
+    devicedetail: `
+      <div class="page-crumb" data-goto="devices"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>Back</div>
+      <div class="detail-header">
+        <div class="dh-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/></svg></div>
+        <div><strong style="display:block;font-size:16px;">Unknown device<span class="badge-new" style="margin-left:8px;">New</span></strong><span style="display:block;font-size:12px;color:var(--muted);margin-top:2px;">Joined just now &middot; Currently in Quarantine</span></div>
+      </div>
+      <div class="sec-label" style="margin-top:0;">Pause internet</div>
+      <div class="timer-row">
+        <div class="timer-chip">15 min</div>
+        <div class="timer-chip">1 hr</div>
+        <div class="timer-chip">Until tomorrow</div>
+      </div>
+      <div class="setting-row">
+        <div class="sr-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>
+        <div class="sr-main"><strong>Bedtime</strong><span>Off</span></div>
+        <div class="switch"></div>
+      </div>
+      <div class="sec-label">Move to network</div>
+      <div class="net-option-list">
+        <div class="net-option"><span class="no-dot" style="background:#7C3AED;"></span><strong>Kids</strong></div>
+        <div class="net-option"><span class="no-dot" style="background:var(--teal);"></span><strong>Family</strong></div>
+        <div class="net-option"><span class="no-dot" style="background:#D97706;"></span><strong>IoT devices</strong></div>
+        <div class="net-option"><span class="no-dot" style="background:#64748B;"></span><strong>Guest network</strong></div>
+      </div>
+      <button class="btn btn-danger-soft mt-24">Block this device</button>
+      <button class="btn btn-ghost" style="margin-top:10px;">Forget this device</button>
+    `,
+
   };
 
   const forwardMap = {
