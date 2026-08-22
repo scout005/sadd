@@ -248,6 +248,9 @@ tbody tr:hover{ background:#f7f8f5; }
 <li><a href="#epic-4-transparency-explainability">Epic 4 — Transparency &amp; Explainability</a></li>
 <li><a href="#epic-5-parental-controls-content-filtering">Epic 5 — Parental Controls &amp; Content Filtering</a></li>
 <li><a href="#epic-6-vpn-remote-access">Epic 6 — VPN &amp; Remote Access</a></li>
+<li><a href="#epic-7-wi-fi-integration">Epic 7 — Wi-Fi Integration</a></li>
+<li><a href="#epic-8-ad-tracker-blocking">Epic 8 — Ad &amp; Tracker Blocking</a></li>
+<li><a href="#epic-9-reliability-multi-wan">Epic 9 — Reliability &amp; Multi-WAN</a></li>
 </ul>
 </li>
 </ul>
@@ -415,6 +418,39 @@ tbody tr:hover{ background:#f7f8f5; }
     <tr><td><code class="story-id">US-6.4</code></td><td>As a multi-property or small-business user, I want site-to-site VPN to connect two physical locations, so that both networks function as one.</td><td>Site-to-site tunnel setup wizard between two Sadd routers, available in Advanced Mode.</td><td><span class="tag tag-tier advanced">Advanced</span></td><td><span class="tag tag-src sentinel">Sentinel</span></td><td><span class="badge badge-p2">P2</span></td><td>8</td></tr>
     <tr><td><code class="story-id">US-6.5</code></td><td>As any user, I want VPN performance that doesn't cripple my connection, so that video calls remain usable while connected remotely.</td><td>WireGuard throughput of at least 300 Mbps on the flagship hardware tier, verified in QA — a hardware/QA commitment, not a settings surface.</td><td><span class="tag tag-tier advanced">Advanced</span></td><td><span class="tag tag-src">Sadd</span></td><td><span class="badge badge-p0">P0</span></td><td>8</td></tr>
     <tr><td><code class="story-id">US-6.6</code></td><td>As a privacy-conscious traveler, I want to connect via a censorship-resistant VPN protocol (e.g. AmneziaWG) in addition to standard WireGuard/OpenVPN, so that I can maintain secure access when traveling in networks that actively block standard VPN signatures.</td><td>At least one obfuscated/censorship-resistant VPN protocol supported, available in Advanced Mode.</td><td><span class="tag tag-tier advanced">Advanced</span></td><td><span class="tag tag-src sentinel">Sentinel</span></td><td><span class="badge badge-p2">P2</span></td><td>8</td></tr>
+    </tbody>
+    </table></div>
+
+    <h3 id="epic-7-wi-fi-integration">Epic 7 — Wi-Fi Integration</h3>
+    <blockquote class="revnote"><p><strong>Risk flag:</strong> mainline OpenWrt/mac80211 driver support for the newest Wi-Fi 7 silicon is still maturing — do not commit a launch date until a dedicated hardware/driver spike confirms a viable, well-supported chipset. Tracked in Section 9, Open Risks.</p></blockquote>
+    <div class="table-wrap"><table>
+    <thead><tr><th>ID</th><th>Story</th><th>Acceptance Criteria</th><th>Tier</th><th>Src</th><th>Pri</th><th>Pts</th></tr></thead>
+    <tbody>
+    <tr><td><code class="story-id">US-7.1</code></td><td>As any user, I want my router to provide working Wi-Fi out of the box, so that I don't need to buy and configure a separate access point.</td><td>Router ships with integrated Wi-Fi enabled by default; no separate AP purchase required for a typical home.</td><td><span class="tag tag-tier">Simple</span></td><td><span class="tag tag-src">Sadd</span></td><td><span class="badge badge-p0">P0</span></td><td>8</td></tr>
+    <tr><td><code class="story-id">US-7.2</code></td><td>As a user with a large home, I want to expand Wi-Fi coverage with mesh-compatible satellite access points, so that I can cover the whole house.</td><td>Mesh AP accessory supports Wi-Fi/Ethernet backhaul and automatically inherits the same security policies/zones as the main router.</td><td><span class="tag tag-tier advanced">Advanced</span></td><td><span class="tag tag-src sentinel">Sentinel</span></td><td><span class="badge badge-p1">P1</span></td><td>13</td></tr>
+    <tr><td><code class="story-id">US-7.3</code></td><td>As an advanced user, I want to see Wi-Fi signal strength and dead spots visualized in-app, so that I can decide where to place access points.</td><td>In-app Wi-Fi walk-test tool with a heatmap or signal-strength readout, available in Advanced Mode.</td><td><span class="tag tag-tier advanced">Advanced</span></td><td><span class="tag tag-src sentinel">Sentinel</span></td><td><span class="badge badge-p2">P2</span></td><td>8</td></tr>
+    </tbody>
+    </table></div>
+    <p>Guest Wi-Fi QR sharing is covered by Epic 1 (onboarding) and Epic 3 (guest zone), not duplicated here.</p>
+
+    <h3 id="epic-8-ad-tracker-blocking">Epic 8 — Ad &amp; Tracker Blocking</h3>
+    <div class="table-wrap"><table>
+    <thead><tr><th>ID</th><th>Story</th><th>Acceptance Criteria</th><th>Tier</th><th>Src</th><th>Pri</th><th>Pts</th></tr></thead>
+    <tbody>
+    <tr><td><code class="story-id">US-8.1</code></td><td>As any user, I want network-wide ad and tracker blocking with no extra setup, so that all my devices get a cleaner browsing experience automatically.</td><td>Ad-block is on by default after setup; no separate DNS configuration required; a visible reduction in ad requests shown on the dashboard.</td><td><span class="tag tag-tier">Simple</span></td><td><span class="tag tag-src">Sadd</span></td><td><span class="badge badge-p0">P0</span></td><td>5</td></tr>
+    <tr><td><code class="story-id">US-8.2</code></td><td>As any user, I want to whitelist a specific site or app that's broken by ad-blocking, so that I can fix false positives myself.</td><td>One-tap "report broken site" flow auto-whitelists the site, reachable from the block notification.</td><td><span class="tag tag-tier">Simple</span></td><td><span class="tag tag-src sentinel">Sentinel</span></td><td><span class="badge badge-p0">P0</span></td><td>3</td></tr>
+    <tr><td><code class="story-id">US-8.3</code></td><td>As an advanced user, I want to import my own custom blocklists, so that I'm not restricted to a small built-in list.</td><td>Support community blocklist import with no hard IP-count cap, configured in Advanced Mode.</td><td><span class="tag tag-tier advanced">Advanced</span></td><td><span class="tag tag-src sentinel">Sentinel</span></td><td><span class="badge badge-p1">P1</span></td><td>5</td></tr>
+    </tbody>
+    </table></div>
+
+    <h3 id="epic-9-reliability-multi-wan">Epic 9 — Reliability &amp; Multi-WAN</h3>
+    <div class="table-wrap"><table>
+    <thead><tr><th>ID</th><th>Story</th><th>Acceptance Criteria</th><th>Tier</th><th>Src</th><th>Pri</th><th>Pts</th></tr></thead>
+    <tbody>
+    <tr><td><code class="story-id">US-9.1</code></td><td>As any user, I want my router to maintain a stable internet connection without random disconnects, so that I never have to power-cycle it.</td><td>Automated watchdog restart on failure with a logged root cause; uptime target of at least 99.9% measured over a rolling 30-day window in QA.</td><td><span class="tag tag-tier">Simple</span></td><td><span class="tag tag-src">Sadd</span> + <span class="tag tag-src sentinel">Sentinel</span></td><td><span class="badge badge-p0">P0</span></td><td>8</td></tr>
+    <tr><td><code class="story-id">US-9.2</code></td><td>As any user, I want a plain-language explanation of why my internet dropped (ISP issue, DHCP failure, hardware fault), so that I'm not left guessing.</td><td>Root-cause classification shown in a dedicated "Connection Health" screen — ties directly to Epic 4's transparency principle.</td><td><span class="tag tag-tier">Simple</span></td><td><span class="tag tag-src">Sadd</span> + <span class="tag tag-src sentinel">Sentinel</span></td><td><span class="badge badge-p0">P0</span></td><td>5</td></tr>
+    <tr><td><code class="story-id">US-9.3</code></td><td>As a remote worker or small-business user, I want automatic failover between two internet connections, so that my network stays online if my primary ISP goes down.</td><td>Failover triggers within 10 seconds of primary WAN loss; push notification sent; once a second WAN exists, the toggle to enable failover is a single switch.</td><td><span class="tag tag-tier advanced">Advanced</span></td><td><span class="tag tag-src sentinel">Sentinel</span></td><td><span class="badge badge-p1">P1</span></td><td>8</td></tr>
+    <tr><td><code class="story-id">US-9.4</code></td><td>As a small-business user, I want load balancing across two WAN connections, so that I get combined bandwidth.</td><td>Load-balancing mode selectable per WAN, with a per-device pinning option, in Advanced Mode.</td><td><span class="tag tag-tier advanced">Advanced</span></td><td><span class="tag tag-src sentinel">Sentinel</span></td><td><span class="badge badge-p2">P2</span></td><td>8</td></tr>
     </tbody>
     </table></div>
 
