@@ -8,6 +8,7 @@ A complete router product design package: research, interface design (28 screens
 
 | File | What it is | Open this if you want to... |
 |---|---|---|
+| **`03-Sadd-Product-Backlog-User-Stories.html`** | The canonical requirements reference (v0.2) — full Epic → User Story → Acceptance Criteria backlog, merging this package's original brief with gated-in competitive research | Understand exactly what's in/out of scope and why, with priorities and points |
 | **`sadd-ui-mockups.html`** | The final, clickable prototype — 28 screens, 56 mockups (mobile + desktop each), with real click-through navigation | Click through the actual product experience |
 | **`sadd-sitemap.html`** | Visual flow map of all 28 screens grouped by tier, showing exactly how they connect | See the whole structure at a glance before diving into screens |
 | **`sadd-openwrt-mapping.md`** | Every screen mapped to real OpenWrt packages/UCI configs, plus what needs custom engineering | Hand off to firmware/backend engineering |
