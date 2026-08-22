@@ -262,6 +262,12 @@ tbody tr:hover{ background:#f7f8f5; }
 <li><a href="#epic-18-openwrt-platform-foundation">Epic 18 — OpenWrt Platform Foundation</a></li>
 </ul>
 </li>
+<li><a href="#5-release-roadmap">5. Release Roadmap</a></li>
+<li><a href="#6-definition-of-ready">6. Definition of Ready (DoR)</a></li>
+<li><a href="#7-definition-of-done">7. Definition of Done (DoD)</a></li>
+<li><a href="#8-backlog-health-snapshot">8. Backlog Health Snapshot</a></li>
+<li><a href="#9-open-risks">9. Open Risks</a></li>
+<li><a href="#10-change-log">10. Change Log</a></li>
 </ul>
 </div>
 
@@ -575,6 +581,57 @@ tbody tr:hover{ background:#f7f8f5; }
     <tr><td><code class="story-id">US-18.5</code></td><td>As the company, we want a curated, tested subset of OpenWrt/opkg packages that make up our supported feature set (DPI engine, VPN, DNS resolver, QoS/SQM, etc.), so that the shipped feature set is deliberate and quality-controlled.</td><td>Documented package manifest per firmware release, version-pinned, with each package's role mapped to a specific epic/feature in this backlog.</td><td>Process</td><td><span class="tag tag-src sentinel">Sentinel</span></td><td><span class="badge badge-p0">P0</span></td><td>5</td></tr>
     <tr><td><code class="story-id">US-18.6</code></td><td>As a prospective buyer or security researcher, I want a public page stating clearly that Sadd is built on OpenWrt, which release/version is tracked, and how Sadd relates to the upstream project, so that I understand the platform's provenance and trust posture.</td><td>Public "Built On" page live at launch, cross-linked from the Pricing Promise (Epic 17) and supply-chain compliance statement (Epic 15).</td><td>Public page</td><td><span class="tag tag-src sentinel">Sentinel</span></td><td><span class="badge badge-p1">P1</span></td><td>2</td></tr>
     <tr><td><code class="story-id">US-18.7</code></td><td>As the company, we want a custom on-router agent daemon that translates simple app actions (e.g. "pause Emma's device") into the correct UCI/firewall/dnsmasq changes and reports status back to the cloud, so that the simple mobile-app experience can be built on top of standard OpenWrt primitives without the app talking to raw UCI directly.</td><td>Agent daemon runs on-device, exposes a secured local API (ubus/rpcd over HTTPS or an MQTT/WebSocket bridge) that the cloud/app layer calls; every Simple-Mode action across Epics 1–11 maps to a defined agent operation.</td><td>Process</td><td><span class="tag tag-src new">New</span></td><td><span class="badge badge-p0">P0</span></td><td>13</td></tr>
+    </tbody>
+    </table></div>
+
+    <h2 id="5-release-roadmap">5. Release Roadmap</h2>
+    <p>Roadmap phases follow Sadd's own MVP/V2 split from <code>home-router-user-needs-analysis.md</code> §6.3/§6.4, now expressed against the full epic list above.</p>
+    <h3 id="mvp-release-10">MVP / Release 1.0 — "Simple, Safe, and Trusted"</h3>
+    <p>All P0 stories from Epics 1–11 (onboarding through privacy) — Sadd's core promise: dead-simple setup, real prosumer-grade protection on by default, plain-English transparency, no subscription for core security. Plus the P0 platform-foundation work from Epic 18 (version lock, GPL boundary, OTA, package manifest, the on-router agent daemon) and the Epic 15 compliance gate if Sadd ships its own hardware.</p>
+    <h3 id="release-11">Release 1.1 — "Power &amp; Reliability"</h3>
+    <p>Remaining P1 stories: Advanced Mode depth across Epics 2/3/6/9/10, Epic 16's video walkthroughs and accessibility audit, Epic 18's LuCI-based Advanced Mode web UI, Epic 14's incident-response playbook and upstream-tracking SLA.</p>
+    <h3 id="release-20">Release 2.0 — "Scale &amp; Extensibility"</h3>
+    <p>Epic 13 (Fleet/Business tier) in full, Epic 12's remaining P2 developer stories, Epic 6's site-to-site VPN and AmneziaWG, Epic 9's load balancing.</p>
+    <hr />
+
+    <h2 id="6-definition-of-ready">6. Definition of Ready (DoR)</h2>
+    <p>A story is ready for sprint planning when it has: a clear persona and benefit statement; acceptance criteria written in checklist or Given/When/Then form; a tier tag and a provenance tag; no open UX/design dependencies; estimated by the team, not just the PO.</p>
+
+    <h2 id="7-definition-of-done">7. Definition of Done (DoD)</h2>
+    <p>A story is done when: acceptance criteria pass in QA on all supported hardware tiers; a <strong>Simple-tier story reads in plain language with zero exposed jargon</strong> (ties to Epic 4's transparency principle — this is Sadd's non-negotiable bar, not a nice-to-have); Advanced/Business-tier stories are reachable only through their designated escape hatch, never surfaced by default; telemetry/logging respects Epic 11's local-first defaults; documentation published; no P0/P1 bugs open against the feature.</p>
+    <hr />
+
+    <h2 id="8-backlog-health-snapshot">8. Backlog Health Snapshot</h2>
+    <div class="table-wrap"><table>
+    <thead><tr><th>Metric</th><th>Value</th></tr></thead>
+    <tbody>
+    <tr><td>Total epics</td><td><strong>18</strong></td></tr>
+    <tr><td>Total user stories</td><td><strong>92</strong></td></tr>
+    <tr><td>P0 (MVP-blocking) stories</td><td><strong>49</strong></td></tr>
+    <tr><td>P1 (fast-follow) stories</td><td><strong>31</strong></td></tr>
+    <tr><td>P2 (roadmap) stories</td><td><strong>12</strong></td></tr>
+    <tr><td>Personas</td><td><strong>16</strong> (15 from Sadd's original brief + 1 new, Compliance-Conscious Carl)</td></tr>
+    <tr><td>Epics pulled from Sentinel (new to Sadd)</td><td>4 (Transparency &amp; Explainability, Trust/Disclosure, Regulatory Compliance, Beginner-First Education)</td></tr>
+    <tr><td>Epics formalized from Sadd's existing brief</td><td>14</td></tr>
+    </tbody>
+    </table></div>
+    <hr />
+
+    <h2 id="9-open-risks">9. Open Risks</h2>
+    <ul>
+    <li><strong>Wi-Fi 7 driver maturity (Epic 7):</strong> mainline OpenWrt/mac80211 support for the newest Wi-Fi 7 silicon is still maturing — do not commit a launch date until a dedicated hardware/driver spike confirms a viable, well-supported chipset.</li>
+    <li><strong>Hardware tier decision (Epic 17):</strong> single router vs. mesh-first design is still an open question from Sadd's original brief — most homes over ~1,500 sq ft need mesh per the user-needs analysis; resolve before committing to Epic 17's SKU ladder.</li>
+    <li><strong>Epic 16's two-path onboarding vs. Sadd's "never require a settings menu" principle:</strong> confirm the beginner/expert branch in <code class="story-id">US-16.2</code> is framed as pacing, not a gate, so it doesn't contradict Sadd's core simplicity promise.</li>
+    <li><strong>Accessibility scope (Epic 16):</strong> the WCAG 2.1 AA audit is a meaningful scope addition — confirm design/QA capacity before committing it to Release 1.1.</li>
+    </ul>
+    <hr />
+
+    <h2 id="10-change-log">10. Change Log</h2>
+    <div class="table-wrap"><table>
+    <thead><tr><th>Version</th><th>Changes</th></tr></thead>
+    <tbody>
+    <tr><td>v1</td><td>Sadd's original product design package: 28-screen UI mockup, persona/needs research, OpenWrt engineering mapping. Tagged in git as the pre-merge baseline this document builds on.</td></tr>
+    <tr><td>v0.2</td><td>Merge &amp; expansion pass. Formalized Sadd's existing MVP/V2 feature set into a full Epic → User Story → Acceptance Criteria structure for the first time; pulled in applicable material from a new Firewalla/"Sentinel" competitive research and backlog pass, tier-gated (Simple/Advanced/Business) so nothing bypasses Sadd's simple-by-default promise. Added 4 new epics (Transparency &amp; Explainability, Trust/Disclosure &amp; Vulnerability Management, Regulatory Compliance &amp; Manufacturing, Beginner-First Education) and 1 new persona (Compliance-Conscious Carl). Resolved Sadd's own open product question on data-privacy stance (local-first, formalized in Epic 11). Sadd's brand, name, and simple-first identity are unchanged.</td></tr>
     </tbody>
     </table></div>
 
