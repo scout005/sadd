@@ -235,3 +235,22 @@ This is too much to implement in one pass (14+ clean-Missing P0s, plus a dozen c
 - **Phase 2c — VPN engine decision + fix:** Resolve the WireGuard-vs-OpenVPN mismatch (product decision required first, not just an implementation task) before touching Epic 6 screens.
 - **Phase 2d — Remaining P0 gaps + notable Partials:** `US-1.2`, `US-3.5`, `US-5.6`, `US-17.7`, plus cleanup on the Partial P0s in Epics 2/9/10.
 - **Public-page stories** (`US-14.1`, `US-14.2`, `US-17.5`, `US-18.6`) — decide whether these belong as new mockup screens in these files at all, or are tracked as a separate marketing-site deliverable outside this prototype's scope, before scheduling them into any phase.
+
+---
+
+## Closure status (Phases 2a–2g, completed)
+
+All of the above was implemented in a continuous run through Phases 2a–2g. Summary of what changed and the judgment calls made along the way:
+
+- **2a — Privacy & Trust foundation:** New Privacy screen (`US-11.1`, `US-11.2`, `US-11.3`), new About screen (`US-15.1`), SSH-access toggle in `advapi` (`US-14.3`); mobile app's dead "Help & About" row wired up.
+- **2b — Transparency & Education:** Block-detail tap-through with plain-English reasons and an inline allow action (`US-4.1`, `US-4.4`); standalone Networking glossary (`US-16.1`); comfort-level onboarding question in both prototypes (`US-16.2`).
+- **2c — VPN engine fix:** Resolved the WireGuard/OpenVPN mismatch by product decision (not just implementation): added a new `advwireguard` screen as the actual engine behind the one-tap toggle, repositioned the existing OpenVPN screen as the Advanced-tier alternate for older clients, and split `advhub`'s single VPN dcard into two (`US-6.1`, `US-6.2`).
+- **2d — Remaining clean-Missing P0s:** Network topology onboarding question (`US-1.2`), a MAC-randomization-tolerant recognition note on device detail (`US-3.5`), a Safe Search toggle in Parental Controls (`US-5.6`).
+- **2e — Public-page content:** Rather than building separate marketing-site pages (which don't fit either file's logged-in-app-shell architecture), the content was folded into the About screen: tier-parity documentation (`US-17.7`), a security advisories summary combined with disclosure-policy language (`US-14.1`, `US-14.2`), the Pricing Promise (`US-17.5`), and a "Built on OpenWrt" line (`US-18.6`) — website gets the full set, mobile app gets a lighter version (pricing promise + Built on OpenWrt only).
+- **2f — Partial-P0 cleanup:** Root-cause hint added to Help's Wi-Fi warning and an automatic-restart note near the dashboard's Restart action (`US-9.1`, `US-9.2`); the previously-inert Notifications settings row wired up to a real severity-toggle screen (`US-10.3`).
+- **2g — High-value remaining P1s:** Geo-IP filtering and open-port scanning added to the Firewall screen (`US-2.4`, `US-2.5`); an open-source-firmware/repo note added to Firmware Updates (`US-12.3`, `US-12.4`); a device-type zone suggestion added to device detail (`US-3.2`).
+
+**Consciously not implemented, and why:**
+- **All `N/A — no UI surface` stories** (HBOM/SBOM process, GPL boundary ADR, OpenWrt version/target lock, curated package manifest, the on-router agent daemon, hardware-tier/SKU-naming business decisions, legal Covered List review, governance policy) — these are business/legal/engineering-process work with nothing a UI mockup can represent, not gaps in the prototype.
+- **Epic 13 (Fleet & Small-Business Mode)** — deliberately excluded from both files' default and Advanced experiences by Phase 2a's own design principle: a Business-tier fleet console is a different product surface, not a settings screen bolted onto the consumer app.
+- **Remaining P1/P2 items not covered in this pass:** mesh AP accessory and Wi-Fi heatmap (Epic 7), custom blocklist import (`US-8.3`, tier-mismatch noted but not restructured), WAN failover/load-balancing (Epic 9), tablet layout and home-screen widget (Epic 10), per-device VPN client routing and site-to-site VPN (Epic 6), Docker support and opkg access (Epic 12), video walkthroughs and the WCAG audit (Epic 16), and any Business-tier Epic 13 screens. These are reasonable candidates for a future pass but were judged lower-value-per-effort than what shipped here.
