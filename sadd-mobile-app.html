@@ -303,11 +303,24 @@
       <div class="setting-row"><div class="sr-main"><strong>Where your Sadd router is made</strong><span>Designed and assembled in the USA.</span></div></div>
     `,
 
+    comfortlevel: `
+      <h1 class="scr-title">How comfortable are you with home networking?</h1>
+      <p class="scr-sub">This just helps us pace things &mdash; either way, you'll end up with a fully protected network.</p>
+      <div class="method-card" data-goto="admin">
+        <strong>I'm new to this</strong>
+        <span>Walk me through everything, step by step</span>
+      </div>
+      <div class="method-card" data-goto="admin">
+        <strong>I know networking</strong>
+        <span>Keep it quick &mdash; I've done this before</span>
+      </div>
+    `,
+
   };
 
   const forwardMap = {
-    scanning:'scanfound', scanfound:'admin',
-    btsearching:'btfound', btfound:'admin',
+    scanning:'scanfound', scanfound:'comfortlevel',
+    btsearching:'btfound', btfound:'comfortlevel',
     admin:'wifi', wifi:'success', success:'devices'
   };
 
