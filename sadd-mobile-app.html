@@ -247,6 +247,8 @@
         <div class="dh-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/></svg></div>
         <div><strong style="display:block;font-size:16px;">Unknown device<span class="badge-new" style="margin-left:8px;">New</span></strong><span style="display:block;font-size:12px;color:var(--muted);margin-top:2px;">Joined just now &middot; Currently in Quarantine</span></div>
       </div>
+      <div class="setting-row"><div class="sr-main"><strong>Device name</strong></div><input class="input" style="max-width:140px;" value="Unknown device"></div>
+      <div class="setting-row"><div class="sr-main"><strong>Pin to Devices top</strong><span>Show this device first</span></div><div class="switch"></div></div>
       <div class="sec-label" style="margin-top:0;">Pause internet</div>
       <div class="timer-row">
         <div class="timer-chip">15 min</div>
@@ -289,11 +291,23 @@
         <div class="sr-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
         <div class="sr-main"><strong>Admin password</strong><span>Change your router's admin password</span></div>
       </div>
+      <div class="setting-row" data-goto="notifications">
+        <div class="sr-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></div>
+        <div class="sr-main"><strong>Notifications</strong><span>3 enabled</span></div>
+      </div>
       <div class="setting-row" data-goto="about">
         <div class="sr-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg></div>
         <div class="sr-main"><strong>Help &amp; About</strong><span>App version 1.0.0</span></div>
       </div>
       <button class="btn btn-danger-soft mt-24">Forget this router</button>
+    `,
+
+    notifications: `
+      <div class="page-crumb" data-goto="settings"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>Back</div>
+      <h1 class="scr-title">Notifications</h1>
+      <div class="setting-row"><div class="sr-main"><strong>New device joins</strong></div><div class="switch on"></div></div>
+      <div class="setting-row"><div class="sr-main"><strong>Threats blocked</strong></div><div class="switch on"></div></div>
+      <div class="setting-row"><div class="sr-main"><strong>Network goes offline</strong></div><div class="switch on"></div></div>
     `,
 
     about: `
@@ -308,13 +322,26 @@
     comfortlevel: `
       <h1 class="scr-title">How comfortable are you with home networking?</h1>
       <p class="scr-sub">This just helps us pace things &mdash; either way, you'll end up with a fully protected network.</p>
-      <div class="method-card" data-goto="admin">
+      <div class="method-card" data-goto="topology">
         <strong>I'm new to this</strong>
         <span>Walk me through everything, step by step</span>
       </div>
-      <div class="method-card" data-goto="admin">
+      <div class="method-card" data-goto="topology">
         <strong>I know networking</strong>
         <span>Keep it quick &mdash; I've done this before</span>
+      </div>
+    `,
+
+    topology: `
+      <h1 class="scr-title">Do you have one Wi-Fi box, or several?</h1>
+      <p class="scr-sub">No need to know terms like &quot;bridge mode&quot; &mdash; just pick what matches your home.</p>
+      <div class="method-card" data-goto="admin">
+        <strong>Just one Wi-Fi box</strong>
+        <span>A single router or modem/router combo</span>
+      </div>
+      <div class="method-card" data-goto="admin">
+        <strong>Several boxes or a mesh system</strong>
+        <span>More than one Wi-Fi device already set up</span>
       </div>
     `,
 
@@ -326,7 +353,7 @@
     admin:'wifi', wifi:'success', success:'devices'
   };
 
-  const mainScreens = ['devices','devicedetail','network','settings','about'];
+  const mainScreens = ['devices','devicedetail','network','settings','about','notifications'];
 
   const state = { screen: 'connect' };
 
@@ -335,7 +362,7 @@
     const nav = document.getElementById('bottomNav');
     const isMain = mainScreens.includes(state.screen);
     nav.style.display = isMain ? 'flex' : 'none';
-    const activeTab = state.screen === 'devicedetail' ? 'devices' : (state.screen === 'about' ? 'settings' : state.screen);
+    const activeTab = state.screen === 'devicedetail' ? 'devices' : ((state.screen === 'about' || state.screen === 'notifications') ? 'settings' : state.screen);
     document.querySelectorAll('.bn-item').forEach(el=>{
       el.classList.toggle('active', el.dataset.tab === activeTab);
     });
