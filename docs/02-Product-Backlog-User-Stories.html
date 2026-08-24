@@ -2160,6 +2160,59 @@ Estimate: Story points (Fibonacci: 1,2,3,5,8,13).</p>
 <tr><td><code>T242</code></td><td><code class="story-id">US21.3</code></td><td>Build</td><td>Implement front-end and back-end logic for: Diagnostic report export</td></tr>
 <tr><td><code>T243</code></td><td><code class="story-id">US21.3</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Diagnostic report export</td></tr>
 </tbody></table></div>
+<h2 id="4b-non-functional-requirements">4b. Non-Functional Requirements</h2>
+<p>From the engineering backlog spreadsheet’s NFR sheet (24 requirements), now merged into this document.</p>
+<h4>Usability</h4>
+<ul>
+<li>Common actions (pause internet, block device, check status) completable in under 30 seconds by a non-technical user.</li>
+<li>No default-view screen uses networking jargon (e.g., SSID, WPA, DHCP) without a plain-language label.</li>
+<li>No user flow requires a factory reset as a side effect of an unrelated action (e.g., creating a cloud account); resets are always a separate, explicit, confirmed action.</li>
+</ul>
+<h4>Accessibility</h4>
+<ul>
+<li>App and web dashboard meet WCAG 2.1 AA contrast and screen-reader support.</li>
+<li>Dark mode and high-contrast mode available in settings.</li>
+</ul>
+<h4>Performance</h4>
+<ul>
+<li>Dashboard loads and shows current security status within 2 seconds on a standard home connection.</li>
+<li>Device list supports 30+ devices without noticeable lag.</li>
+</ul>
+<h4>Security</h4>
+<ul>
+<li>All admin credentials and MFA secrets stored encrypted at rest.</li>
+<li>All app-to-router and app-to-cloud traffic encrypted in transit (TLS 1.2+).</li>
+<li>Default admin password is unique per unit, not a shared factory default.</li>
+<li>Remote access sessions (mobile, web) always require MFA re-authentication, even if the local network does not.</li>
+<li>Remote management traffic is end-to-end encrypted via the VPN tunnel; no remote feature relies on an open inbound port on the router.</li>
+<li>Remote sessions expire after a defined inactivity period and are individually revocable by the admin.</li>
+<li>Local admin identity (device credentials, TOTP, backup codes) and cloud account identity are architecturally independent — loss of one never locks the user out of the other.</li>
+</ul>
+<h4>Compatibility</h4>
+<ul>
+<li>Native apps for iOS and Android; responsive web dashboard for desktop management.</li>
+<li>MFA authenticator support is standards-based (TOTP), not locked to one provider.</li>
+</ul>
+<h4>Reliability</h4>
+<ul>
+<li>Core local functions (Wi-Fi, device pause, block page) continue to work if cloud connectivity is temporarily lost.</li>
+<li>At least one enrolled MFA method (authenticator app or backup codes) must always be verifiable locally by the router without any internet connection — the user is never fully dependent on WAN connectivity to log in.</li>
+<li>Local (LAN-based) router management continues to function fully during a WAN/internet outage; only genuinely cloud-dependent features degrade, and they do so visibly rather than silently.</li>
+</ul>
+<h4>Localization</h4>
+<ul>
+<li>UI text externalized for translation; supports at least the primary target market language at launch.</li>
+</ul>
+<h4>Onboarding</h4>
+<ul>
+<li>First-run setup enforces password change and offers MFA setup before granting full dashboard access.</li>
+</ul>
+<h4>Architecture</h4>
+<ul>
+<li>The on-device daemon is the sole interface between OpenWrt internals (ubus/UCI) and any client application; no frontend code accesses OpenWrt internals directly.</li>
+<li>All router-initiated cloud/relay connections are outbound-only; the router never accepts inbound connections from the public internet.</li>
+<li>Firmware updates are delivered as signed, atomic, rollback-capable bundles (RAUC A/B) regardless of who or what triggers them, so this mechanism does not need to change when centralized/ISP management is added later.</li>
+</ul>
 <h2 id="5-release-roadmap-suggested">5. Release Roadmap (Suggested)</h2>
 <h3 id="new-sprint-0-can-we-even-ship-this-pre-development-gate"><strong>[NEW] Sprint 0 — "Can We Even Ship This"</strong> (Pre-Development Gate)</h3>
 <p>Goal: resolve business/legal/compliance unknowns <em>before</em> committing engineering capacity to hardware.
