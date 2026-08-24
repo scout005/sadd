@@ -1685,6 +1685,131 @@ Estimate: Story points (Fibonacci: 1,2,3,5,8,13).</p>
 </tr>
 </tbody>
 </table></div>
+<h3 id="epic-22-frontend-platform-foundation">Epic 22 — <em>[Engineering backlog]</em> Frontend Platform Foundation</h3>
+<p>The shared technical foundation (frameworks, API client, component base) that the mobile app and web dashboard are built on.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Story</th>
+<th>Acceptance Criteria</th>
+<th>Priority</th>
+<th>Points</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="story-id">US-22.1</code></td>
+<td><em>[Engineering backlog: US18.1]</em> As a developer, I want the mobile app built on a single cross-platform framework (React Native or Flutter), so that we maintain one codebase for iOS and Android instead of two.</td>
+<td>Framework decision documented with rationale; base project scaffolded with navigation, auth flow, and API client layers in place; builds succeed for both iOS and Android targets from the same codebase.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>8</td>
+</tr>
+<tr>
+<td><code class="story-id">US-22.2</code></td>
+<td><em>[Engineering backlog: US18.2]</em> As a developer, I want the web dashboard built in React, sharing design tokens/components with the mobile app where practical, so that the two experiences stay visually and behaviorally consistent.</td>
+<td>Base web project scaffolded; component library shared or design-aligned with the mobile app; dashboard is servable both locally (from the router, for LAN access) and via the cloud (for remote access), using the same underlying components.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>8</td>
+</tr>
+<tr>
+<td><code class="story-id">US-22.3</code></td>
+<td><em>[Engineering backlog: US18.3]</em> As a developer, I want a single API client library shared by both mobile and web apps, so that local vs. cloud request routing is handled transparently and consistently rather than duplicated per platform.</td>
+<td>Client automatically detects local (LAN) vs. remote (cloud/relay) context and routes requests accordingly; both mobile and web apps consume the same client library/contract; no duplicated request-handling logic exists between the two codebases.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>8</td>
+</tr>
+<tr>
+<td><code class="story-id">US-22.4</code></td>
+<td><em>[Engineering backlog: US18.4]</em> As a product owner, I want OpenWrt's native LuCI interface excluded from the consumer product (or restricted to engineering/support access only), so that end users are never exposed to raw technical configuration, even in Advanced mode.</td>
+<td>LuCI is not reachable from the consumer mobile app or web dashboard; Advanced mode remains fully within our custom UI — it never links out to or embeds LuCI; if LuCI is retained at all for support purposes, it requires separate credentials not exposed to end users.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>3</td>
+</tr>
+</tbody>
+</table></div>
+<p class="note"><strong>Note:</strong> <code class="story-id">US-22.4</code> specifies excluding LuCI entirely, which directly conflicts with <code class="story-id">US-18.4</code>'s LuCI-overlay approach in Epic 18 above — see §9 Open Risks.</p>
+<h3 id="epic-23-hardware-manufacturing">Epic 23 — <em>[Engineering backlog]</em> Hardware &amp; Manufacturing</h3>
+<p>The physical product workstream: SoC selection, factory provisioning, regulatory certification, and pilot production. Runs in parallel with software from day one — likely the critical path (see Risk Register, §4c.7). Overlaps in subject matter with Epic 14 (Hardware Lineup &amp; Pricing) and Epic 15 (Regulatory Compliance) above — kept separate because this epic is the engineering/manufacturing workstream, while 14 and 15 are the commercial/legal-facing stories built on top of it.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Story</th>
+<th>Acceptance Criteria</th>
+<th>Priority</th>
+<th>Points</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="story-id">US-23.1</code></td>
+<td><em>[Engineering backlog: US19.1]</em> As a product owner, I want a timeboxed evaluation and selection of the router SoC/platform, so that all software work targets real, OpenWrt-friendly hardware from the start.</td>
+<td>Candidate SoCs evaluated for mainline OpenWrt support, unlocked/controllable bootloader, Wi-Fi 6+ capability, sufficient flash for A/B partitions (RAUC), and unit cost at target volumes; decision documented with a second-source/fallback option; development boards ordered for the engineering team before software Sprint 3.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>8</td>
+</tr>
+<tr>
+<td><code class="story-id">US-23.2</code></td>
+<td><em>[Engineering backlog: US19.2]</em> As a manufacturer, I want each unit flashed with a unique default admin password and matching label/QR at the factory, so that <code class="story-id">US-1.8</code>'s unique-credentials promise is physically deliverable.</td>
+<td>Provisioning step defined in the factory process: unique credential generated, flashed to device, and printed on the unit label/QR in one linked operation; credentials are not derivable from serial number, MAC, or model; process validated on the pilot production run.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>5</td>
+</tr>
+<tr>
+<td><code class="story-id">US-23.3</code></td>
+<td><em>[Engineering backlog: US19.3]</em> As a hardware designer, I want the recovery button's behavior specced with the firmware team, so that <code class="story-id">US-14.4</code>'s physical recovery flow has actual hardware behind it.</td>
+<td>Button press-duration behaviors defined (e.g., short = reboot, long = recovery flow) and agreed between hardware and firmware; recovery flow requirements are implementable on the chosen platform; spec frozen before pilot production tooling.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>3</td>
+</tr>
+<tr>
+<td><code class="story-id">US-23.4</code></td>
+<td><em>[Engineering backlog: US19.4]</em> As a product owner, I want the device certified for our launch markets (e.g., FCC/CE/regional equivalents), so that we can legally sell it — started early because certification lead time is months, not weeks.</td>
+<td>Target launch markets and their certification requirements listed; certification lab engaged and pre-scan completed before final hardware freeze; certification submitted immediately after design validation, tracked as a launch-gating milestone. Cross-reference: <code class="story-id">US-15.1</code>–<code class="story-id">US-15.5</code> (Epic 15) own the commercial/legal disclosure side of this.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>8</td>
+</tr>
+<tr>
+<td><code class="story-id">US-23.5</code></td>
+<td><em>[Engineering backlog: US19.5]</em> As a product owner, I want a small pilot production run validated end-to-end (hardware, factory provisioning, firmware flash, unboxing), so that mass production doesn't surface first-time failures.</td>
+<td>Pilot units pass design validation testing (thermal, Wi-Fi performance, stability); factory provisioning and firmware flashing verified on pilot units; pilot units used internally as the first OTA canary cohort (ties to <code class="story-id">US-20.3</code>).</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>8</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="epic-24-security-assurance-privacy-compliance">Epic 24 — <em>[Engineering backlog]</em> Security Assurance &amp; Privacy Compliance</h3>
+<p>Launch-blocking security validation and privacy compliance for sensitive data — especially children's activity data. Content already merged into Epic 16 (external audit and disclosure-SLA detail on <code class="story-id">US-16.2</code>) and Epic 13 (child-data privacy detail on <code class="story-id">US-13.1</code>) during the Epic 10–18 enrichment pass — see those stories rather than duplicating them here.</p>
+<h3 id="epic-25-support-diagnostics">Epic 25 — <em>[Engineering backlog]</em> Support &amp; Diagnostics</h3>
+<p>Tooling so non-technical customers can get help. In-app self-help troubleshooting is already covered by <code class="story-id">US-10.10</code> (Epic 10) — the two stories below are the remaining, genuinely new support capabilities.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Story</th>
+<th>Acceptance Criteria</th>
+<th>Priority</th>
+<th>Points</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="story-id">US-25.1</code></td>
+<td><em>[Engineering backlog: US21.2]</em> As a support agent, I want to run remote diagnostics on a customer's router with their explicit consent, so that I can resolve issues for non-technical users who can't describe technical problems.</td>
+<td>Diagnostics session requires explicit, per-session user consent from within the app; support access is scoped to diagnostics (read/status/logs), not full admin control; every support session is logged and visible to the user afterwards.</td>
+<td><span class="badge badge-p1">P1</span></td>
+<td>8</td>
+</tr>
+<tr>
+<td><code class="story-id">US-25.2</code></td>
+<td><em>[Engineering backlog: US21.3]</em> As a user, I want to export a diagnostic report to share with support, so that issues can be investigated even without a live remote session.</td>
+<td>One-tap generation of a diagnostic bundle (status, logs, config summary — no passwords/secrets); report shareable via standard share sheet / email.</td>
+<td><span class="badge badge-p2">P2</span></td>
+<td>3</td>
+</tr>
+</tbody>
+</table></div>
 <h2 id="5-release-roadmap-suggested">5. Release Roadmap (Suggested)</h2>
 <h3 id="new-sprint-0-can-we-even-ship-this-pre-development-gate"><strong>[NEW] Sprint 0 — "Can We Even Ship This"</strong> (Pre-Development Gate)</h3>
 <p>Goal: resolve business/legal/compliance unknowns <em>before</em> committing engineering capacity to hardware.
