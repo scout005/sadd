@@ -8,27 +8,13 @@ A complete router product design package: research, interface design (28 screens
 
 | File | What it is | Open this if you want to... |
 |---|---|---|
-| **`03-Sadd-Product-Backlog-User-Stories.html`** | The canonical requirements reference (v0.2) — full Epic → User Story → Acceptance Criteria backlog, merging this package's original brief with gated-in competitive research | Understand exactly what's in/out of scope and why, with priorities and points |
-| **`sadd-ui-mockups.html`** | The final, clickable prototype — 28 screens, 56 mockups (mobile + desktop each), with real click-through navigation | Click through the actual product experience |
-| **`sadd-sitemap.html`** | Visual flow map of all 28 screens grouped by tier, showing exactly how they connect | See the whole structure at a glance before diving into screens |
+| **`02-Product-Backlog-User-Stories.html`** | The canonical requirements/backlog reference — 25 epics, personas, full Epic → User Story → Acceptance Criteria backlog, engineering task breakdown, NFRs, project plan, and product positioning, consolidated from every requirements/backlog/plan document in the project | Understand exactly what's in/out of scope and why, with priorities and points |
+| **`01-Competitive-Analysis-Firewalla.html`** | The canonical competitive-analysis reference — deep Firewalla analysis plus a broader multi-vendor benchmark (eero, Gryphon, ASUS, TP-Link, NETGEAR, UniFi), consolidated from every competitive-analysis document in the project | Understand where this product sits against the competitive landscape |
 | **`sadd-openwrt-mapping.md`** | Every screen mapped to real OpenWrt packages/UCI configs, plus what needs custom engineering | Hand off to firmware/backend engineering |
-| **`home-router-user-needs-analysis.md`** | Persona research, feature benchmarking against real router brands, and the original product brief (Part 6) this design was built from | Understand *why* each screen exists |
 
-Exploration files (kept for reference, not the final direction):
-- `sadd-design-directions.html` — 10 color palette options explored before landing on Sadd Calm teal
-- `sadd-layout-directions.html` — 6 information-architecture options explored before landing on Stacked Cards
+Persona research, brand feature benchmarking, and the original product brief that once lived in `home-router-user-needs-analysis.md` are now merged into `02-Product-Backlog-User-Stories.html` (personas, product concept) and `01-Competitive-Analysis-Firewalla.html` (brand benchmarks) — see those two documents instead of a standalone needs-analysis file.
 
----
-
-## How to use the prototype (`sadd-ui-mockups.html`)
-
-**Two ways to navigate:**
-1. **Real flow** — click buttons, back arrows, and linking rows exactly as a user would. Onboarding advances screen-to-screen, the Dashboard's cards/sidebar link to their sections, Settings links into Advanced Mode, etc.
-2. **Jump to any screen** — the top tab bar is a reviewer shortcut that jumps directly to any of the 28 screens regardless of flow position, for fast QA or presentation.
-
-**Mobile / Desktop toggle** — every screen has both, styled consistently but laid out appropriately for the viewport (stacked cards on mobile, sidebar + master-detail patterns on desktop).
-
-**Design rationale panels** — every screen has a notes card explaining the specific UX decisions behind it, not just what it looks like.
+> **Note:** `sadd-ui-mockups.html` (the clickable prototype), `sadd-sitemap.html`, `sadd-design-directions.html`, and `sadd-layout-directions.html` are no longer present in this directory. The Screen Inventory, Design System, and Engineering Handoff sections below document what those files contained; the live phone-first prototypes are `sadd-website.html` and `sadd-mobile-app.html` in the repo root.
 
 ---
 
