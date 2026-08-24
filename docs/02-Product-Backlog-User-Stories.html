@@ -2410,6 +2410,43 @@ Estimate: Story points (Fibonacci: 1,2,3,5,8,13).</p>
 <li><strong>Account model:</strong> should Advanced Mode require a separate technical account/login, or just a toggle in the same app, to avoid fragmenting the single-app promise.</li>
 </ul>
 
+<h2 id="4e-research-evidence-base">4e. Research &amp; Evidence Base</h2>
+<p>Condensed from the market/user research reference (now merged into this document). Several epics above rely on this evidence &mdash; this section makes the sourcing explicit.</p>
+<h3 id="4e1-device-landscape">4e.1 Device Landscape</h3>
+<ul>
+<li>Average smart-home-specific device count is 6.2 per household (down from a pandemic-era peak of 8); counting all connected devices, US households average 21 connected devices across 13 categories.</li>
+<li>59% of US households now run 2+ routers/mesh nodes.</li>
+<li>Smart TVs are the single most prevalent smart-home device (57% of US households); ~61% now have at least one security camera; 79% of smart-device households have a smart speaker/assistant.</li>
+<li><strong>Design implication:</strong> the device list has to handle 15&ndash;20+ items gracefully &mdash; icons, friendly names, grouping &mdash; not a raw technical table.</li>
+</ul>
+<h3 id="4e2-core-security-gap">4e.2 The Core Security Gap</h3>
+<p>From a 2025 survey of 3,242 UK users (Broadband Genie, with McAfee input):</p>
+<ul>
+<li>47% have never adjusted any router factory settings; 81% have not changed the router admin password; 69% have never changed their Wi-Fi password.</li>
+<li>84% have never updated router firmware; 85% have never changed their network name; 69% have never checked who's using their network.</li>
+<li><strong>The critical insight:</strong> 79% know <em>how</em> to change settings, but 73% don't know <em>why</em> they'd need to &mdash; the blocker isn't UI complexity, it's that security work feels optional.</li>
+</ul>
+<h3 id="4e3-parental-control-adoption">4e.3 Parental Control Adoption &amp; Concerns</h3>
+<ul>
+<li>Adoption is low and uneven: 51% of parents use controls on tablets, 47% on smartphones, 43% on laptops, 38% on smart TVs, 35% on game consoles &mdash; not apathy, but controls are often easy for kids to defeat.</li>
+<li>Content and time spent worry parents more than stranger contact: 69% concerned about content impact, 64% about time spent, only 32% about strangers.</li>
+<li>89% of kids say they're comfortable telling a parent if something online feels unsafe &mdash; suggesting tools that support conversation (visibility/reports) may work better than pure lockdown.</li>
+<li><strong>Design implication:</strong> app-based parental controls are trivially bypassed by removing the app; a network-level control a child's device can't uninstall is a genuine differentiator for a router product.</li>
+</ul>
+<h3 id="4e4-confirmed-product-decisions">4e.4 Confirmed Product Decisions</h3>
+<ul>
+<li><strong>MFA default:</strong> SMS/mobile push is the recommended first option shown during setup &mdash; no app to install, works on any phone. Email code and authenticator app remain available as alternatives in the same setup flow, but push/SMS is pre-selected.</li>
+<li><strong>Block page behavior:</strong> friendly tone, but with no self-serve "request access" button. A blocked user sees a clear, non-alarming message; unblocking is a deliberate action the account admin/parent takes from the app.</li>
+</ul>
+<h3 id="4e5-sources">4e.5 Sources</h3>
+<ul>
+<li>Broadband Genie / McAfee, <em>Router Security Survey 2025</em> (3,242 UK respondents)</li>
+<li>Family Online Safety Institute (FOSI), <em>Connected and Protected: 2025 Online Safety Survey</em> (1,000 US parents + 1,000 children aged 10&ndash;17)</li>
+<li>Parks Associates, Home Networking consumer research (US households)</li>
+<li>SQ Magazine / IDC, <em>Smart Home Statistics 2026</em></li>
+<li>ConsumerAffairs, <em>Average Number of Smart Devices in a Home 2026</em></li>
+</ul>
+
 <h2 id="5-release-roadmap-suggested">5. Release Roadmap (Suggested)</h2>
 <h3 id="new-sprint-0-can-we-even-ship-this-pre-development-gate"><strong>[NEW] Sprint 0 — "Can We Even Ship This"</strong> (Pre-Development Gate)</h3>
 <p>Goal: resolve business/legal/compliance unknowns <em>before</em> committing engineering capacity to hardware.
