@@ -1,0 +1,1828 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Product Backlog &amp; User Stories · Sentinel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;650;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d1117;
+  --sidebar:#0a0e13;
+  --sidebar-border:#1c2530;
+  --paper:#fbfbf9;
+  --ink:#1b2027;
+  --ink-soft:#525a66;
+  --line:#e4e2dc;
+  --accent:#1fb6a8;
+  --accent-soft:#d5f3ef;
+  --accent-strong:#0e8f83;
+  --amber:#e2a53a;
+  --red:#e0596b;
+  --slate:#8a93a3;
+  --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+*{box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{
+  margin:0; font-family:var(--sans); color:var(--ink); background:var(--paper);
+  font-size:16px; line-height:1.6;
+}
+::selection{ background:var(--accent-soft); }
+
+/* ---------- progress bar ---------- */
+#progress{
+  position:fixed; top:0; left:0; height:3px; width:0%;
+  background:linear-gradient(90deg,var(--accent),var(--accent-strong));
+  z-index:1000; transition:width .1s linear;
+}
+
+/* ---------- sidebar ---------- */
+.sidebar{
+  position:fixed; top:0; left:0; bottom:0; width:300px;
+  background:var(--sidebar); border-right:1px solid var(--sidebar-border);
+  overflow-y:auto; padding:0 0 40px 0; z-index:100;
+  scrollbar-width: thin; scrollbar-color: #2a3542 transparent;
+}
+.sidebar::-webkit-scrollbar{width:8px;}
+.sidebar::-webkit-scrollbar-thumb{background:#2a3542; border-radius:4px;}
+
+.brand{
+  padding:22px 20px 16px 20px; border-bottom:1px solid var(--sidebar-border);
+  position:sticky; top:0; background:var(--sidebar); z-index:5;
+}
+.brand .mark{
+  display:inline-flex; align-items:center; gap:8px;
+  font-family:var(--mono); font-size:11px; letter-spacing:.14em; color:var(--accent);
+  text-transform:uppercase;
+}
+.brand .mark::before{
+  content:""; width:8px; height:8px; border-radius:50%;
+  background:var(--accent); box-shadow:0 0 8px var(--accent);
+  display:inline-block;
+}
+.brand h1{
+  font-size:16px; margin:10px 0 2px 0; color:#f2f4f7; font-weight:650; line-height:1.3;
+}
+.brand p{ margin:0; font-size:12.5px; color:#7d8998; }
+
+.docswitch{
+  display:block; margin:14px 20px 0 20px; padding:9px 12px;
+  border:1px solid var(--sidebar-border); border-radius:7px;
+  color:#c7d0db; text-decoration:none; font-size:12.5px; font-family:var(--mono);
+  transition:.15s; background:#0e141b;
+}
+.docswitch:hover{ border-color:var(--accent); color:var(--accent); }
+
+.searchwrap{ padding:14px 20px 4px 20px; }
+#search{
+  width:100%; padding:9px 10px; border-radius:7px; border:1px solid var(--sidebar-border);
+  background:#0e141b; color:#e7ebf0; font-size:13px; font-family:var(--sans);
+  outline:none;
+}
+#search:focus{ border-color:var(--accent); }
+#search::placeholder{ color:#5b6675; }
+
+nav.toc{ padding:10px 10px 20px 10px; }
+nav.toc ul{ list-style:none; margin:0; padding-left:0; }
+nav.toc > ul { padding-left:6px; }
+nav.toc ul ul{ padding-left:16px; border-left:1px solid var(--sidebar-border); margin-left:6px; }
+nav.toc li{ margin:0; }
+nav.toc a{
+  display:block; padding:6px 10px; color:#a7b1bf; text-decoration:none;
+  font-size:13px; border-radius:6px; line-height:1.35;
+  border-left:2px solid transparent;
+}
+nav.toc > ul > li > a{ font-weight:600; color:#dbe2ea; font-size:13.5px; margin-top:6px;}
+nav.toc a:hover{ background:#121a23; color:var(--accent); }
+nav.toc a.active{
+  background:#0f2622; color:var(--accent); border-left:2px solid var(--accent);
+}
+nav.toc li.hidden{ display:none; }
+
+/* ---------- main content ---------- */
+.wrap{ margin-left:300px; min-height:100vh; }
+.topbar{
+  position:sticky; top:0; z-index:50;
+  background:rgba(251,251,249,.88); backdrop-filter:blur(8px);
+  border-bottom:1px solid var(--line);
+  padding:10px 48px; display:flex; align-items:center; justify-content:space-between;
+}
+.topbar .path{ font-family:var(--mono); font-size:12px; color:var(--ink-soft); }
+.topbar .path b{ color:var(--ink); }
+.topbar .actions a{
+  font-size:12.5px; font-family:var(--mono); color:var(--accent-strong);
+  text-decoration:none; margin-left:16px; border:1px solid var(--accent-soft);
+  padding:5px 10px; border-radius:6px; background:var(--accent-soft);
+}
+.topbar .actions a:hover{ background:var(--accent); color:#fff; }
+
+main{ max-width:900px; padding:56px 48px 120px 48px; }
+
+.doc-header{ margin-bottom:40px; }
+.kicker{
+  font-family:var(--mono); font-size:12px; letter-spacing:.14em; color:var(--accent-strong);
+  text-transform:uppercase; margin:0 0 14px 0; display:flex; align-items:center; gap:10px;
+}
+.kicker::before{ content:"//"; color:var(--slate); }
+.doc-header h1{ font-size:38px; margin:0 0 8px 0; letter-spacing:-.02em; font-weight:700; }
+.doc-header .sub{ font-size:16px; color:var(--ink-soft); margin:0; }
+
+h2{
+  font-size:24px; margin:52px 0 16px 0; padding-top:8px; font-weight:700;
+  letter-spacing:-.01em; scroll-margin-top:80px; border-top:1px solid var(--line); padding-top:28px;
+}
+main > h2:first-of-type{ border-top:none; padding-top:0; }
+h3{ font-size:18.5px; margin:32px 0 12px 0; font-weight:650; color:#242a33; scroll-margin-top:80px; }
+h4{ font-size:15px; margin:22px 0 8px 0; font-weight:650; color:#3a414c; scroll-margin-top:80px;}
+p{ margin:0 0 16px 0; color:#333a44; }
+strong{ color:#151a20; }
+a{ color:var(--accent-strong); }
+hr{ border:none; border-top:1px solid var(--line); margin:36px 0; }
+
+ul,ol{ margin:0 0 16px 0; padding-left:22px; color:#333a44; }
+li{ margin-bottom:6px; }
+li > ul, li > ol{ margin-top:6px; }
+
+code{
+  font-family:var(--mono); font-size:.86em; background:#eef0ee; color:#1b2027;
+  padding:1.5px 5px; border-radius:4px;
+}
+code.story-id{
+  background:var(--accent-soft); color:var(--accent-strong); font-weight:600;
+  white-space:nowrap;
+}
+code.epic-id{
+  background:#eee6d8; color:#8a5a13; font-weight:700;
+}
+pre{ background:#11151a; color:#e7ebf0; padding:16px 18px; border-radius:10px; overflow-x:auto; }
+pre code{ background:none; color:inherit; padding:0; }
+
+blockquote.revnote{
+  margin:20px 0; padding:16px 20px; background:#fff8e9; border-left:3px solid var(--amber);
+  border-radius:0 8px 8px 0; color:#5a4b1f; font-size:14.5px;
+}
+blockquote.revnote p{ margin:0; color:#5a4b1f; }
+blockquote.revnote p + p{ margin-top:10px; }
+
+.table-wrap{ overflow-x:auto; margin:20px 0 28px 0; border:1px solid var(--line); border-radius:10px; }
+table{ border-collapse:collapse; width:100%; font-size:14px; }
+thead th{
+  text-align:left; background:#f1f0eb; color:#1b2027; font-weight:650;
+  padding:10px 14px; border-bottom:1px solid var(--line); white-space:nowrap;
+  position:sticky; top:0;
+}
+tbody td{ padding:10px 14px; border-bottom:1px solid #ecebe5; vertical-align:top; color:#3a414c; }
+tbody tr:last-child td{ border-bottom:none; }
+tbody tr:hover{ background:#f7f8f5; }
+
+.badge{
+  display:inline-block; font-family:var(--mono); font-size:11px; font-weight:700;
+  padding:2px 7px; border-radius:5px; letter-spacing:.03em;
+}
+.badge-p0{ background:#fde8e8; color:#b3273c; }
+.badge-p1{ background:#fdf1dc; color:#946111; }
+.badge-p2{ background:#eef1f5; color:#4c5967; }
+
+.tag{
+  display:inline-block; font-family:var(--mono); font-size:10.5px; font-weight:700;
+  padding:2px 7px; border-radius:5px; letter-spacing:.02em; vertical-align:2px;
+}
+.tag-new{ background:#e4f8f4; color:var(--accent-strong); }
+.tag-new.v2{ background:#e9edfb; color:#3949ab; }
+.tag-new.v3{ background:#f2e9fb; color:#7b2fbd; }
+.tag-new.v4{ background:#fbe9f0; color:#c22367; }
+.tag-new.v5{ background:#e8f2e0; color:#3f7d1f; }
+.tag-new.v6{ background:#fdeee0; color:#a85b12; }
+
+#topbtn{
+  position:fixed; bottom:28px; right:28px; z-index:60;
+  width:42px; height:42px; border-radius:50%; background:var(--ink);
+  color:#fff; border:none; cursor:pointer; opacity:0; pointer-events:none;
+  transition:.2s; font-size:16px; display:flex; align-items:center; justify-content:center;
+  box-shadow:0 6px 18px rgba(0,0,0,.25);
+}
+#topbtn.show{ opacity:1; pointer-events:auto; }
+#topbtn:hover{ background:var(--accent-strong); }
+
+@media (max-width: 880px){
+  .sidebar{ transform:translateX(-100%); transition:.2s; width:82vw; }
+  .sidebar.open{ transform:translateX(0); }
+  .wrap{ margin-left:0; }
+  main{ padding:40px 22px 100px 22px; }
+  .topbar{ padding:10px 18px; }
+  #menubtn{ display:inline-flex !important; }
+}
+#menubtn{ display:none; background:none; border:1px solid var(--line); border-radius:7px; padding:7px 10px; font-family:var(--mono); font-size:12px; cursor:pointer; }
+
+@media print{
+  .sidebar,.topbar,#topbtn,#progress{ display:none; }
+  .wrap{ margin-left:0; }
+  main{ max-width:none; padding:0; }
+}
+</style>
+</head>
+<body>
+<div id="progress"></div>
+
+<aside class="sidebar">
+  <div class="brand">
+    <span class="mark">Sentinel · Product Docs</span>
+    <h1>Product Backlog &amp; User Stories</h1>
+    <p>Sentinel Home Network Security Router</p>
+  </div>
+  <a class="docswitch" href="01-Competitive-Analysis-Firewalla.html">← Competitive Analysis</a>
+  <div class="searchwrap">
+    <input id="search" type="text" placeholder="Filter sections…">
+  </div>
+  <nav class="toc">
+    <div class="toc">
+<ul>
+<li><a href="#home-network-security-router-codename-sentinel">Home Network Security Router — Codename "Sentinel"</a></li>
+<li><a href="#prepared-by-product-owner-scrum-master">Prepared by: Product Owner / Scrum Master</a></li>
+<li><a href="#date-august-21-2026-v6-audit-correction-pass">Date: August 21, 2026 — v6, Audit &amp; Correction Pass</a></li>
+<li><a href="#companion-document-01-competitive-analysis-firewallamd-v5">Companion document: 01-Competitive-Analysis-Firewalla.md (v5)</a></li>
+<li><a href="#1-product-vision">1. Product Vision</a></li>
+<li><a href="#2-personas">2. Personas</a></li>
+<li><a href="#3-epics">3. Epics</a></li>
+<li><a href="#4-product-backlog-by-epic">4. Product Backlog (by Epic)</a><ul>
+<li><a href="#epic-1-onboarding-setup">Epic 1 — Onboarding &amp; Setup</a></li>
+<li><a href="#epic-2-core-threat-protection-dpi-ids-ips">Epic 2 — Core Threat Protection (DPI / IDS / IPS)</a></li>
+<li><a href="#epic-3-network-segmentation-zero-trust">Epic 3 — Network Segmentation &amp; Zero Trust</a></li>
+<li><a href="#epic-4-transparency-explainability-key-differentiator">Epic 4 — Transparency &amp; Explainability (Key Differentiator)</a></li>
+<li><a href="#epic-5-parental-controls-content-filtering">Epic 5 — Parental Controls &amp; Content Filtering</a></li>
+<li><a href="#epic-6-vpn-server-client">Epic 6 — VPN (Server &amp; Client)</a></li>
+<li><a href="#epic-7-wi-fi-integration">Epic 7 — Wi-Fi Integration</a></li>
+<li><a href="#epic-8-ad-tracker-blocking">Epic 8 — Ad &amp; Tracker Blocking</a></li>
+<li><a href="#epic-9-multi-wan-reliability">Epic 9 — Multi-WAN &amp; Reliability</a></li>
+<li><a href="#epic-10-mobile-app-dashboard">Epic 10 — Mobile App &amp; Dashboard</a></li>
+<li><a href="#epic-11-fleet-management-msp-small-business">Epic 11 — Fleet Management / MSP (Small Business)</a></li>
+<li><a href="#epic-12-developer-power-user-extensibility">Epic 12 — Developer &amp; Power-User Extensibility</a></li>
+<li><a href="#epic-13-privacy-data-handling">Epic 13 — Privacy &amp; Data Handling</a></li>
+<li><a href="#epic-14-hardware-lineup-pricing">Epic 14 — Hardware Lineup &amp; Pricing</a></li>
+<li><a href="#epic-15-new-regulatory-compliance-domestic-manufacturing">Epic 15 — [NEW] Regulatory Compliance &amp; Domestic Manufacturing</a></li>
+<li><a href="#epic-16-new-trust-disclosure-vulnerability-management">Epic 16 — [NEW] Trust, Disclosure &amp; Vulnerability Management</a></li>
+<li><a href="#epic-17-new-v3-beginner-first-education-onboarding-content">Epic 17 — [NEW v3] Beginner-First Education &amp; Onboarding Content</a></li>
+<li><a href="#epic-18-new-v5-openwrt-platform-foundation">Epic 18 — [NEW v5] OpenWrt Platform Foundation</a></li>
+</ul>
+</li>
+<li><a href="#5-release-roadmap-suggested">5. Release Roadmap (Suggested)</a><ul>
+<li><a href="#new-sprint-0-can-we-even-ship-this-pre-development-gate">[NEW] Sprint 0 — "Can We Even Ship This" (Pre-Development Gate)</a></li>
+<li><a href="#mvp-release-10-table-stakes-trust">MVP / Release 1.0 — "Table Stakes + Trust"</a></li>
+<li><a href="#release-11-power-reliability">Release 1.1 — "Power &amp; Reliability"</a></li>
+<li><a href="#release-20-scale-extensibility">Release 2.0 — "Scale &amp; Extensibility"</a></li>
+</ul>
+</li>
+<li><a href="#6-definition-of-ready-dor">6. Definition of Ready (DoR)</a></li>
+<li><a href="#7-definition-of-done-dod">7. Definition of Done (DoD)</a></li>
+<li><a href="#8-new-v4-scrum-master-refinement-pass-sprint-1-candidate-set">8. [NEW v4] Scrum Master Refinement Pass — Sprint 1 Candidate Set</a><ul>
+<li><a href="#81-invest-audit-oversized-stories-flagged-for-splitting">8.1 INVEST Audit — Oversized Stories Flagged for Splitting</a></li>
+<li><a href="#82-sprint-1-refined-ready-stories-givenwhenthen">8.2 Sprint 1 — Refined "Ready" Stories (Given/When/Then)</a></li>
+<li><a href="#83-sprint-planning-support">8.3 Sprint Planning Support</a></li>
+<li><a href="#84-facilitation-script-backlog-refinement-session-60-min">8.4 Facilitation Script — Backlog Refinement Session (60 min)</a></li>
+<li><a href="#85-coaching-tip-for-the-product-owner">8.5 Coaching Tip for the Product Owner</a></li>
+<li><a href="#86-refinement-cadence-for-the-remaining-backlog">8.6 Refinement Cadence for the Remaining Backlog</a></li>
+</ul>
+</li>
+<li><a href="#9-open-risks-questions-for-backlog-refinement">9. Open Risks &amp; Questions for Backlog Refinement</a></li>
+<li><a href="#10-backlog-health-snapshot-v6-recounted">10. Backlog Health Snapshot (v6 — recounted)</a></li>
+<li><a href="#11-change-log">11. Change Log</a></li>
+</ul>
+</div>
+
+  </nav>
+</aside>
+
+<div class="wrap">
+  <div class="topbar">
+    <span class="path"><b>Product Backlog</b> &nbsp;/&nbsp; PRODUCT BACKLOG · v4</span>
+    <button id="menubtn">☰ Menu</button>
+    <span class="actions"><a href="01-Competitive-Analysis-Firewalla.html">← Competitive Analysis</a></span>
+  </div>
+  <main>
+    <div class="doc-header">
+      <p class="kicker">PRODUCT BACKLOG · v4</p>
+      <h1>Product Backlog &amp; User Stories</h1>
+      <p class="sub">Sentinel Home Network Security Router</p>
+    </div>
+    <h1 id="product-backlog-user-stories">Product Backlog &amp; User Stories</h1>
+<h3 id="home-network-security-router-codename-sentinel">Home Network Security Router — Codename "Sentinel"</h3>
+<h3 id="prepared-by-product-owner-scrum-master">Prepared by: Product Owner / Scrum Master</h3>
+<h3 id="date-august-21-2026-v6-audit-correction-pass">Date: August 21, 2026 — <strong>v6, Audit &amp; Correction Pass</strong></h3>
+<h3 id="companion-document-01-competitive-analysis-firewallamd-v5">Companion document: 01-Competitive-Analysis-Firewalla.md (v5)</h3>
+<blockquote class="revnote">
+<p><strong>Revision note (v6):</strong> A programmatic audit of this backlog found that the health-snapshot metrics in v2–v5 were <strong>carried-forward estimates, not actual counts</strong> — the backlog is materially larger than previously stated (94 stories / 52 P0, not 83 / 39). Section 10 is now recounted from source. This surfaced a significant new finding: <strong>Release 1.0 scope appears unachievable as currently defined</strong> (~15 sprints for the P0 set alone), now logged as Open Risk #16 with a recommended MVP-cut session before Sprint 1. This pass also fixed leftover subsection numbering (Section 8's subsections were still labelled 11.x), repaired broken internal cross-references, and merged a duplicated Epic 13 heading.</p>
+<p><strong>Revision note (v5):</strong> The team has decided to build Sentinel on <strong>OpenWrt</strong> rather than a general-purpose Linux distro (confirmed via research that Firewalla itself runs on Ubuntu, not OpenWrt — see companion doc Section 1.6). This pass adds <strong>Epic 18 (OpenWrt Platform Foundation)</strong> with 6 new stories, re-scores several existing stories now that VLANs, VPN, and firewalling ship as mature OpenWrt packages rather than from-scratch builds, adds a Wi-Fi 7 driver-maturity risk flag to <code class="story-id">US-7.1</code>, and adds an upstream-security-tracking story to Epic 16. New/changed content marked <span class="tag tag-new v5">[NEW v5]</span>.</p>
+</blockquote>
+<hr />
+<h2 id="1-product-vision">1. Product Vision</h2>
+<blockquote class="revnote">
+<p>Give every household enterprise-grade network visibility and protection — without a subscription, without a networking degree, and without hiding <em>why</em> something was blocked.</p>
+</blockquote>
+<p>Sentinel competes directly with Firewalla by matching its core security stack, and differentiates on <strong>transparency, simplicity of the hardware lineup, integrated Wi-Fi, and reduced "active management" burden</strong>, per the findings in the competitive analysis.</p>
+<hr />
+<h2 id="2-personas">2. Personas</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Persona</th>
+<th>Description</th>
+<th>Primary Needs</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>P1 — Nervous Nadia</strong></td>
+<td>Non-technical parent, 2–3 kids, smart TV + phones + a few IoT gadgets. Bought the device because a friend recommended it "for the kids."</td>
+<td>Dead-simple setup, parental controls, doesn't want to touch VLANs ever. <em>[Needs-analysis merge]</em> The household's de facto IT department: content filtering by age category, scheduled internet pauses (bedtime/mealtime), per-kid profiles with a one-tap pause button, usage dashboards (screen time, top categories), automated malicious-domain/phishing blocking, IoT isolation from family devices, mobile-app-first setup and troubleshooting, "it just works" reliability with minimal reboots, and a guest network for visitors/babysitters.</td>
+</tr>
+<tr>
+<td><strong>P2 — IoT Ivan</strong></td>
+<td>Enthusiast homeowner, 40+ connected devices (cameras, sensors, smart plugs), some technical skill.</td>
+<td>Segmentation, device visibility, IoT isolation, moderate VPN use. <em>[Needs-analysis merge]</em> Tri-band/Wi-Fi 6E-7 capacity to keep 50+ sensors stable on 2.4 GHz while offloading heavy devices to 5/6 GHz, support for 100+ connected devices without degradation, a dedicated isolated IoT SSID/VLAN so smart bulbs/plugs can't reach personal PCs, Thread/Matter/Zigbee hub compatibility, and mesh expandability with seamless roaming (802.11k/v/r or EasyMesh) across nodes.</td>
+</tr>
+<tr>
+<td><strong>P3 — Remote-Worker Rae</strong></td>
+<td>Works from home, handles sensitive company data, uses a company VPN.</td>
+<td>Stable multi-WAN failover, guest network isolation, secure remote access to home network, minimal latency. <em>[Needs-analysis merge]</em> Application-aware QoS that prioritizes Zoom/Teams/VPN traffic over background downloads, strong upload speed and low latency for video calls, secondary 5G/4G or fiber failover to avoid downtime mid-meeting, VPN support (client and/or server) for remote access into the home network, and VLAN segmentation to isolate corporate devices from untrusted smart-home gear.</td>
+</tr>
+<tr>
+<td><strong>P4 — Power-User Priya</strong></td>
+<td>Home-labber / sysadmin, self-hosts services, wants full control.</td>
+<td>API access, Docker/container support, advanced routing, open logs, self-hosted option.</td>
+</tr>
+<tr>
+<td><strong>P5 — Small-Office Sam</strong></td>
+<td>Runs a 5–15 person small business/office from a converted space.</td>
+<td>Multi-site management (MSP-style), compliance-friendly reporting, more device headroom. <em>[Needs-analysis merge]</em> Static IP or reliable DDNS for hosting business-facing services (POS, booking calendar), multi-WAN failover since downtime has direct revenue impact, a separate network for point-of-sale/payment devices isolated from personal/family devices (often a PCI-DSS compliance requirement), guest Wi-Fi for customers kept separate from business-critical systems, and bandwidth prioritization for business traffic during business hours.</td>
+</tr>
+<tr>
+<td><strong>P6 — [NEW] Compliance-Conscious Carl</strong></td>
+<td>Retail buyer/procurement lead (or a security-literate consumer) who explicitly checks country-of-origin and supply-chain documentation before purchasing, post-FCC Covered List rule.</td>
+<td>Clear "designed/made in USA" or equivalent compliance claim, visible HBOM/SBOM or equivalent trust signal, confidence the product won't be pulled from the market by future regulation.</td>
+</tr>
+<tr>
+<td><strong>P7 — <em>[Needs-analysis merge]</em> Gamer Gavin</strong></td>
+<td>Hardcore gamer/tech enthusiast chasing deterministic performance — zero latency spikes, maximum control.</td>
+<td>Low-jitter/ping prioritization via QoS, stable connection during peak household usage (no lag spikes from parallel streaming), multi-gig Ethernet (2.5G/10G) and wired backhaul for a dedicated gaming rig, simple port forwarding/UPnP for game servers and NAT issues, VPN client/server support, and detailed network telemetry.</td>
+</tr>
+<tr>
+<td><strong>P8 — <em>[Needs-analysis merge]</em> Teen Tyler</strong></td>
+<td>Teen/kid user — fast, uninterrupted access, largely indifferent to admin/security settings and occasionally motivated to circumvent them.</td>
+<td>Reliable Wi-Fi reach into bedrooms (dead zones are the #1 complaint), low latency for gaming/streaming with friends, ability to earn extra time/access through reward-based systems rather than pure restriction, a personal device profile so usage isn't blamed on/mixed with siblings', and fair, transparent limits — kids increasingly notice when controls feel opaque or excessive.</td>
+</tr>
+<tr>
+<td><strong>P9 — <em>[Needs-analysis merge]</em> Binge-Watching Bea</strong></td>
+<td>Streaming/media household running multiple simultaneous 4K/HD streams without buffering.</td>
+<td>Strong 5/6 GHz throughput to the entertainment center, MU-MIMO/OFDMA to handle many simultaneous devices without slowdown, consistent performance during peak evening hours when the whole household streams at once, and QoS that prevents one 4K stream or large download from starving others.</td>
+</tr>
+<tr>
+<td><strong>P10 — <em>[Needs-analysis merge]</em> Away Aaron</strong></td>
+<td>Away-from-home user who needs to securely reach and control cameras, smart locks, thermostats, and sensors from anywhere without exposing the home to the open internet.</td>
+<td>Live view/playback/alerts from a phone or desktop app with a low-bandwidth mode for mobile data, push notifications for motion/person/package detection, geofencing and automations that don't depend on being physically present, and — the router-relevant decision — a built-in, easy-to-enable VPN server plus DDNS support so remote access doesn't depend on port forwarding or a third-party vendor cloud, with cameras/IoT on an isolated VLAN so a compromised device can't pivot to the rest of the network.</td>
+</tr>
+<tr>
+<td><strong>P11 — <em>[Needs-analysis merge]</em> Pet-Parent Paula</strong></td>
+<td>Pet owner relying on always-on, low-latency connectivity for cameras, feeders, and trackers, often overlapping with Away Aaron (P10) but motivated by pet care rather than general home monitoring.</td>
+<td>Uptime matters more than raw speed since devices run unattended for hours (a dropped connection means a missed feeding or a blind spot), reliable low-power/low-bandwidth IoT support for battery-powered gadgets, and the same remote-access considerations as P10 (cloud relay vs. VPN).</td>
+</tr>
+<tr>
+<td><strong>P12 — <em>[Needs-analysis merge]</em> Set-and-Forget Stan</strong></td>
+<td>Non-tech-savvy user or senior who wants "set it and forget it" reliability with zero maintenance.</td>
+<td>Mobile-app-guided setup with QR codes (no browser-based 192.168.1.1 config), automated background firmware updates with no user intervention, self-healing behavior (automatic channel switching, self-reboot on degraded connection), clear app guidance or phone support when issues arise, and larger text/high-contrast UI with voice-guided or screen-reader-compatible setup flows for visually impaired users.</td>
+</tr>
+<tr>
+<td><strong>P13 — <em>[Needs-analysis merge]</em> Local-First Layla</strong></td>
+<td>Privacy/security-conscious user focused on data protection and what the router vendor itself does with usage data — distinct from P6 Carl's supply-chain/compliance focus.</td>
+<td>WPA3 encryption and regular automatic firmware updates, built-in malware/threat blocking, no data-harvesting practices from the router vendor, the option to run her own DNS/VPN or use open-source firmware, and a strong preference for a router that works fully on the local network without a mandatory cloud-account sign-up.</td>
+</tr>
+<tr>
+<td><strong>P14 — <em>[Needs-analysis merge]</em> Multi-Gen Maria</strong></td>
+<td>Large or multi-generational household needing whole-home coverage without performance loss as user count grows.</td>
+<td>Mesh systems eliminating dead zones, band steering that auto-connects devices to the best band, enough capacity for many concurrent users without degradation, and multiple SSIDs/family zones (e.g. a separate network for an in-law suite).</td>
+</tr>
+<tr>
+<td><strong>P15 — <em>[Needs-analysis merge]</em> Roommate Robin</strong></td>
+<td>Shared-housing roommate wanting fair, neutral access without one person acting as network administrator over the others.</td>
+<td>Flat, guest-style access rather than a parent/child control hierarchy, per-device usage visibility for fair cost-splitting, each roommate's browsing/device activity isolated from the others' view, a simple guest network for one roommate's visitors that doesn't require asking the others, and easy device removal/network reset on move-out.</td>
+</tr>
+<tr>
+<td><strong>P16 — <em>[Needs-analysis merge]</em> Renter Reese</strong></td>
+<td>Apartment dweller needing portability and resilience in a dense, interference-prone environment.</td>
+<td>Compact form factor with no wall-mounting or cabling, easy to take when moving, and automatic/manual channel management to handle neighboring-network congestion common in apartment buildings.</td>
+</tr>
+<tr>
+<td><strong>P17 — <em>[Needs-analysis merge]</em> Vacation-Home Vic</strong></td>
+<td>Multi-property/vacation-home owner monitoring and controlling a property they aren't physically present at for extended stretches — often the actual primary motivation behind a "smart router" purchase.</td>
+<td>Network-level alerts if the property loses internet or power, the ability to remotely reboot the router without being on-site, cellular (LTE) failover so a local ISP outage doesn't cut off monitoring, time-limited or auto-expiring guest credentials tied to booking dates for short-term rentals, and simple credential rotation between guests without needing to be on-site.</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2 id="3-epics">3. Epics</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Epic</th>
+<th>Competitive Rationale</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="epic-id">E1</code></td>
+<td>Onboarding &amp; Setup</td>
+<td>Firewalla's own docs admit it's "not set-and-forget" and assumes networking literacy — biggest UX gap for P1.</td>
+</tr>
+<tr>
+<td><code class="epic-id">E2</code></td>
+<td>Core Threat Protection (DPI/IDS/IPS)</td>
+<td>Table-stakes; must match Firewalla feature-for-feature.</td>
+</tr>
+<tr>
+<td><code class="epic-id">E3</code></td>
+<td>Network Segmentation &amp; Zero Trust</td>
+<td>Firewalla's strongest feature; VLAN caps and confusion are the opportunity.</td>
+</tr>
+<tr>
+<td><code class="epic-id">E4</code></td>
+<td>Transparency &amp; Explainability</td>
+<td>Documented Firewalla gap: opaque blocking decisions, no visible logs.</td>
+</tr>
+<tr>
+<td><code class="epic-id">E5</code></td>
+<td>Parental Controls &amp; Content Filtering</td>
+<td>Table-stakes for P1.</td>
+</tr>
+<tr>
+<td><code class="epic-id">E6</code></td>
+<td>VPN (Server &amp; Client)</td>
+<td>Table-stakes for P2/P3/P4.</td>
+</tr>
+<tr>
+<td><code class="epic-id">E7</code></td>
+<td>Wi-Fi Integration</td>
+<td>Firewalla's most-cited hardware gap (most models need a separate AP).</td>
+</tr>
+<tr>
+<td><code class="epic-id">E8</code></td>
+<td>Ad &amp; Tracker Blocking</td>
+<td>Table-stakes; low effort, high perceived value.</td>
+</tr>
+<tr>
+<td><code class="epic-id">E9</code></td>
+<td>Multi-WAN &amp; Reliability</td>
+<td>Addresses documented WAN-stability complaints.</td>
+</tr>
+<tr>
+<td><code class="epic-id">E10</code></td>
+<td>Mobile App &amp; Dashboard</td>
+<td>Primary UX surface; must be as good or better than Firewalla's app.</td>
+</tr>
+<tr>
+<td><code class="epic-id">E11</code></td>
+<td>Fleet Management / MSP (Small Business)</td>
+<td>For P5; secondary market expansion.</td>
+</tr>
+<tr>
+<td><code class="epic-id">E12</code></td>
+<td>Developer &amp; Power-User Extensibility</td>
+<td>For P4; API, Docker, self-hosting, open logs.</td>
+</tr>
+<tr>
+<td><code class="epic-id">E13</code></td>
+<td>Privacy &amp; Data Handling</td>
+<td>Differentiator: local-first by default, explicit cloud opt-in (Firewalla's MSP data-retention model is a known point of scrutiny).</td>
+</tr>
+<tr>
+<td><code class="epic-id">E14</code></td>
+<td>Hardware Lineup &amp; Pricing</td>
+<td>Simplify vs. Firewalla's 7+ confusing SKUs.</td>
+</tr>
+<tr>
+<td><code class="epic-id">E15</code></td>
+<td><span class="tag tag-new">[NEW]</span> Regulatory Compliance &amp; Domestic Manufacturing</td>
+<td>March 2026 FCC Covered List rule bans most foreign-made consumer routers — this is now a market-entry gate, not a differentiator.</td>
+</tr>
+<tr>
+<td><code class="epic-id">E16</code></td>
+<td><span class="tag tag-new">[NEW]</span> Trust, Disclosure &amp; Vulnerability Management</td>
+<td>Firewalla has documented, repeated community backlash over slow/absent CVE disclosure — a cheap, high-trust differentiator.</td>
+</tr>
+<tr>
+<td><code class="epic-id">E17</code></td>
+<td><span class="tag tag-new v3">[NEW v3]</span> Beginner-First Education &amp; Onboarding Content</td>
+<td>Documentation strategy analysis confirms Firewalla's docs assume networking literacy site-wide, with no true beginner track — the single clearest unaddressed audience gap in the category (companion doc Section 10.3/10.6).</td>
+</tr>
+<tr>
+<td><code class="epic-id">E18</code></td>
+<td><span class="tag tag-new v5">[NEW v5]</span> OpenWrt Platform Foundation</td>
+<td>Architecture decision to build on OpenWrt rather than a general-purpose distro (Firewalla runs on Ubuntu, not OpenWrt — companion doc Section 1.6). De-risks DPI, VLAN/segmentation, and VPN builds, but introduces new foundational work: hardware target selection, GPL boundary design, upstream security tracking, and OTA update mechanism.</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2 id="4-product-backlog-by-epic">4. Product Backlog (by Epic)</h2>
+<p>Format: <strong>US-#</strong> — As a [persona], I want [capability], so that [benefit].
+Priority: <strong>P0</strong> (MVP-blocking) / <strong>P1</strong> (fast-follow) / <strong>P2</strong> (roadmap) — MoSCoW-style.
+Estimate: Story points (Fibonacci: 1,2,3,5,8,13).</p>
+<h3 id="epic-1-onboarding-setup">Epic 1 — Onboarding &amp; Setup</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Story</th>
+<th>Acceptance Criteria</th>
+<th>Priority</th>
+<th>Points</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="story-id">US-1.1</code></td>
+<td>As Nadia, I want to set up my device in under 10 minutes using only my phone, so that I don't need technical help.</td>
+<td>App detects box via QR/Bluetooth; guided wizard completes WAN, LAN, and basic security defaults in ≤6 screens; success confirmation shown.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>8</td>
+</tr>
+<tr>
+<td><code class="story-id">US-1.2</code></td>
+<td>As Nadia, I want the app to auto-detect my network topology (ISP modem, mesh router, etc.), so that I don't have to know terms like "bridge mode."</td>
+<td>Wizard asks plain-language questions ("Do you have one Wi-Fi box or several?") and maps answers to correct install mode internally.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>8</td>
+</tr>
+<tr>
+<td><code class="story-id">US-1.3</code></td>
+<td>As any user, I want a guided post-install security wizard that turns on sensible defaults (ad block, IDS, basic segmentation), so that I'm protected without configuring anything manually.</td>
+<td>Wizard triggers automatically after first boot; can be re-run anytime from Settings.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>5</td>
+</tr>
+<tr>
+<td><code class="story-id">US-1.4</code></td>
+<td>As Rae, I want clear guidance on where to physically plug in the device for my specific setup (ISP combo, separate router, mesh), so that I install it correctly the first time.</td>
+<td>In-app diagrams for at least 3 common topologies; fallback "email support" CTA.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>3</td>
+</tr>
+<tr>
+<td><code class="story-id">US-1.5</code></td>
+<td>As Priya, I want an option to set a static IP and access advanced setup via a local web UI, so that I'm not fully dependent on the mobile app.</td>
+<td>Local web UI reachable via LAN IP; feature-complete parity with critical app functions.</td>
+<td><span class="badge badge-p1">P1</span></td>
+<td>5</td>
+</tr>
+<tr>
+<td><code class="story-id">US-1.6</code></td>
+<td>As any user, I want to pair the box with multiple phones/family members, so that more than one person can manage the network.</td>
+<td>Support ≥5 concurrent paired users with role permissions (admin/viewer).</td>
+<td><span class="badge badge-p1">P1</span></td>
+<td>5</td>
+</tr>
+<tr>
+<td><code class="story-id">US-1.7</code></td>
+<td><span class="tag tag-new v3">[NEW v3]</span> As any user, I want to log into my account and app using a passkey (not just a password), so that account access is both more secure and more convenient.</td>
+<td>Passkey auth (WebAuthn/FIDO2) supported at launch for app and any web console — matches Firewalla's Aug 2026 MSP addition, should not lag as a "fast-follow."</td>
+<td><span class="badge badge-p1">P1</span></td>
+<td>5</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="epic-2-core-threat-protection-dpi-ids-ips">Epic 2 — Core Threat Protection (DPI / IDS / IPS)</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Story</th>
+<th>Acceptance Criteria</th>
+<th>Priority</th>
+<th>Points</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="story-id">US-2.1</code></td>
+<td>As Ivan, I want all traffic on my network inspected in real time (DPI), so that malicious traffic is caught regardless of device type. <span class="tag tag-new v5">[NEW v5]</span> <em>Re-scored: OpenWrt provides the nftables/fw4 packet path natively — this story is now "integrate + tune a DPI engine (e.g., Suricata/nDPI) on top," not "build packet inspection from scratch."</em></td>
+<td>DPI engine classifies traffic by app/category; inspected throughput matches hardware tier spec sheet within 10%.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>~~13~~ <strong>8</strong></td>
+</tr>
+<tr>
+<td><code class="story-id">US-2.2</code></td>
+<td>As any user, I want intrusion detection with real-time push alerts, so that I know immediately if something suspicious happens.</td>
+<td>Alert delivered to app within 5 seconds of detection; includes device, timestamp, and threat type.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>8</td>
+</tr>
+<tr>
+<td><code class="story-id">US-2.3</code></td>
+<td>As any user, I want intrusion prevention (not just detection) that can auto-block active attacks, so that I don't have to react manually every time.</td>
+<td>Auto-block toggle available per rule/category; default ON for high-confidence threats.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>8</td>
+</tr>
+<tr>
+<td><code class="story-id">US-2.4</code></td>
+<td>As Ivan, I want geo-IP filtering to block traffic from countries I choose, so that I reduce exposure to high-risk regions.</td>
+<td>Unlimited country blocks on all hardware tiers (explicit differentiation from Firewalla's Purple-tier limits).</td>
+<td><span class="badge badge-p1">P1</span></td>
+<td>3</td>
+</tr>
+<tr>
+<td><code class="story-id">US-2.5</code></td>
+<td>As any user, I want automated open-port scanning of my network, so that I'm alerted if a device is unexpectedly exposed to the internet.</td>
+<td>Weekly automatic scan + on-demand scan button; results flagged by severity.</td>
+<td><span class="badge badge-p1">P1</span></td>
+<td>5</td>
+</tr>
+<tr>
+<td><code class="story-id">US-2.6</code></td>
+<td>As Ivan, I want new devices automatically quarantined until I approve them, so that rogue devices can't silently join my network.</td>
+<td>New-device quarantine ON by default; one-tap approve/deny from push notification.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>5</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="epic-3-network-segmentation-zero-trust">Epic 3 — Network Segmentation &amp; Zero Trust</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Story</th>
+<th>Acceptance Criteria</th>
+<th>Priority</th>
+<th>Points</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="story-id">US-3.1</code></td>
+<td>As Ivan, I want to create isolated network segments (VLANs) for IoT, guests, and family devices, so that a compromised smart plug can't reach my laptop. <span class="tag tag-new v5">[NEW v5]</span> <em>Re-scored: OpenWrt's native bridge/VLAN/nftables support means the underlying capability exists — remaining work is app UX, cross-tier QA, and integration with our quarantine/segment presets (<code class="story-id">US-3.2</code>), not building VLAN plumbing itself.</em></td>
+<td>Unlimited VLANs on ALL hardware tiers (explicit differentiator vs. Firewalla's tiered VLAN caps).</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>~~13~~ <strong>8</strong></td>
+</tr>
+<tr>
+<td><code class="story-id">US-3.2</code></td>
+<td>As Nadia, I want a one-tap "Kid Zone" and "IoT Zone" preset that auto-segments common device types, so that I get segmentation benefits without configuring VLANs myself.</td>
+<td>Presets detect device type via fingerprinting and suggest zone assignment; one-tap accept.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>8</td>
+</tr>
+<tr>
+<td><code class="story-id">US-3.3</code></td>
+<td>As Ivan, I want device-level microsegmentation so that even devices on the same VLAN can't talk to each other unless explicitly allowed.</td>
+<td>Default-deny lateral traffic between devices in the same segment unless an allow-rule exists.</td>
+<td><span class="badge badge-p1">P1</span></td>
+<td>8</td>
+</tr>
+<tr>
+<td><code class="story-id">US-3.4</code></td>
+<td>As Rae, I want a fully isolated guest network with its own captive portal / QR-code Wi-Fi sharing, so that visitors never touch my main LAN.</td>
+<td>QR-generated guest access; guest segment cannot reach any other segment by default.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>5</td>
+</tr>
+<tr>
+<td><code class="story-id">US-3.5</code></td>
+<td>As Priya, I want to define Zero Trust least-privilege rules per device/user, so that nothing is trusted by default even inside my LAN.</td>
+<td>Rule engine supports allow-list-only mode per segment.</td>
+<td><span class="badge badge-p1">P1</span></td>
+<td>8</td>
+</tr>
+<tr>
+<td><code class="story-id">US-3.6</code></td>
+<td><span class="tag tag-new">[NEW]</span> As any user, I want my devices correctly recognized even when my phone/laptop uses MAC address randomization (an OS-level privacy feature), so that I don't get falsely flagged as a "new device" every time I reconnect, and I'm never pushed to disable a privacy feature to make the security device work.</td>
+<td>Device identity uses a combination of behavioral/traffic fingerprinting and MAC, tolerant of rotating MAC addresses, without requiring the user to disable OS privacy features (directly addresses a documented Firewalla UX/privacy contradiction).</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>13</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="epic-4-transparency-explainability-key-differentiator">Epic 4 — Transparency &amp; Explainability (Key Differentiator)</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Story</th>
+<th>Acceptance Criteria</th>
+<th>Priority</th>
+<th>Points</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="story-id">US-4.1</code></td>
+<td>As any user, I want a plain-English explanation for every blocked connection ("why was this blocked"), so that I understand and trust the system's decisions.</td>
+<td>Every block event has a tap-through detail view: rule triggered, category, source/destination, timestamp.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>8</td>
+</tr>
+<tr>
+<td><code class="story-id">US-4.2</code></td>
+<td>As any user, I want to see full historical logs (not just recent alarms), so that I can investigate past issues.</td>
+<td>Local log retention ≥30 days by default, exportable; no forced cloud dependency to view history.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>5</td>
+</tr>
+<tr>
+<td><code class="story-id">US-4.3</code></td>
+<td>As Priya, I want to search/filter logs by device, category, and time range, so that I can debug connectivity issues quickly.</td>
+<td>Filterable log UI in both app and local web UI.</td>
+<td><span class="badge badge-p1">P1</span></td>
+<td>5</td>
+</tr>
+<tr>
+<td><code class="story-id">US-4.4</code></td>
+<td>As any user, I want a plain-language explanation when a device or site I expect to work is blocked, with a one-tap "allow" override, so that I can self-resolve false positives without contacting support.</td>
+<td>"Troubleshoot this block" flow surfaces the exact rule and an inline unblock action.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>5</td>
+</tr>
+<tr>
+<td><code class="story-id">US-4.5</code></td>
+<td>As Nadia, I want a simple weekly "Network Health" summary (in plain language, not jargon), so that I understand what my device did for me without reading logs.</td>
+<td>Push/email digest: threats blocked, top data users, new devices, one actionable tip.</td>
+<td><span class="badge badge-p1">P1</span></td>
+<td>5</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="epic-5-parental-controls-content-filtering">Epic 5 — Parental Controls &amp; Content Filtering</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Story</th>
+<th>Acceptance Criteria</th>
+<th>Priority</th>
+<th>Points</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="story-id">US-5.1</code></td>
+<td>As Nadia, I want to block content categories (adult, gambling, violence, social media) per device or per person, so that I can tailor rules to each child's age.</td>
+<td>Category list ≥15 categories; assignable per device or per user profile.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>8</td>
+</tr>
+<tr>
+<td><code class="story-id">US-5.2</code></td>
+<td>As Nadia, I want to enforce Safe Search across major search engines and video platforms, so that inappropriate content doesn't surface even in search results.</td>
+<td>SafeSearch enforced for Google, Bing, YouTube, DuckDuckGo by default when category filter is ON.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>5</td>
+</tr>
+<tr>
+<td><code class="story-id">US-5.3</code></td>
+<td>As Nadia, I want to set screen-time schedules (e.g., no internet after 9pm) per device or person, so that I can manage bedtime routines without confiscating devices.</td>
+<td>Schedule engine supports recurring time windows per device/user/group.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>5</td>
+</tr>
+<tr>
+<td><code class="story-id">US-5.4</code></td>
+<td>As Nadia, I want a one-tap "pause internet" button for a specific device or the whole house, so that I can quickly handle dinnertime or homework time.</td>
+<td>Pause action reachable in ≤2 taps from home screen; auto-resume option.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>3</td>
+</tr>
+<tr>
+<td><code class="story-id">US-5.5</code></td>
+<td>As Nadia, I want to assign rules to a <em>person</em> (who may use multiple devices), not just a single device, so that rules follow my child across their phone, tablet, and laptop.</td>
+<td>"User" object aggregates multiple device MAC/IPs under one identity and rule set.</td>
+<td><span class="badge badge-p1">P1</span></td>
+<td>8</td>
+</tr>
+<tr>
+<td><code class="story-id">US-5.6</code></td>
+<td>As Nadia, I want to see a weekly app/category usage report per child, so that I can have informed conversations about screen time.</td>
+<td>Auto-generated report, opt-in delivery via app/email.</td>
+<td><span class="badge badge-p1">P1</span></td>
+<td>5</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="epic-6-vpn-server-client">Epic 6 — VPN (Server &amp; Client)</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Story</th>
+<th>Acceptance Criteria</th>
+<th>Priority</th>
+<th>Points</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="story-id">US-6.1</code></td>
+<td>As Rae, I want a built-in VPN server (WireGuard) so I can securely access my home network while traveling, with no subscription fee. <span class="tag tag-new v5">[NEW v5]</span> <em>Re-scored: WireGuard ships as a mature OpenWrt package — remaining work is app-side config/QR export and UX, not protocol implementation.</em></td>
+<td>WireGuard server toggled ON in ≤2 taps; QR-code config export for mobile clients.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>~~8~~ <strong>5</strong></td>
+</tr>
+<tr>
+<td><code class="story-id">US-6.2</code></td>
+<td>As Priya, I want OpenVPN server support in addition to WireGuard, for compatibility with older clients. <span class="tag tag-new v5">[NEW v5]</span> <em>Re-scored: also a stock OpenWrt package.</em></td>
+<td>OpenVPN server available as alternate option.</td>
+<td><span class="badge badge-p1">P1</span></td>
+<td>~~5~~ <strong>3</strong></td>
+</tr>
+<tr>
+<td><code class="story-id">US-6.3</code></td>
+<td>As Ivan, I want to route specific devices through a third-party commercial VPN (VPN client mode), so that I can control privacy per device.</td>
+<td>Per-device VPN client routing; supports OpenVPN/WireGuard config import.</td>
+<td><span class="badge badge-p1">P1</span></td>
+<td>5</td>
+</tr>
+<tr>
+<td><code class="story-id">US-6.4</code></td>
+<td>As Sam, I want site-to-site VPN to connect two physical locations (e.g., home + office), so that both networks function as one.</td>
+<td>Site-to-site tunnel setup wizard between two of our devices.</td>
+<td><span class="badge badge-p2">P2</span></td>
+<td>8</td>
+</tr>
+<tr>
+<td><code class="story-id">US-6.5</code></td>
+<td>As Rae, I want VPN performance that doesn't cripple my connection, so that video calls remain usable while connected remotely.</td>
+<td>WireGuard throughput ≥300 Mbps on flagship tier (explicit target above Firewalla's ~220 Mbps benchmark).</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>8</td>
+</tr>
+<tr>
+<td><code class="story-id">US-6.6</code></td>
+<td><span class="tag tag-new v3">[NEW v3]</span> As Ivan, I want to connect via a censorship-resistant VPN protocol (e.g., AmneziaWG or equivalent) in addition to standard WireGuard/OpenVPN, so that I can maintain secure access when traveling in networks that actively block standard VPN signatures.</td>
+<td>At least one obfuscated/censorship-resistant VPN protocol supported, matching Firewalla's Aug 2026 AmneziaWG addition.</td>
+<td><span class="badge badge-p2">P2</span></td>
+<td>8</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="epic-7-wi-fi-integration">Epic 7 — Wi-Fi Integration</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Story</th>
+<th>Acceptance Criteria</th>
+<th>Priority</th>
+<th>Points</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="story-id">US-7.1</code></td>
+<td>As Nadia, I want my security router to also provide Wi-Fi out of the box, so that I don't need to buy and configure a separate access point. ⚠️ <strong>[NEW v5] Risk flag:</strong> mainline OpenWrt/mac80211 driver support for the newest Wi-Fi 7 silicon is still maturing as of 2026 — <strong>do not commit a launch date until a dedicated hardware/driver spike confirms a viable, well-supported chipset.</strong></td>
+<td>Flagship SKU ships with integrated Wi-Fi 7 (dual-band minimum) as default, not an add-on.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>13</td>
+</tr>
+<tr>
+<td><code class="story-id">US-7.2</code></td>
+<td>As Ivan, I want to expand Wi-Fi coverage with mesh-compatible satellite access points, so that I can cover a large home.</td>
+<td>Mesh AP accessory supports Wi-Fi/Ethernet backhaul and inherits security policies automatically.</td>
+<td><span class="badge badge-p1">P1</span></td>
+<td>13</td>
+</tr>
+<tr>
+<td><code class="story-id">US-7.3</code></td>
+<td>As any user, I want to generate a QR code for guest Wi-Fi so visitors can join without me reading out a password.</td>
+<td>QR-code Wi-Fi sharing built into the guest network flow.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>3</td>
+</tr>
+<tr>
+<td><code class="story-id">US-7.4</code></td>
+<td>As Rae, I want to see Wi-Fi signal strength and dead spots visualized in-app, so that I can decide where to place access points.</td>
+<td>In-app Wi-Fi walk-test tool with heatmap or signal-strength readout.</td>
+<td><span class="badge badge-p2">P2</span></td>
+<td>8</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="epic-8-ad-tracker-blocking">Epic 8 — Ad &amp; Tracker Blocking</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Story</th>
+<th>Acceptance Criteria</th>
+<th>Priority</th>
+<th>Points</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="story-id">US-8.1</code></td>
+<td>As any user, I want network-wide ad and tracker blocking with no extra setup, so that all my devices get a cleaner, faster browsing experience automatically.</td>
+<td>Ad-block ON by default post-setup; measurable reduction in ad requests, visible in dashboard.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>5</td>
+</tr>
+<tr>
+<td><code class="story-id">US-8.2</code></td>
+<td>As Priya, I want to import my own custom blocklists (unlimited size), so that I'm not restricted to a small built-in list.</td>
+<td>Support community blocklist import with no hard IP-count cap (explicit fix of a documented Firewalla limitation).</td>
+<td><span class="badge badge-p1">P1</span></td>
+<td>5</td>
+</tr>
+<tr>
+<td><code class="story-id">US-8.3</code></td>
+<td>As any user, I want to whitelist specific sites/apps that are broken by ad-blocking, so that I can fix false positives myself.</td>
+<td>One-tap "report broken site" → auto-whitelist flow.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>3</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="epic-9-multi-wan-reliability">Epic 9 — Multi-WAN &amp; Reliability</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Story</th>
+<th>Acceptance Criteria</th>
+<th>Priority</th>
+<th>Points</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="story-id">US-9.1</code></td>
+<td>As Sam, I want automatic failover between two internet connections, so that my network stays online if my primary ISP goes down.</td>
+<td>Failover triggers within 10 seconds of primary WAN loss; push notification sent.</td>
+<td><span class="badge badge-p1">P1</span></td>
+<td>8</td>
+</tr>
+<tr>
+<td><code class="story-id">US-9.2</code></td>
+<td>As Sam, I want load balancing across two WAN connections, so that I get combined bandwidth.</td>
+<td>Load-balancing mode selectable per WAN; per-device pinning option.</td>
+<td><span class="badge badge-p2">P2</span></td>
+<td>8</td>
+</tr>
+<tr>
+<td><code class="story-id">US-9.3</code></td>
+<td>As any user, I want the device to maintain a stable WAN connection without random disconnects, so that I never have to power-cycle it.</td>
+<td>Uptime target ≥99.9% measured over 30-day rolling window in QA; automated watchdog restart on failure with logged root cause (addresses documented Firewalla WAN-drop complaints).</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>8</td>
+</tr>
+<tr>
+<td><code class="story-id">US-9.4</code></td>
+<td>As any user, I want in-app diagnostics that explain <em>why</em> my WAN dropped (ISP issue, DHCP lease failure, hardware fault), so that I'm not left guessing.</td>
+<td>Root-cause classification shown in a dedicated "Connection Health" log.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>5</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="epic-10-mobile-app-dashboard">Epic 10 — Mobile App &amp; Dashboard</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Story</th>
+<th>Acceptance Criteria</th>
+<th>Priority</th>
+<th>Points</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="story-id">US-10.1</code></td>
+<td>As any user, I want a home dashboard showing live traffic, blocked-threat counts, and connected devices at a glance, so that I get an immediate sense of network health.</td>
+<td>Dashboard loads in &lt;2s; shows top graph, blocked count, device count, alarm count.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>8</td>
+</tr>
+<tr>
+<td><code class="story-id">US-10.2</code></td>
+<td>As any user, I want to rename devices and group them logically, so that the device list is meaningful instead of a wall of MAC addresses.</td>
+<td>Rename + custom icon + grouping supported; auto-suggested names via device fingerprinting.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>5</td>
+</tr>
+<tr>
+<td><code class="story-id">US-10.3</code></td>
+<td>As Ivan, I want to pin favorite devices/groups to my home screen, so that I can control the things I care about most quickly.</td>
+<td>Pinning supported, persists across sessions.</td>
+<td><span class="badge badge-p1">P1</span></td>
+<td>3</td>
+</tr>
+<tr>
+<td><code class="story-id">US-10.4</code></td>
+<td>As any user, I want push notifications for critical events (new device, threat blocked, WAN down) with configurable verbosity, so that I'm informed without being spammed.</td>
+<td>Notification preference center with severity thresholds.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>5</td>
+</tr>
+<tr>
+<td><code class="story-id">US-10.5</code></td>
+<td>As Priya, I want a local web UI as a full alternative to the mobile app, so that I can manage the network from a desktop without cloud dependency.</td>
+<td>Local web UI reachable at a fixed LAN address, full feature parity with core app functions.</td>
+<td><span class="badge badge-p1">P1</span></td>
+<td>8</td>
+</tr>
+<tr>
+<td><code class="story-id">US-10.6</code></td>
+<td><span class="tag tag-new">[NEW]</span> As any tablet user, I want a native, properly laid-out tablet interface (not a stretched phone screen), so that the larger screen is actually useful for monitoring my network.</td>
+<td>Dedicated tablet layout (iPadOS/Android tablet) ships at or before 1.0 GA, not as a fast-follow.</td>
+<td><span class="badge badge-p1">P1</span></td>
+<td>8</td>
+</tr>
+<tr>
+<td><code class="story-id">US-10.7</code></td>
+<td><span class="tag tag-new">[NEW]</span> As Nadia, I want to define both "block" and "allow" custom time windows symmetrically (not just block windows), so that I can express rules like "only allow this app on weekdays 8am–4pm" without clunky workarounds.</td>
+<td>Schedule builder supports both allow-only and block-only modes with full day/time-range control.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>5</td>
+</tr>
+<tr>
+<td><code class="story-id">US-10.8</code></td>
+<td><span class="tag tag-new">[NEW]</span> As Ivan, I want a home-screen widget showing alarm count, blocked-threat count, and network speed at a glance, so that I don't have to open the full app for a quick status check.</td>
+<td>iOS/Android widget ships with at least 2 size variants (small/medium) by 1.1.</td>
+<td><span class="badge badge-p2">P2</span></td>
+<td>5</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="epic-11-fleet-management-msp-small-business">Epic 11 — Fleet Management / MSP (Small Business)</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Story</th>
+<th>Acceptance Criteria</th>
+<th>Priority</th>
+<th>Points</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="story-id">US-11.1</code></td>
+<td>As Sam, I want a web console to manage multiple boxes across sites, so that I can support a small business or multiple family properties from one place.</td>
+<td>MSP-style console lists all boxes, health status, and alerts in one view.</td>
+<td><span class="badge badge-p2">P2</span></td>
+<td>13</td>
+</tr>
+<tr>
+<td><code class="story-id">US-11.2</code></td>
+<td>As Sam, I want a documented REST API with token-based auth, so that I can integrate network data into other tools.</td>
+<td>Public API docs + example repo; token creation/revocation in-app.</td>
+<td><span class="badge badge-p2">P2</span></td>
+<td>8</td>
+</tr>
+<tr>
+<td><code class="story-id">US-11.3</code></td>
+<td>As Sam, I want compliance-friendly exportable reports (device inventory, blocked threats, uptime), so that I can satisfy basic audit requirements.</td>
+<td>CSV/PDF export of standard report templates.</td>
+<td><span class="badge badge-p2">P2</span></td>
+<td>5</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="epic-12-developer-power-user-extensibility">Epic 12 — Developer &amp; Power-User Extensibility</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Story</th>
+<th>Acceptance Criteria</th>
+<th>Priority</th>
+<th>Points</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="story-id">US-12.1</code></td>
+<td>As Priya, I want to run Docker containers on the device (e.g., Pi-hole, Home Assistant), so that I can extend it beyond stock functionality. <span class="tag tag-new v5">[NEW v5]</span> <em>OpenWrt supports containers on capable hardware, but this still needs resource-isolation work to protect firewall performance — kept at original estimate.</em></td>
+<td>Documented container support with resource limits to protect core firewall performance.</td>
+<td><span class="badge badge-p2">P2</span></td>
+<td>13</td>
+</tr>
+<tr>
+<td><code class="story-id">US-12.2</code></td>
+<td>As Priya, I want SSH access to the underlying OS, so that I can troubleshoot and customize at a low level. <span class="tag tag-new v5">[NEW v5]</span> <em>Re-scored: SSH/dropbear ships natively with OpenWrt — remaining work is our own auth/toggle policy layer (ties to <code class="story-id">US-16.3</code>), not building SSH access itself.</em></td>
+<td>SSH toggle in advanced settings, key-based auth only, disabled by default.</td>
+<td><span class="badge badge-p2">P2</span></td>
+<td>~~5~~ <strong>2</strong></td>
+</tr>
+<tr>
+<td><code class="story-id">US-12.3</code></td>
+<td>As Priya, I want the core firmware to be open source, so that I can audit and trust what's running on my network. <span class="tag tag-new v5">[NEW v5]</span> <em>Re-scored: building on OpenWrt makes the base OS open source by definition — remaining work is publishing our own layer's source/build config and documenting the OpenWrt version/patches we carry, not achieving openness itself.</em></td>
+<td>Firmware repo public on GitHub with clear stable/beta branch documentation (matches Firewalla's existing transparency here); publicly documents which OpenWrt release/patch level is in use.</td>
+<td><span class="badge badge-p1">P1</span></td>
+<td>~~8~~ <strong>5</strong></td>
+</tr>
+<tr>
+<td><code class="story-id">US-12.4</code></td>
+<td>As Priya, I want a public roadmap and changelog, so that I know what's coming and what changed.</td>
+<td>Public changelog published with every firmware release.</td>
+<td><span class="badge badge-p1">P1</span></td>
+<td>2</td>
+</tr>
+<tr>
+<td><code class="story-id">US-12.5</code></td>
+<td><span class="tag tag-new v5">[NEW v5]</span> As Priya, I want to use OpenWrt's standard opkg/apk package manager to install additional packages myself, so that I can extend the router the same way I would any OpenWrt device, without waiting for us to build a custom app store.</td>
+<td>opkg/apk remains available and functional for advanced users via SSH or local web UI; clearly documented as "unsupported, at your own risk" beyond our curated package set (mirrors Firewalla's own documented approach to user-installed packages).</td>
+<td><span class="badge badge-p2">P2</span></td>
+<td>3</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="epic-13-privacy-data-handling">Epic 13 — Privacy &amp; Data Handling</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Story</th>
+<th>Acceptance Criteria</th>
+<th>Priority</th>
+<th>Points</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="story-id">US-13.1</code></td>
+<td>As any user, I want all traffic inspection to run locally on my device by default, with no data leaving my home unless I explicitly opt in, so that my network activity stays private.</td>
+<td>Local-only mode is the default; cloud sync is opt-in with a clear consent screen explaining exactly what is uploaded.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>8</td>
+</tr>
+<tr>
+<td><code class="story-id">US-13.2</code></td>
+<td>As any user, I want to control exactly how long logs are retained and where, so that I'm not surprised by hidden cloud retention policies.</td>
+<td>Retention settings (local: 7/30/90 days; cloud: opt-in only) exposed in Settings with plain-language explanation.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>5</td>
+</tr>
+<tr>
+<td><code class="story-id">US-13.3</code></td>
+<td>As any user, I want to delete my cloud account and all associated data on request, so that I have full control over my data lifecycle.</td>
+<td>Self-service account + data deletion completes within 30 days, confirmed via email.</td>
+<td><span class="badge badge-p1">P1</span></td>
+<td>5</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Epic 13 — Pricing Trust Commitment (same epic, grouped separately for readability)</strong>
+| ID | Story | Acceptance Criteria | Priority | Points |
+|---|---|---|---|---|
+| <code class="story-id">US-13.4</code> | <span class="tag tag-new">[NEW]</span> As a prospective buyer, I want a public, dated, permanent list of which features are guaranteed free forever vs. optional/paid, published at launch, so that I can trust the "no subscription" promise won't quietly erode later. | "Pricing Promise" page published at launch, versioned publicly (changelog-style), explicitly stating no previously-free core feature will ever be moved behind a paywall — directly addresses documented Firewalla community backlash over the my.firewalla.com → MSP migration and a dated (June 2026) user complaint about subscription creep. | P0 | 3 |
+| <code class="story-id">US-13.5</code> | <span class="tag tag-new">[NEW]</span> As an existing customer, I want any <em>new</em> paid tier to be strictly additive (new capability only), never a re-packaging of something I already had for free, so that upgrading my hardware or the app never becomes mandatory to keep functionality I already paid for. | Product governance rule enforced at the release-review/DoD level (see Section 7); PO sign-off required before any feature can move from free to paid. | P0 | N/A (governance policy) |</p>
+<h3 id="epic-14-hardware-lineup-pricing">Epic 14 — Hardware Lineup &amp; Pricing</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Story</th>
+<th>Acceptance Criteria</th>
+<th>Priority</th>
+<th>Points</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="story-id">US-14.1</code></td>
+<td>As a prospective buyer, I want a simple 3-tier product lineup with plain-language names, so that I can choose confidently without research paralysis.</td>
+<td>Max 3 SKUs at launch: "Home," "Home Pro," "Business" — no sub-variant naming (SE/Plus/Pro combinatorics).</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>N/A (business decision)</td>
+</tr>
+<tr>
+<td><code class="story-id">US-14.2</code></td>
+<td>As a prospective buyer, I want an in-app or website "which model do I need" quiz based on my internet speed and device count, so that I don't have to interpret spec sheets myself.</td>
+<td>Quiz outputs one clear recommendation with reasoning in plain language.</td>
+<td><span class="badge badge-p1">P1</span></td>
+<td>5</td>
+</tr>
+<tr>
+<td><code class="story-id">US-14.3</code></td>
+<td>As a buyer, I want no subscription required for core protection features, so that my total cost of ownership is predictable.</td>
+<td>Core feature list (Epics 2, 3, 5, 6, 8) fully available with zero recurring fee.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>N/A (business decision)</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h3 id="epic-15-new-regulatory-compliance-domestic-manufacturing">Epic 15 — <span class="tag tag-new">[NEW]</span> Regulatory Compliance &amp; Domestic Manufacturing</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Story</th>
+<th>Acceptance Criteria</th>
+<th>Priority</th>
+<th>Points</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="story-id">US-15.1</code></td>
+<td>As Carl (compliance buyer), I want clear, verifiable confirmation of where the device is manufactured, so that I can trust it's legally sellable in the US and won't be recalled by future regulation.</td>
+<td>Country-of-origin and manufacturing-location disclosure published on packaging, product page, and in-app "About" screen.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>N/A (business/legal decision — engineering support required)</td>
+</tr>
+<tr>
+<td><code class="story-id">US-15.2</code></td>
+<td>As the company, we want a documented Hardware Bill of Materials (HBOM) and Software Bill of Materials (SBOM) maintained for every hardware SKU, so that we can respond quickly to FCC certification or audit requests.</td>
+<td>HBOM/SBOM generated and version-controlled per release; process owned by a named compliance lead.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>13</td>
+</tr>
+<tr>
+<td><code class="story-id">US-15.3</code></td>
+<td>As the company, we want legal confirmation before hardware finalization that our chosen manufacturing partner and component suppliers are not on the FCC Covered List (directly or via sub-components), so that we avoid a launch-blocking compliance failure.</td>
+<td>Signed legal review completed before hardware tooling commitment (Sprint 0 gate, see Section 8).</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>N/A (legal/business gate)</td>
+</tr>
+<tr>
+<td><code class="story-id">US-15.4</code></td>
+<td>As a prospective buyer, I want to see an explicit "supply-chain security" statement (plain-language summary of our compliance posture), so that I understand why this matters and that we've addressed it, without needing to read FCC filings myself.</td>
+<td>Plain-language compliance statement published alongside the Pricing Promise (<code class="story-id">US-13.4</code>) at launch.</td>
+<td><span class="badge badge-p1">P1</span></td>
+<td>3</td>
+</tr>
+<tr>
+<td><code class="story-id">US-15.5</code></td>
+<td>As the company, we want to monitor pending FCC rulemakings (e.g., expanded SBOM requirements, authorization expiration dates, marketplace FCC ID display rules) on an ongoing basis, so that we're not caught off guard by new requirements.</td>
+<td>Quarterly compliance review added to the product governance cadence (Section 8.6 refinement cadence).</td>
+<td><span class="badge badge-p1">P1</span></td>
+<td>N/A (process)</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="epic-16-new-trust-disclosure-vulnerability-management">Epic 16 — <span class="tag tag-new">[NEW]</span> Trust, Disclosure &amp; Vulnerability Management</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Story</th>
+<th>Acceptance Criteria</th>
+<th>Priority</th>
+<th>Points</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="story-id">US-16.1</code></td>
+<td>As a security-conscious user, I want a public, regularly-updated security advisory / CVE status page, so that I can verify how quickly known vulnerabilities are addressed without having to search community forums.</td>
+<td>Public advisory page live at launch; every disclosed CVE affecting our stack gets a status entry (affected/not applicable/patched, with version and date) within a committed SLA (e.g., 5 business days of triage).</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>8</td>
+</tr>
+<tr>
+<td><code class="story-id">US-16.2</code></td>
+<td>As a security researcher, I want a clear vulnerability-disclosure/bug-bounty policy (security.txt, contact channel, disclosure timeline), so that I can report issues responsibly and expect a timely response.</td>
+<td>security.txt published; documented responsible-disclosure policy with committed acknowledgment SLA (e.g., 48 hours).</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>5</td>
+</tr>
+<tr>
+<td><code class="story-id">US-16.3</code></td>
+<td>As any user, I want any remote/support-triggered device access (e.g., SSH) to be fully user-controllable — I can disable it entirely, and any support-access credential is unique per device and rotatable — so that there's no shared or fixed "backdoor" password.</td>
+<td>No default, shared, or non-rotatable support-access credential ships on any unit; user-facing toggle to fully disable remote/support access exists.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>8</td>
+</tr>
+<tr>
+<td><code class="story-id">US-16.4</code></td>
+<td>As any user, during an active industry-wide incident (e.g., a major CVE like Log4j), I want fast, specific, plain-language guidance pushed to the app on what to do, so that I'm not left guessing.</td>
+<td>Incident-response playbook and push-notification template ready pre-launch; target time-to-guidance ≤48 hours from public disclosure of a relevant industry-wide vulnerability.</td>
+<td><span class="badge badge-p1">P1</span></td>
+<td>5</td>
+</tr>
+<tr>
+<td><code class="story-id">US-16.5</code></td>
+<td>As Priya, I want our internal/IoT vulnerability scanning results to stay fully on-device and never be transmitted to company servers without explicit opt-in, so that my scan data (which could reveal exposed devices) isn't itself a privacy/security liability.</td>
+<td>Scan results processed and stored locally by default; cloud transmission requires explicit, separate opt-in (ties to Epic 13 privacy defaults).</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>5</td>
+</tr>
+<tr>
+<td><code class="story-id">US-16.6</code></td>
+<td><span class="tag tag-new v5">[NEW v5]</span> As a security-conscious user, I want confidence that our platform tracks and rebases onto upstream OpenWrt security advisories promptly, so that I benefit from the broader OpenWrt security community's work, not just our own team's.</td>
+<td>A documented, committed SLA for evaluating and, where applicable, shipping fixes for upstream OpenWrt security advisories (e.g., within 10 business days of upstream release for high-severity issues); status visible on the public advisory page (<code class="story-id">US-16.1</code>).</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>5</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="epic-17-new-v3-beginner-first-education-onboarding-content">Epic 17 — <span class="tag tag-new v3">[NEW v3]</span> Beginner-First Education &amp; Onboarding Content</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Story</th>
+<th>Acceptance Criteria</th>
+<th>Priority</th>
+<th>Points</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="story-id">US-17.1</code></td>
+<td>As Nadia, I want an in-app "Networking 101" glossary/primer (plain-language explanations of IP address, VLAN, VPN, DNS, etc.) available the moment a term appears anywhere in the app, so that I never hit a wall of jargon without an escape hatch.</td>
+<td>Every technical term in the app UI is tappable/tooltip-linked to a plain-language explainer; glossary accessible standalone from Settings/Help.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>8</td>
+</tr>
+<tr>
+<td><code class="story-id">US-17.2</code></td>
+<td>As Nadia, I want a distinct "I'm new to this" onboarding path (separate from a "I know networking" fast path), so that the setup wizard's depth matches my actual comfort level instead of assuming one profile for everyone.</td>
+<td>Setup wizard branches on a single opening question ("How comfortable are you with home networking?") into two distinct flows with different pacing/detail; both reach a fully-configured, protected network.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>8</td>
+</tr>
+<tr>
+<td><code class="story-id">US-17.3</code></td>
+<td>As a prospective buyer, I want an honest "is a security router even right for me" decision-support page (not just a sales pitch), so that I can make a genuinely informed purchase decision.</td>
+<td>Public content published pre-launch, presenting real trade-offs (cost, setup time, ongoing management) alongside benefits — directly fills a gap neither Firewalla nor other competitors currently address (companion doc Section 10.6).</td>
+<td><span class="badge badge-p1">P1</span></td>
+<td>3</td>
+</tr>
+<tr>
+<td><code class="story-id">US-17.4</code></td>
+<td>As Nadia, I want short (under 2-minute) video walkthroughs embedded directly in the app for each major feature, so that I can learn by watching instead of only reading.</td>
+<td>At least 8 core-feature walkthrough videos embedded at point-of-use in the app by GA.</td>
+<td><span class="badge badge-p1">P1</span></td>
+<td>8</td>
+</tr>
+<tr>
+<td><code class="story-id">US-17.5</code></td>
+<td>As a user with a physical/visual disability or without a modern smartphone, I want a documented, supported alternative setup and management path (e.g., full local web UI, larger-text mode, screen-reader support), so that I'm not excluded from using the product.</td>
+<td>Full setup achievable via local web UI without a smartphone; app and web UI pass a baseline WCAG 2.1 AA accessibility audit — directly addresses a documented real-world Firewalla complaint (companion doc Section 8.9/10.6).</td>
+<td><span class="badge badge-p1">P1</span></td>
+<td>13</td>
+</tr>
+<tr>
+<td><code class="story-id">US-17.6</code></td>
+<td>As any user, I want clear, non-marketing documentation explaining that our hardware tiers differ in throughput/scale, not core security capability, so that I don't overpay believing a pricier unit is "more secure."</td>
+<td>Product-comparison page explicitly states this distinction in plain language — addresses a documented, unresolved clarity gap even in Firewalla's own docs (companion doc Section 10.2).</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>2</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="epic-18-new-v5-openwrt-platform-foundation">Epic 18 — <span class="tag tag-new v5">[NEW v5]</span> OpenWrt Platform Foundation</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Story</th>
+<th>Acceptance Criteria</th>
+<th>Priority</th>
+<th>Points</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="story-id">US-18.1</code></td>
+<td>As the company, we want to select and lock a specific OpenWrt release/branch and a hardware reference target for our flagship SKU, so that firmware development has a stable, well-supported foundation rather than chasing a moving upstream target.</td>
+<td>OpenWrt version/target selected and documented before Sprint 1 begins; selection criteria explicitly include long-term-support commitment, Wi-Fi driver maturity for our target chipset (ties to <code class="story-id">US-7.1</code> risk flag), and hardware availability aligned with Epic 15 manufacturing constraints.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>8</td>
+</tr>
+<tr>
+<td><code class="story-id">US-18.2</code></td>
+<td>As the company, we want a clearly designed and documented boundary between GPL-governed base OS/kernel/driver code and our proprietary app, cloud backend, and rule/classification engine, so that we stay compliant and protect our IP without ambiguity.</td>
+<td>Written architecture decision record (ADR) defining the GPL boundary, reviewed by legal, before any proprietary code is written against the base image.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>5</td>
+</tr>
+<tr>
+<td><code class="story-id">US-18.3</code></td>
+<td>As the company, we want a reliable, fail-safe over-the-air update mechanism built on OpenWrt's sysupgrade, so that we can ship firmware and security updates without bricking devices in the field.</td>
+<td>Sysupgrade-based OTA pipeline supports atomic updates with automatic rollback on boot failure; tested against at least 3 simulated failure scenarios (power loss mid-update, corrupted image, incompatible config) before GA.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>8</td>
+</tr>
+<tr>
+<td><code class="story-id">US-18.4</code></td>
+<td>As Priya, I want our local web UI to be a customized LuCI theme/overlay rather than a from-scratch build, so that advanced users get a familiar, capable interface faster and with less engineering risk.</td>
+<td>Local web UI ships as a themed/extended LuCI instance, satisfying the local-web-UI commitments already in <code class="story-id">US-1.5</code> and <code class="story-id">US-10.5</code>, with our simplified controls layered on top rather than replacing LuCI's proven configuration surface underneath.</td>
+<td><span class="badge badge-p1">P1</span></td>
+<td>8</td>
+</tr>
+<tr>
+<td><code class="story-id">US-18.5</code></td>
+<td>As the company, we want a curated, tested subset of OpenWrt/opkg packages that make up our supported feature set (DPI engine, VPN, DNS resolver, QoS/SQM, etc.), so that our shipped feature set is deliberate and quality-controlled rather than "whatever the base image happens to include."</td>
+<td>Documented package manifest per firmware release, version-pinned, with each package's role mapped to a specific epic/feature in this backlog.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>5</td>
+</tr>
+<tr>
+<td><code class="story-id">US-18.6</code></td>
+<td>As a prospective buyer or security researcher, I want a public page stating clearly that Sentinel is built on OpenWrt, which OpenWrt release/version we track, and how we relate to the upstream project, so that I understand our platform's provenance and trust posture.</td>
+<td>Public "Built On" page live at launch, cross-linked from the Pricing Promise (<code class="story-id">US-13.4</code>) and supply-chain compliance statement (<code class="story-id">US-15.4</code>) — directly supports the "specificity over parity" messaging opportunity identified in the companion doc (Section 1.6).</td>
+<td><span class="badge badge-p1">P1</span></td>
+<td>2</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="5-release-roadmap-suggested">5. Release Roadmap (Suggested)</h2>
+<h3 id="new-sprint-0-can-we-even-ship-this-pre-development-gate"><strong>[NEW] Sprint 0 — "Can We Even Ship This"</strong> (Pre-Development Gate)</h3>
+<p>Goal: resolve business/legal/compliance unknowns <em>before</em> committing engineering capacity to hardware.
+- <code class="story-id">US-15.1</code>, <code class="story-id">US-15.3</code> (manufacturing origin + legal Covered List clearance) — <strong>hard gate</strong>, nothing in Release 1.0 proceeds to hardware tooling without sign-off.
+- Confirm HBOM/SBOM process owner (<code class="story-id">US-15.2</code>).
+- Draft the Pricing Promise (<code class="story-id">US-13.4</code>) and Compliance Statement (<code class="story-id">US-15.4</code>) for legal review.
+- Stand up the security advisory page skeleton and disclosure policy (<code class="story-id">US-16.1</code>, <code class="story-id">US-16.2</code>) so it's ready, not scrambled, at launch.
+- <span class="tag tag-new v5">[NEW v5]</span> <code class="story-id">US-18.1</code> (OpenWrt version/hardware target lock) and <code class="story-id">US-18.2</code> (GPL boundary ADR) — <strong>also hard gates</strong>: no firmware work should start against an unlocked OpenWrt target or an undefined GPL/proprietary boundary.</p>
+<h3 id="mvp-release-10-table-stakes-trust">MVP / Release 1.0 — "Table Stakes + Trust"</h3>
+<p>Goal: match Firewalla's core value prop and win on transparency.
+- All <strong>P0</strong> stories from Epics 1 (including <code class="story-id">US-1.7</code> Passkey), 2, 3 (core, including <code class="story-id">US-3.6</code> device identification), 4, 5, 6 (core), 8, 9 (core), 10 (including <code class="story-id">US-10.7</code> symmetric scheduling and <code class="story-id">US-10.6</code> tablet layout), 13 (including <code class="story-id">US-13.4</code>/13.5 pricing commitment), 14, 15 (compliance gate), 16 (trust/disclosure, including <code class="story-id">US-16.6</code> upstream tracking), <strong>17 (beginner-first onboarding, including <code class="story-id">US-17.1</code>/17.2/17.6), 18 (OpenWrt platform foundation, including <code class="story-id">US-18.1</code>/18.2/18.3/18.5)</strong>.
+- One flagship hardware SKU with integrated Wi-Fi 7 (<code class="story-id">US-7.1</code> — <strong>subject to the Wi-Fi 7 driver-maturity spike</strong>), manufactured/sourced per Epic 15 constraints, built on the OpenWrt target locked in Sprint 0.</p>
+<h3 id="release-11-power-reliability">Release 1.1 — "Power &amp; Reliability"</h3>
+<ul>
+<li>Remaining P1 stories: local web UI (<span class="tag tag-new v5">[NEW v5]</span> now built as a themed LuCI overlay per <code class="story-id">US-18.4</code>, de-risking <code class="story-id">US-1.5</code>/<code class="story-id">US-10.5</code>), multi-user pairing, per-device VPN client, custom blocklists, mesh AP accessory, WAN diagnostics polish, tablet widget (<code class="story-id">US-10.8</code>), accessibility path (<code class="story-id">US-17.5</code>), video walkthroughs (<code class="story-id">US-17.4</code>), "is this right for me" content (<code class="story-id">US-17.3</code>), "Built On OpenWrt" trust page (<code class="story-id">US-18.6</code>).</li>
+</ul>
+<h3 id="release-20-scale-extensibility">Release 2.0 — "Scale &amp; Extensibility"</h3>
+<ul>
+<li>Epic 11 (MSP/fleet management), Epic 12 (Docker/SSH/open API, <span class="tag tag-new v5">[NEW v5]</span> including opkg/apk power-user access per <code class="story-id">US-12.5</code>), multi-WAN load balancing, site-to-site VPN, censorship-resistant VPN protocol support (<code class="story-id">US-6.6</code>).</li>
+<li>Business-tier hardware SKU.</li>
+<li>Continued Epic 15 monitoring cadence (quarterly compliance review) rolls forward indefinitely, not scoped to a single release.</li>
+<li><span class="tag tag-new v3">[NEW v3]</span> Evaluate adding a managed-switch accessory to the roadmap: Firewalla shipped switch management in Aug 2026, signaling the category is moving toward full router+AP+switch ownership (companion doc Section 10.4). Recommend a dedicated spike in Release 1.1 planning to decide whether this belongs in 2.0 or later.</li>
+</ul>
+<hr />
+<h2 id="6-definition-of-ready-dor">6. Definition of Ready (DoR)</h2>
+<p>A story is ready for sprint planning when it has:
+- Clear persona and benefit statement
+- Acceptance criteria written in Given/When/Then or checklist form
+- No open UX/design dependencies
+- Estimated by the team (not just the PO)</p>
+<h2 id="7-definition-of-done-dod">7. Definition of Done (DoD)</h2>
+<p>A story is done when:
+- Acceptance criteria pass in QA on all supported hardware tiers
+- Feature has an in-app explanation/tooltip (ties to Epic 4 transparency principle)
+- Telemetry/logging added (respecting Epic 13 privacy defaults)
+- Documentation (help center article) published
+- No P0/P1 bugs open against the feature</p>
+<hr />
+<h2 id="8-new-v4-scrum-master-refinement-pass-sprint-1-candidate-set">8. <strong>[NEW v4] Scrum Master Refinement Pass — Sprint 1 Candidate Set</strong></h2>
+<p><strong>Team context:</strong> 4 developers (2 embedded/firmware, 2 mobile app), 2 QA, 1 designer. 14-day sprints. New to Scrum — no sprint history yet, so this is a capacity-based <em>calibration</em> sprint, not a velocity-based one.</p>
+<blockquote class="revnote">
+<p><strong>[NEW v5] Note on the OpenWrt architecture decision's impact on this section:</strong> the INVEST audit below (11.1) and the Sprint 1 plan (11.3) were written <em>before</em> the OpenWrt decision. <code class="story-id">US-2.1</code> and <code class="story-id">US-3.1</code> have since been re-scored down (13→8 each, see Epics 2 and 3 above) now that DPI and VLAN plumbing build on mature OpenWrt packages rather than from-scratch work. The splits proposed below are still valid technique examples and still worth doing for <code class="story-id">US-2.1</code> (DPI classification breadth is still a real scope question) — but <code class="story-id">US-3.1</code> at 8 points may now be small enough to bring into Sprint 1 or 2 as a single story rather than requiring a mandatory pre-split. Re-validate with the team at the next refinement session rather than treating the original 13-point split as still authoritative.</p>
+</blockquote>
+<h3 id="81-invest-audit-oversized-stories-flagged-for-splitting">8.1 INVEST Audit — Oversized Stories Flagged for Splitting</h3>
+<p>Before anything goes into Sprint 1, these P0 stories were reviewed against INVEST (Independent, Negotiable, <strong>Valuable, Estimable, Small</strong>, Testable) and flagged as too large or bundling multiple concerns:</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Story</th>
+<th>Problem</th>
+<th>Split Recommendation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code class="story-id">US-2.1</code></strong> DPI engine (13 pts)</td>
+<td>Bundles engine integration + traffic classification breadth + cross-tier throughput validation — three different risk profiles in one story.</td>
+<td><strong><code class="story-id">US-2.1a</code></strong> Integrate baseline DPI engine on flagship hardware (spike + integration, no classification yet) → <strong><code class="story-id">US-2.1b</code></strong> Classify traffic into top 20 app/protocol categories → <strong><code class="story-id">US-2.1c</code></strong> Validate inspected throughput meets spec sheet (±10%) across all hardware tiers.</td>
+</tr>
+<tr>
+<td><strong><code class="story-id">US-3.1</code></strong> Unlimited VLANs on ALL tiers (13 pts)</td>
+<td>Bundles core VLAN capability + UI + multi-tier QA.</td>
+<td><strong><code class="story-id">US-3.1a</code></strong> Implement VLAN create/edit/delete on flagship tier only → <strong><code class="story-id">US-3.1b</code></strong> App UI for VLAN assignment → <strong><code class="story-id">US-3.1c</code></strong> Extend and QA-validate across remaining hardware tiers.</td>
+</tr>
+<tr>
+<td><strong><code class="story-id">US-3.6</code></strong> MAC-randomization-tolerant device ID (13 pts)</td>
+<td>Genuinely hard R&amp;D, not a shippable slice — "behavioral fingerprinting" is a research question, not an engineering task yet.</td>
+<td><strong><code class="story-id">US-3.6a</code> (spike, unpointed until de-risked)</strong> Research spike: evaluate 2-3 candidate fingerprinting approaches against a test device set, report findings → <strong><code class="story-id">US-3.6b</code></strong> Implement chosen approach → <strong><code class="story-id">US-3.6c</code></strong> Fallback/graceful-degradation UX when fingerprinting confidence is low.</td>
+</tr>
+<tr>
+<td><strong><code class="story-id">US-15.2</code></strong> HBOM/SBOM process (13 pts)</td>
+<td>Mixes tooling selection, process ownership, and per-release automation — not one deliverable.</td>
+<td><strong><code class="story-id">US-15.2a</code></strong> Select HBOM/SBOM tooling and define process owner (spike) → <strong><code class="story-id">US-15.2b</code></strong> Generate first HBOM/SBOM for flagship SKU manually → <strong><code class="story-id">US-15.2c</code></strong> Automate generation into the release pipeline.</td>
+</tr>
+<tr>
+<td><strong><code class="story-id">US-17.5</code></strong> Accessibility (13 pts)</td>
+<td>Bundles local-web-UI-without-app, large-text mode, screen-reader support, and a formal WCAG audit — four distinct work streams.</td>
+<td><strong><code class="story-id">US-17.5a</code></strong> Full setup achievable via local web UI without a smartphone → <strong><code class="story-id">US-17.5b</code></strong> Screen-reader support (app) → <strong><code class="story-id">US-17.5c</code></strong> Formal WCAG 2.1 AA audit + remediation.</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Value clarification needed (not invented here, per constraint):</strong> <code class="story-id">US-15.1</code> and <code class="story-id">US-15.3</code> carry "N/A — business/legal decision" instead of story points. <strong>This is a gap, not a resolved item</strong> — before Sprint 1, the PO needs to confirm with legal/hardware leadership whether these are pure gating decisions (no engineering task) or whether engineering has dependent work (e.g., building the in-app "About" disclosure screen in <code class="story-id">US-15.1</code>). Flagging rather than assuming.</p>
+<h3 id="82-sprint-1-refined-ready-stories-givenwhenthen">8.2 Sprint 1 — Refined "Ready" Stories (Given/When/Then)</h3>
+<p>These four right-sized P0 stories are proposed as the Sprint 1 candidate set — chosen because together they deliver one coherent, demoable slice: <strong>a new user can unbox the device, get set up, and be automatically protected, with no undisclosed remote-access risk.</strong></p>
+<hr />
+<p><strong><code class="story-id">US-1.1</code> — Guided setup in under 10 minutes</strong>
+<em>As Nadia, I want to set up my device in under 10 minutes using only my phone, so that I don't need technical help.</em>
+- <strong>Given</strong> a factory-reset Sentinel unit is powered on and connected to an internet uplink, <strong>When</strong> I open the app and tap "Add Device," <strong>Then</strong> the app discovers the unit via QR/Bluetooth within 15 seconds.
+- <strong>Given</strong> the unit has been discovered, <strong>When</strong> I complete the guided wizard, <strong>Then</strong> setup finishes in 6 or fewer screens.
+- <strong>Given</strong> setup completes successfully, <strong>When</strong> the final step finishes, <strong>Then</strong> I see a "Network Protected" confirmation with a timestamp, and the unit is passing traffic within 60 seconds.
+- <strong>Given</strong> I close the app mid-setup, <strong>When</strong> I reopen it, <strong>Then</strong> I resume from my last completed step rather than restarting.
+- <strong>Given</strong> setup fails at any step (e.g., no uplink detected), <strong>When</strong> the failure occurs, <strong>Then</strong> the app shows a specific, plain-language error with a "try again" or "contact support" action — never a raw error code.</p>
+<p><strong><code class="story-id">US-1.3</code> — Sensible defaults on by default</strong>
+<em>As any user, I want a guided post-install security wizard that turns on sensible defaults, so that I'm protected without configuring anything manually.</em>
+- <strong>Given</strong> <code class="story-id">US-1.1</code> has just completed, <strong>When</strong> the confirmation screen dismisses, <strong>Then</strong> the defaults wizard launches automatically without a separate user action.
+- <strong>Given</strong> the defaults wizard completes, <strong>When</strong> finished, <strong>Then</strong> ad-block, new-device quarantine, and baseline IDS/IPS are all enabled unless the user explicitly opts out.
+- <strong>Given</strong> a user wants to revisit these choices later, <strong>When</strong> they go to Settings → Features → Customize, <strong>Then</strong> the same wizard is re-launchable at any time.
+- <strong>Given</strong> a user backs out of the wizard without finishing, <strong>When</strong> they exit, <strong>Then</strong> the safe defaults are still applied automatically — skipping the wizard never means skipping protection.</p>
+<p><strong><code class="story-id">US-2.6</code> — New device quarantine</strong>
+<em>As Ivan, I want new devices automatically quarantined until I approve them, so that rogue devices can't silently join my network.</em>
+- <strong>Given</strong> an unrecognized device joins the network, <strong>When</strong> it requests a DHCP lease, <strong>Then</strong> it is placed in a quarantine segment with internet access blocked before any user action is needed.
+- <strong>Given</strong> a device is quarantined, <strong>When</strong> the event occurs, <strong>Then</strong> a push notification reaches the primary user within 5 seconds, containing device name (best-guess), manufacturer, MAC, and a one-tap Approve/Deny action.
+- <strong>Given</strong> the user taps Approve, <strong>When</strong> processed, <strong>Then</strong> the device moves to its assigned segment within 3 seconds without needing to reconnect.
+- <strong>Given</strong> the user denies or ignores the prompt for 24 hours, <strong>When</strong> the timeout elapses, <strong>Then</strong> the device stays quarantined and a daily reminder is sent until resolved.
+- <strong>Given</strong> quarantine is toggled off in Settings, <strong>When</strong> disabled, <strong>Then</strong> new devices join the default network directly with no quarantine notifications.
+- ⚠️ <strong>Dependency flag:</strong> this story assumes basic network-segment plumbing already exists in firmware. If <code class="story-id">US-3.1a</code> (split above) hasn't landed yet, <code class="story-id">US-2.6</code> is blocked — sequence <code class="story-id">US-3.1a</code> before or alongside <code class="story-id">US-2.6</code> in sprint planning.</p>
+<p><strong><code class="story-id">US-17.6</code> — Tiers differ in speed, not security</strong>
+<em>As any user, I want clear documentation that hardware tiers differ in throughput/scale, not core security capability, so that I don't overpay believing a pricier unit is "more secure."</em>
+- <strong>Given</strong> a user views the product comparison page, <strong>When</strong> comparing any two tiers, <strong>Then</strong> the page explicitly states in plain language that all tiers share the same core security feature set.
+- <strong>Given</strong> the comparison page lists differences, <strong>When</strong> displayed, <strong>Then</strong> only throughput, port count/speed, and device-count headroom appear as differentiators — no security feature is listed as tier-exclusive unless factually true at launch.
+- <strong>Given</strong> a user asks support or the FAQ "does the pricier model protect me better," <strong>When</strong> answered, <strong>Then</strong> the documented response confirms tiers differ in capacity only (consistency-checked against live marketing copy at release time).</p>
+<hr />
+<h3 id="83-sprint-planning-support">8.3 Sprint Planning Support</h3>
+<p><strong>Capacity, not velocity (no sprint history exists yet):</strong> With 4 developers × 14 days, a conservative first-sprint capacity target is <strong>18-22 points</strong>, deliberately below theoretical max to leave room for calibration, unplanned firmware bring-up friction, and ceremony overhead. Sprint 1 candidate total: <strong>8 + 5 + 5 + 2 = 20 points</strong> — fits within target.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Risk / Dependency</th>
+<th>Detail</th>
+<th>Mitigation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Hidden dependency: <code class="story-id">US-2.6</code> → segment plumbing</strong></td>
+<td>Quarantine requires a basic network-segment mechanism that isn't its own separate story yet.</td>
+<td>Add <strong><code class="story-id">US-3.1a</code></strong> (split above) to Sprint 1 alongside <code class="story-id">US-2.6</code>, or explicitly sequence it first within the sprint.</td>
+</tr>
+<tr>
+<td><strong>Designer bottleneck</strong></td>
+<td><code class="story-id">US-1.1</code>, <code class="story-id">US-1.3</code>, and <code class="story-id">US-17.6</code> all need UX/content input from the single designer, concurrently.</td>
+<td>PO/SM to pre-sequence designer's week 1 focus (<code class="story-id">US-1.1</code> first, since it's the longest/most complex flow) rather than letting three developers block on one designer simultaneously.</td>
+</tr>
+<tr>
+<td><strong><code class="story-id">US-16.3</code> (no shared SSH backdoor) not yet in Sprint 1</strong></td>
+<td>Security-critical embedded work, touches firmware auth — high value but not yet right-sized/refined with Given/When/Then in this pass.</td>
+<td>Recommend as the lead candidate for the <strong>next</strong> refinement session (Section 8.5) given its P0 priority and direct tie to a documented competitor trust gap.</td>
+</tr>
+<tr>
+<td><strong>Cross-functional skill mix</strong></td>
+<td>Sprint 1 stories span firmware (quarantine), mobile app (wizard UI), and content/docs (<code class="story-id">US-17.6</code>) — good spread, but confirm the 2 QA are not both needed on the same story simultaneously.</td>
+<td>SM to confirm QA pairing plan in Sprint Planning Part 2 (task breakdown), not left implicit.</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Suggested Sprint Goal:</strong></p>
+<blockquote class="revnote">
+<p><em>"A new user can unbox Sentinel, complete guided setup in under 10 minutes, and be automatically protected — with new devices safely quarantined until approved and no confusion about what our hardware tiers actually change."</em></p>
+</blockquote>
+<p>This goal is deliberately narrow (one coherent user journey) rather than "do these 4 tickets" — appropriate for a team's first sprint together.</p>
+<h3 id="84-facilitation-script-backlog-refinement-session-60-min">8.4 Facilitation Script — Backlog Refinement Session (60 min)</h3>
+<p><strong>Purpose:</strong> this session targets the <em>vague/oversized story</em> problem directly — not general backlog grooming.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Time</th>
+<th>Activity</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>5 min</td>
+<td><strong>Framing.</strong> "Today we're practicing splitting oversized stories using INVEST — we're not trying to clear the whole backlog."</td>
+</tr>
+<tr>
+<td>15 min</td>
+<td><strong>Live example.</strong> SM walks the group through the <code class="story-id">US-2.1</code> (DPI engine) split from Section 8.1 as a worked example, thinking aloud about <em>why</em> each slice is independently valuable/testable.</td>
+</tr>
+<tr>
+<td>25 min</td>
+<td><strong>Breakout practice.</strong> Split into 2 pairs. Each pair takes one flagged oversized story (<code class="story-id">US-3.1</code> and <code class="story-id">US-15.2</code>, from Section 8.1) and attempts their own split in 15 minutes, then reports back for 5 minutes each.</td>
+</tr>
+<tr>
+<td>10 min</td>
+<td><strong>Regroup &amp; pattern-naming.</strong> Compare the two approaches; agree on 2-3 reusable splitting heuristics (e.g., "split by hardware tier," "split spike-from-build," "split by workflow step") the team will default to going forward.</td>
+</tr>
+<tr>
+<td>5 min</td>
+<td><strong>Close.</strong> Identify 2-3 more oversized candidates from the backlog to bring pre-split to next refinement (don't split live again — practice pre-splitting as a habit).</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>3 targeted questions to ask the team:</strong>
+1. "When you see a story like 'unlimited VLANs on all tiers' — what's the smallest slice that would still let us demo real value to a stakeholder?"
+2. "Which of today's story estimates are we confident in vs. guessing at? What specific missing information is driving the guess?"
+3. "If we had to ship only half of this story this sprint, which half would still stand alone as independently valuable and testable?"</p>
+<h3 id="85-coaching-tip-for-the-product-owner">8.5 Coaching Tip for the Product Owner</h3>
+<p><strong>Pre-split epics before refinement, don't split live as a group habit.</strong> Several P0 stories in this backlog (<code class="story-id">US-2.1</code>, <code class="story-id">US-3.1</code>, <code class="story-id">US-3.6</code>, <code class="story-id">US-15.2</code>, <code class="story-id">US-17.5</code>) arrived at refinement already epic-sized. For a team new to Scrum, spending scarce ceremony time teaching the <em>skill</em> of splitting (Section 8.4) is valuable once — but going forward, the PO should partner 1:1 with the tech lead <em>before</em> each refinement session to pre-draft 2-3 candidate slices per large story, so the team's time in refinement goes toward <em>validating and estimating</em> slices, not discovering for the first time that a story is too big. This also surfaces hidden dependencies (like <code class="story-id">US-2.6</code> → <code class="story-id">US-3.1a</code> in Section 8.3) earlier, when they're cheap to resequence, instead of mid-sprint.</p>
+<h3 id="86-refinement-cadence-for-the-remaining-backlog">8.6 Refinement Cadence for the Remaining Backlog</h3>
+<p>This pass covered 4 Sprint 1 stories in full Given/When/Then detail and flagged 5 oversized stories for splitting — roughly 12% of the 76-story backlog. This is intentional: refine 1-2 sprints ahead, not the whole backlog at once. Recommended cadence going forward:
+- <strong>Every sprint:</strong> refine (G/W/T + INVEST check) enough stories to fill the <em>next</em> sprint, plus a small buffer (~130% of expected capacity) to allow for reprioritization.
+- <strong><code class="story-id">US-16.3</code></strong> (no shared SSH backdoor) and <strong><code class="story-id">US-2.2</code>/2.3</strong> (IDS/IPS core) are the recommended next candidates given their P0 priority and direct ties to documented competitor gaps (companion doc Sections 8.5, 6).
+- Oversized stories not yet split (<code class="story-id">US-3.6</code>, <code class="story-id">US-15.2</code>, <code class="story-id">US-17.5</code> sub-slices; also apply the same INVEST lens to <code class="story-id">US-2.2</code>, <code class="story-id">US-2.3</code>, <code class="story-id">US-3.2</code>, <code class="story-id">US-9.1</code> proactively before they reach a sprint).</p>
+<hr />
+<h2 id="9-open-risks-questions-for-backlog-refinement">9. Open Risks &amp; Questions for Backlog Refinement</h2>
+<ol>
+<li>~~Do we build our own Wi-Fi 7 radio stack in-house or license/partner (time-to-market vs. Epic 7 ambition)?~~ <strong>[NEW v5] Resolved by the OpenWrt decision</strong>: we build on OpenWrt's mac80211 stack and select a chipset with mature driver support (<code class="story-id">US-18.1</code>) rather than building a radio stack in-house. The remaining open question is narrower: <em>which specific Wi-Fi 7 chipset has mature enough OpenWrt driver support today</em> — tracked as the risk flag on <code class="story-id">US-7.1</code>.</li>
+<li>What's the exact local retention default that balances Epic 4 (transparency/history) with Epic 13 (privacy/storage cost)?</li>
+<li>MSP/fleet management (Epic 11) — validate small-business demand before committing engineering capacity; consider as a fast-follow rather than MVP.</li>
+<li>Docker/SSH power-user features (Epic 12) — assess security review overhead of exposing container runtime on a security appliance.</li>
+<li>Confirm hardware BOM cost allows a 3-tier lineup (<code class="story-id">US-14.1</code>) without sacrificing the "integrated Wi-Fi on flagship" commitment (<code class="story-id">US-7.1</code>).</li>
+<li><span class="tag tag-new">[NEW]</span> Can we realistically achieve US-based manufacturing (or a compliant equivalent) within our target COGS and launch timeline? This is now a <strong>hard business viability question</strong>, not a backlog nicety — Sprint 0 must answer it before Release 1.0 planning is finalized.</li>
+<li><span class="tag tag-new">[NEW]</span> What is our actual appetite/capacity to run a bug-bounty program (<code class="story-id">US-16.2</code>) pre-launch vs. post-launch? A published policy with no real triage capacity behind it could itself become a trust liability.</li>
+<li><span class="tag tag-new">[NEW]</span> Given that both prior "consumer security box" competitors (Bitdefender BOX, Norton Core) failed commercially, what's our validated evidence of willingness-to-pay at our target price point, independent of feature parity with Firewalla? Recommend a pricing/demand validation spike before Release 1.0 commitment.</li>
+<li><span class="tag tag-new">[NEW]</span> Device-identification without MAC dependency (<code class="story-id">US-3.6</code>) is a hard technical problem — confirm with engineering whether reliable behavioral fingerprinting is achievable for MVP or needs to be descoped to Release 1.1.</li>
+<li><span class="tag tag-new v3">[NEW v3]</span> Does building a genuinely separate "beginner" onboarding path (<code class="story-id">US-17.2</code>) risk under-serving power users, or can one well-designed branching flow serve both without compromise? Recommend early usability testing with both personas (Nadia and Priya) before finalizing the wizard design.</li>
+<li><span class="tag tag-new v3">[NEW v3]</span> Should a managed switch product be added to our own roadmap given Firewalla's confirmed move into the full router+AP+switch stack (Section 10.4 of companion doc)? Needs a dedicated planning spike — do not silently scope-creep this into Release 1.0.</li>
+<li><span class="tag tag-new v3">[NEW v3]</span> Accessibility commitment (<code class="story-id">US-17.5</code>, WCAG 2.1 AA) is a meaningful scope addition — confirm design/QA capacity before committing it to Release 1.1 rather than pushing it further out.</li>
+<li><span class="tag tag-new v5">[NEW v5]</span> Which specific Wi-Fi 7 chipset(s) have genuinely mature OpenWrt/mac80211 driver support <em>today</em>, not "on the roadmap"? This must be answered with a hands-on spike, not a vendor datasheet, before <code class="story-id">US-7.1</code> gets a committed ship date.</li>
+<li><span class="tag tag-new v5">[NEW v5]</span> DPI/IDS engine selection (Suricata vs. nDPI vs. another option) for <code class="story-id">US-2.1</code> needs a performance spike on our actual target hardware — resource-hungry DPI engines are a known concern on constrained embedded silicon, and this could affect our flagship-tier throughput commitments (companion doc Section 4.1).</li>
+<li><span class="tag tag-new v5">[NEW v5]</span> Does our team have in-house OpenWrt/embedded-Linux expertise, or does <code class="story-id">US-18.1</code>-18.3 (platform foundation) require a hire or contractor before Sprint 0 can actually close? Flagging as a resourcing question, not assuming capacity exists.</li>
+<li><strong>[NEW v6 — highest priority]</strong> <strong>Release 1.0 scope appears unachievable as currently defined.</strong> A programmatic recount (Section 10) shows 94 stories / 558 points, with 52 P0 stories totalling 303 points. At the Sprint 1 calibration pace of 20 points, the P0 set alone is ~15 sprints (~7 months) of engineering <em>before</em> hardware lead times, FCC certification, or Sprint 0 gate resolution. <strong>Recommended action: hold an explicit MVP-cut session before Sprint 1 starts.</strong> Candidate cuts to debate — not decisions: defer Epic 11 (MSP/fleet) entirely to post-launch; demote <code class="story-id">US-17.4</code> (video walkthroughs) and <code class="story-id">US-17.5</code> (full WCAG audit) to Release 1.1; reduce Epic 5's initial category-filter scope; treat <code class="story-id">US-3.3</code> (device microsegmentation) and <code class="story-id">US-3.5</code> (Zero Trust allow-lists) as Release 1.1. The PO should bring a proposed cut list rather than opening the session cold.</li>
+<li><span class="tag tag-new v6">[NEW v6]</span> Six stories still carry no point estimate (business/legal/process gates). Confirm with the team whether these should be (a) estimated as real engineering work, (b) tracked as non-sprint governance items on a separate board, or (c) split so the engineering-dependent part gets estimated separately (e.g., <code class="story-id">US-15.1</code>'s in-app "About" disclosure screen is real UI work hiding inside a "business decision" label).</li>
+</ol>
+<h2 id="10-backlog-health-snapshot-v6-recounted">10. Backlog Health Snapshot (v6 — recounted)</h2>
+<blockquote class="revnote">
+<p><strong>[NEW v6] Correction:</strong> earlier versions of this table carried forward <em>estimated</em> totals rather than actual counts. Every figure below is now programmatically recounted from Section 4. Prior versions materially understated the backlog (previously stated 83 stories / 39 P0; actual is <strong>94 / 52</strong>).</p>
+</blockquote>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Total epics</td>
+<td>18</td>
+</tr>
+<tr>
+<td>Total user stories</td>
+<td><strong>94</strong></td>
+</tr>
+<tr>
+<td>P0 (MVP-blocking) stories</td>
+<td><strong>52</strong> (303 pts)</td>
+</tr>
+<tr>
+<td>P1 (fast-follow) stories</td>
+<td><strong>31</strong> (174 pts)</td>
+</tr>
+<tr>
+<td>P2 (roadmap) stories</td>
+<td><strong>11</strong> (81 pts)</td>
+</tr>
+<tr>
+<td>Total estimated points</td>
+<td><strong>558</strong> across 88 estimated stories</td>
+</tr>
+<tr>
+<td>Stories without a point estimate</td>
+<td>6 (business/legal/process gates)</td>
+</tr>
+<tr>
+<td>Cumulative new epics since v1</td>
+<td>4 (Epics 15, 16, 17, 18)</td>
+</tr>
+<tr>
+<td>Cumulative new personas since v1</td>
+<td>1 (P6)</td>
+</tr>
+<tr>
+<td>Hard business/legal gates identified</td>
+<td>4 (<code class="story-id">US-15.1</code> manufacturing origin, <code class="story-id">US-15.3</code> Covered List legal clearance, <code class="story-id">US-18.1</code> OpenWrt target lock, <code class="story-id">US-18.2</code> GPL boundary ADR)</td>
+</tr>
+<tr>
+<td>Stories fully refined to Ready (G/W/T criteria)</td>
+<td>4 of 94 (<strong>4%</strong>) — <code class="story-id">US-1.1</code>, <code class="story-id">US-1.3</code>, <code class="story-id">US-2.6</code>, <code class="story-id">US-17.6</code></td>
+</tr>
+<tr>
+<td>Oversized stories split via INVEST audit</td>
+<td>5 (<code class="story-id">US-2.1</code>, <code class="story-id">US-3.1</code>, <code class="story-id">US-3.6</code>, <code class="story-id">US-15.2</code>, <code class="story-id">US-17.5</code>) — 2 may no longer need splitting post-re-score; re-validate</td>
+</tr>
+<tr>
+<td>Stories re-scored down due to OpenWrt foundation</td>
+<td><strong>6</strong> (<code class="story-id">US-2.1</code> 13→8, <code class="story-id">US-3.1</code> 13→8, <code class="story-id">US-6.1</code> 8→5, <code class="story-id">US-6.2</code> 5→3, <code class="story-id">US-12.2</code> 5→2, <code class="story-id">US-12.3</code> 8→5) = <strong>21 points removed</strong></td>
+</tr>
+<tr>
+<td>Sprint 1 proposed capacity</td>
+<td>20 points (calibration sprint — no velocity history yet)</td>
+</tr>
+<tr>
+<td>New risk flags added in v5</td>
+<td>3 (Wi-Fi 7 driver maturity, DPI engine selection, OpenWrt staffing capacity)</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>⚠️ Reality check:</strong> at 558 points against a 20-point calibration sprint, this backlog is <strong>roughly 28 sprints (~13 months)</strong> of work at Sprint 1's assumed pace — before hardware lead times, certification, or the Sprint 0 gates. This is a strong signal that <strong>Release 1.0 scope is currently too large</strong> and needs an explicit MVP-cut conversation <em>before</em> Sprint 1 starts. See Open Risk #16.</p>
+<h2 id="11-change-log">11. Change Log</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Version</th>
+<th>Date</th>
+<th>Changes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>v1</td>
+<td>Aug 21, 2026</td>
+<td>Initial backlog: 5 personas, 14 epics, ~60 stories, 3-phase roadmap, DoR/DoD.</td>
+</tr>
+<tr>
+<td>v2</td>
+<td>Aug 21, 2026</td>
+<td>Added Epic 15 (Regulatory Compliance &amp; Domestic Manufacturing) and Epic 16 (Trust, Disclosure &amp; Vulnerability Management) in response to newly-researched FCC Covered List rule and Firewalla's documented CVE-disclosure gaps. Added persona P6. Added Sprint 0 pre-development gate to roadmap. Added device-identification story (<code class="story-id">US-3.6</code>), tablet/scheduling UX stories (<code class="story-id">US-10.6</code>–10.8), and pricing-trust-commitment stories (<code class="story-id">US-13.4</code>–13.5) in response to newly-researched app-review sentiment and subscription-creep evidence. Added backlog health snapshot.</td>
+</tr>
+<tr>
+<td>v3</td>
+<td>Aug 21, 2026</td>
+<td>Applied a formal documentation-strategy analysis (value proposition, audience profiling, strategic intent mapping, SWOT, content gaps — see companion doc Section 10) and translated findings into backlog changes: added <strong>Epic 17 (Beginner-First Education &amp; Onboarding Content)</strong> with 6 stories responding to the confirmed "no true beginner track" gap in Firewalla's documentation; added Passkey authentication (<code class="story-id">US-1.7</code>) and censorship-resistant VPN protocol support (<code class="story-id">US-6.6</code>) in response to Firewalla's August 2026 feature releases; flagged a hardware-roadmap risk (managed switch) driven by Firewalla's confirmed full-stack expansion; updated roadmap phasing and backlog health metrics accordingly.</td>
+</tr>
+<tr>
+<td>v4</td>
+<td>Aug 21, 2026</td>
+<td>Applied a formal Scrum Master/Agile Coach refinement pass (Section 8): INVEST-audited and split 5 oversized P0 stories (<code class="story-id">US-2.1</code>, <code class="story-id">US-3.1</code>, <code class="story-id">US-3.6</code>, <code class="story-id">US-15.2</code>, <code class="story-id">US-17.5</code>) into right-sized sub-stories; refined 4 Sprint 1 candidate stories (<code class="story-id">US-1.1</code>, <code class="story-id">US-1.3</code>, <code class="story-id">US-2.6</code>, <code class="story-id">US-17.6</code>) to full Given/When/Then acceptance criteria; produced a capacity-based Sprint 1 plan (20 pts, no velocity history yet) with a stated Sprint Goal, dependency/risk table, a Backlog Refinement facilitation script, and a Product Owner coaching tip; set a recurring refinement cadence for the remaining backlog.</td>
+</tr>
+<tr>
+<td>v6</td>
+<td>Aug 21, 2026</td>
+<td><strong>Audit &amp; correction pass.</strong> Recounted all backlog metrics programmatically — prior versions understated size (actual: 94 stories, 558 points, 52 P0 / 31 P1 / 11 P2). Added a scope-viability reality check and <strong>Open Risk #16 (Release 1.0 likely unachievable as scoped; MVP-cut session recommended before Sprint 1)</strong> plus Open Risk #17 (6 stories still unestimated). Fixed structural debt: Section 8 subsections were still numbered 11.x, internal cross-references pointed at stale section numbers, a "Section 7/8" reference was undefined, and Epic 13 appeared twice as separate headings.</td>
+</tr>
+<tr>
+<td>v5</td>
+<td>Aug 21, 2026</td>
+<td>Architecture decision: build Sentinel on <strong>OpenWrt</strong> rather than a general-purpose Linux distro (confirmed Firewalla itself runs on Ubuntu, not OpenWrt — companion doc Section 1.6). Added <strong>Epic 18 (OpenWrt Platform Foundation)</strong> with 6 stories covering version/hardware-target lock, GPL boundary design, sysupgrade-based OTA, LuCI-based local web UI, curated package manifest, and a public "Built On" trust page. Re-scored 6 existing stories down (<code class="story-id">US-2.1</code>, <code class="story-id">US-3.1</code>, <code class="story-id">US-6.1</code>, <code class="story-id">US-6.2</code>, <code class="story-id">US-12.2</code>, <code class="story-id">US-12.3</code>) now that DPI, VLAN/segmentation, VPN, SSH, and open-source-firmware capabilities build on mature OpenWrt foundations rather than from-scratch work. Added a Wi-Fi 7 driver-maturity risk flag to <code class="story-id">US-7.1</code>, an upstream-security-tracking story to Epic 16 (<code class="story-id">US-16.6</code>), and an opkg/apk power-user story to Epic 12 (<code class="story-id">US-12.5</code>). Added 3 new open risks (chipset driver validation, DPI engine performance spike, OpenWrt staffing capacity) and a note flagging that the pre-existing INVEST splits for <code class="story-id">US-2.1</code>/<code class="story-id">US-3.1</code> should be re-validated given the new point estimates. Updated roadmap (Sprint 0 gates now include <code class="story-id">US-18.1</code>/18.2), health snapshot, and this change log.</td>
+</tr>
+<tr>
+<td>v4</td>
+<td>Aug 21, 2026</td>
+<td>Applied a formal Scrum Master/Agile Coach refinement pass (Section 8): INVEST-audited and split 5 oversized P0 stories (<code class="story-id">US-2.1</code>, <code class="story-id">US-3.1</code>, <code class="story-id">US-3.6</code>, <code class="story-id">US-15.2</code>, <code class="story-id">US-17.5</code>) into right-sized sub-stories; refined 4 Sprint 1 candidate stories (<code class="story-id">US-1.1</code>, <code class="story-id">US-1.3</code>, <code class="story-id">US-2.6</code>, <code class="story-id">US-17.6</code>) to full Given/When/Then acceptance criteria; produced a capacity-based Sprint 1 plan (20 pts, no velocity history yet) with a stated Sprint Goal, dependency/risk table, a Backlog Refinement facilitation script, and a Product Owner coaching tip; set a recurring refinement cadence for the remaining backlog.</td>
+</tr>
+</tbody>
+</table></div>
+  </main>
+</div>
+
+<button id="topbtn" title="Back to top">↑</button>
+<script>
+// active-section highlighting
+const links = [...document.querySelectorAll('nav.toc a')];
+const targets = links.map(a => document.querySelector(a.getAttribute('href'))).filter(Boolean);
+function onScroll(){
+  let idx = 0;
+  const y = window.scrollY + 100;
+  targets.forEach((t,i) => { if (t && t.offsetTop <= y) idx = i; });
+  links.forEach(l => l.classList.remove('active'));
+  if (links[idx]) links[idx].classList.add('active');
+
+  // progress bar
+  const h = document.documentElement;
+  const scrolled = (h.scrollTop) / (h.scrollHeight - h.clientHeight) * 100;
+  document.getElementById('progress').style.width = scrolled + '%';
+
+  // back to top
+  document.getElementById('topbtn').classList.toggle('show', window.scrollY > 600);
+}
+document.addEventListener('scroll', onScroll, {passive:true});
+onScroll();
+
+document.getElementById('topbtn').addEventListener('click', () => window.scrollTo({top:0, behavior:'smooth'}));
+
+// search filter over TOC
+const search = document.getElementById('search');
+search.addEventListener('input', () => {
+  const q = search.value.trim().toLowerCase();
+  document.querySelectorAll('nav.toc li').forEach(li => {
+    const a = li.querySelector(':scope > a');
+    if (!a) return;
+    const text = a.textContent.toLowerCase();
+    const childMatch = [...li.querySelectorAll('a')].some(x => x.textContent.toLowerCase().includes(q));
+    li.classList.toggle('hidden', q.length > 0 && !text.includes(q) && !childMatch);
+  });
+});
+
+// mobile menu toggle
+const menubtn = document.getElementById('menubtn');
+const sidebar = document.querySelector('.sidebar');
+if (menubtn){
+  menubtn.addEventListener('click', () => sidebar.classList.toggle('open'));
+  document.addEventListener('click', (e) => {
+    if (sidebar.classList.contains('open') && !sidebar.contains(e.target) && e.target !== menubtn){
+      sidebar.classList.remove('open');
+    }
+  });
+}
+
+// also filter body content? keep simple: just jump + highlight via browser find (no-op)
+document.querySelectorAll('nav.toc a').forEach(a=>{
+  a.addEventListener('click', () => { if(sidebar.classList.contains('open')) sidebar.classList.remove('open'); });
+});
+</script>
+</body>
+</html>
