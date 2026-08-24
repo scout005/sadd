@@ -1577,6 +1577,114 @@ Estimate: Story points (Fibonacci: 1,2,3,5,8,13).</p>
 </tr>
 </tbody>
 </table></div>
+<h3 id="epic-19-on-router-software-foundation">Epic 19 — <em>[Engineering backlog]</em> On-Router Software Foundation</h3>
+<p>Builds the custom OpenWrt image and the on-device daemon/API that everything else in this backlog runs on top of. Overlaps in subject matter with Epic 18 above (both concern the OpenWrt base) — kept as a separate epic because it comes from the engineering backlog's daemon-centric architecture (see the platform note under Epic 20 below) rather than Epic 18's LuCI-overlay approach.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Story</th>
+<th>Acceptance Criteria</th>
+<th>Priority</th>
+<th>Points</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="story-id">US-19.1</code></td>
+<td><em>[Engineering backlog: US15.1]</em> As a developer, I want a reproducible, scripted build of a custom OpenWrt image with only our required packages, so that we ship a minimal, purpose-built firmware instead of stock OpenWrt with LuCI exposed.</td>
+<td>Build produces a flashable image per target hardware platform; only the approved package list is included (dnsmasq, nftables, hostapd, wireguard-tools, adblock, rpcd/ubus, etc.); build is scripted/CI-ready and reproducible from a clean checkout; LuCI is excluded from the consumer build, or present but access-restricted to engineering/support only.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>8</td>
+</tr>
+<tr>
+<td><code class="story-id">US-19.2</code></td>
+<td><em>[Engineering backlog: US15.2]</em> As a developer, I want a single on-device daemon that wraps ubus/UCI and exposes one clean local REST/JSON API, so that all clients talk to one stable contract instead of touching OpenWrt internals directly.</td>
+<td>Daemon runs as a persistent system service; API covers device list/control, block/pause, parental profiles, security status, and MFA verification endpoints; no frontend code (mobile or web) calls ubus/UCI directly; API contract is documented and versioned.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>13</td>
+</tr>
+<tr>
+<td><code class="story-id">US-19.3</code></td>
+<td><em>[Engineering backlog: US15.3]</em> As a developer, I want the on-device daemon to keep serving the full local API when the router has no internet connection, so that Epic 13's offline-access guarantees are technically enforced at the daemon level, not just assumed by the app.</td>
+<td>Daemon detects WAN status and clearly flags cloud-dependent endpoints as unavailable rather than timing out silently; all LAN-servable endpoints (device control, blocking, parental controls, local MFA) remain fully functional with WAN down; daemon resumes cloud sync automatically once connectivity returns, without requiring a restart.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>5</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="epic-20-firmware-ota-update-pipeline">Epic 20 — <em>[Engineering backlog]</em> Firmware &amp; OTA Update Pipeline</h3>
+<p class="note"><strong>Note:</strong> this epic specifies RAUC-based A/B updates, which differs from <code class="story-id">US-18.3</code>'s sysupgrade-based approach in Epic 18 above — flagged as an unresolved technical decision in §9 Open Risks, not resolved by this merge.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Story</th>
+<th>Acceptance Criteria</th>
+<th>Priority</th>
+<th>Points</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="story-id">US-20.1</code></td>
+<td><em>[Engineering backlog: US16.1]</em> As a developer, I want RAUC integrated into our custom OpenWrt image for A/B partition updates, so that firmware updates are atomic, cryptographically signed, and automatically roll back on failed boot.</td>
+<td>A/B partition slots configured for rootfs updates; update bundles are cryptographically signed with a vendor-held key and rejected if verification fails; a failed boot on the new slot automatically reverts to the last-known-good slot.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>13</td>
+</tr>
+<tr>
+<td><code class="story-id">US-20.2</code></td>
+<td><em>[Engineering backlog: US16.2]</em> As a developer, I want a cloud service that hosts signed firmware bundles and tracks each router's version/update status, so that we can distribute updates to the fleet securely and know what's deployed where.</td>
+<td>Server stores versioned, signed firmware bundles; server tracks per-device current version and last check-in time; routers fetch updates over their existing outbound connection — no inbound access required to the fleet.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>8</td>
+</tr>
+<tr>
+<td><code class="story-id">US-20.3</code></td>
+<td><em>[Engineering backlog: US16.3]</em> As a product owner, I want firmware rollouts to start with a small percentage of devices before wide release, so that we catch failures before they affect the whole fleet.</td>
+<td>Rollout percentage/cohort is configurable per release from the OTA server, not hardcoded; fleet-wide rollout failure rate is monitored, with the ability to halt a rollout mid-way; canary cohort can be defined (e.g., internal devices first, then a small real-user percentage).</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>5</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="epic-21-remote-access-relay-infrastructure">Epic 21 — <em>[Engineering backlog]</em> Remote Access Relay Infrastructure</h3>
+<p>The outbound-only WireGuard tunnel and relay layer that makes Epic 6's remote-access stories (<code class="story-id">US-6.7</code>–<code class="story-id">US-6.10</code>) technically possible, including ACL-based scope enforcement.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Story</th>
+<th>Acceptance Criteria</th>
+<th>Priority</th>
+<th>Points</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="story-id">US-21.1</code></td>
+<td><em>[Engineering backlog: US17.1]</em> As a developer, I want to evaluate self-hosted Headscale against building custom WireGuard orchestration, so that we choose the remote-access relay approach with the best tradeoff of speed-to-market, control, and lock-in risk.</td>
+<td>Spike is timeboxed and produces a written recommendation; evaluation explicitly covers build/ops cost, degree of control, fit with management-only vs. full-LAN ACL scoping, and vendor lock-in risk; recommendation is reviewed before <code class="story-id">US-21.2</code>/<code class="story-id">US-21.3</code> begin implementation.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>5</td>
+</tr>
+<tr>
+<td><code class="story-id">US-21.2</code></td>
+<td><em>[Engineering backlog: US17.2]</em> As a developer, I want the router to establish an outbound-only WireGuard tunnel to the relay, so that remote access never requires an open inbound port on the router.</td>
+<td>Tunnel connection is always initiated by the router, never accepted inbound; tunnel reconnects automatically after network changes or WAN drops; tunnel status (connected/connecting/failed) is exposed via the local API for the dashboard to display.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>8</td>
+</tr>
+<tr>
+<td><code class="story-id">US-21.3</code></td>
+<td><em>[Engineering backlog: US17.3]</em> As a developer, I want the relay's access-control layer to technically enforce management-only vs. full-LAN access scope, so that Epic 6's two access modes are enforced at the network layer, not only in the app UI.</td>
+<td>Management-only scope restricts routed traffic to the local daemon's API port only; full-LAN scope (only when explicitly enabled) opens routing to the broader LAN subnet; scope changes take effect without requiring the user to reconnect the tunnel.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>8</td>
+</tr>
+</tbody>
+</table></div>
 <h2 id="5-release-roadmap-suggested">5. Release Roadmap (Suggested)</h2>
 <h3 id="new-sprint-0-can-we-even-ship-this-pre-development-gate"><strong>[NEW] Sprint 0 — "Can We Even Ship This"</strong> (Pre-Development Gate)</h3>
 <p>Goal: resolve business/legal/compliance unknowns <em>before</em> committing engineering capacity to hardware.
