@@ -1131,7 +1131,7 @@ Estimate: Story points (Fibonacci: 1,2,3,5,8,13).</p>
 <tr>
 <td><code class="story-id">US-10.2</code></td>
 <td>As any user, I want to rename devices and group them logically, so that the device list is meaningful instead of a wall of MAC addresses.</td>
-<td>Rename + custom icon + grouping supported; auto-suggested names via device fingerprinting.</td>
+<td>Rename + custom icon + grouping supported; auto-suggested names via device fingerprinting. <em>[Engineering backlog: US4.1–4.3]</em> Default view shows icon, friendly name, and last-seen time only — no MAC/IP unless the user taps into device detail; pause/block actions are available directly from the device list or card and take effect within seconds; a new/unrecognized device triggers a push notification with a direct "Block" action and is visually flagged in the list; list stays smooth at 20+ devices.</td>
 <td><span class="badge badge-p0">P0</span></td>
 <td>5</td>
 </tr>
@@ -1175,6 +1175,20 @@ Estimate: Story points (Fibonacci: 1,2,3,5,8,13).</p>
 <td><span class="tag tag-new">[NEW]</span> As Ivan, I want a home-screen widget showing alarm count, blocked-threat count, and network speed at a glance, so that I don't have to open the full app for a quick status check.</td>
 <td>iOS/Android widget ships with at least 2 size variants (small/medium) by 1.1.</td>
 <td><span class="badge badge-p2">P2</span></td>
+<td>5</td>
+</tr>
+<tr>
+<td><code class="story-id">US-10.9</code></td>
+<td><em>[Engineering backlog: US4.4]</em> As a power user, I want to view technical device details (MAC address, IP, connection type, traffic usage) in Advanced mode, so that I can troubleshoot or investigate further.</td>
+<td>Device detail screen in Advanced mode shows MAC, IP, connection type, and data usage; data available for at least the last 7 days.</td>
+<td><span class="badge badge-p2">P2</span></td>
+<td>3</td>
+</tr>
+<tr>
+<td><code class="story-id">US-10.10</code></td>
+<td><em>[Engineering backlog: US21.1, SRS FR-17]</em> As a non-technical user, I want guided in-app troubleshooting when something isn't working (e.g., "internet is down," "a device can't connect"), so that I can fix common problems without calling support.</td>
+<td>Guided flows for the top support scenarios in plain language with one-tap fixes where possible; flows work fully offline; each flow ends with a clear path to human support if it doesn't resolve the issue.</td>
+<td><span class="badge badge-p1">P1</span></td>
 <td>5</td>
 </tr>
 </tbody>
@@ -1278,7 +1292,7 @@ Estimate: Story points (Fibonacci: 1,2,3,5,8,13).</p>
 <tr>
 <td><code class="story-id">US-13.1</code></td>
 <td>As any user, I want all traffic inspection to run locally on my device by default, with no data leaving my home unless I explicitly opt in, so that my network activity stays private.</td>
-<td>Local-only mode is the default; cloud sync is opt-in with a clear consent screen explaining exactly what is uploaded.</td>
+<td>Local-only mode is the default; cloud sync is opt-in with a clear consent screen explaining exactly what is uploaded. <em>[Engineering backlog: US20.2]</em> This applies with particular strictness to children's browsing/usage data: stored on-router by default, with any cloud copy explicit, minimal, and separately consented — backed by a data inventory (what's collected, where stored, retention period, who can access it) reviewed by counsel before launch.</td>
 <td><span class="badge badge-p0">P0</span></td>
 <td>8</td>
 </tr>
@@ -1335,6 +1349,13 @@ Estimate: Story points (Fibonacci: 1,2,3,5,8,13).</p>
 <td>Core feature list (Epics 2, 3, 5, 6, 8) fully available with zero recurring fee.</td>
 <td><span class="badge badge-p0">P0</span></td>
 <td>N/A (business decision)</td>
+</tr>
+<tr>
+<td><code class="story-id">US-14.4</code></td>
+<td><em>[Engineering backlog: US13.4, US19.3]</em> As a user, I want a physical, local last-resort recovery method on the router itself, so that I'm never permanently locked out even if I lose access to every MFA method I've set up.</td>
+<td>A defined physical action (e.g., holding a button for a set duration) triggers a local recovery flow, requiring physical presence and a setup-time recovery code generated and shown once during onboarding; the flow clearly warns the user in advance what recovery does (e.g., resets admin credentials) before it's ever needed; recovery events are logged. Cross-reference: hardware button-hold semantics specced jointly with hardware engineering (Epic 23).</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>5</td>
 </tr>
 </tbody>
 </table></div>
@@ -1410,7 +1431,7 @@ Estimate: Story points (Fibonacci: 1,2,3,5,8,13).</p>
 <tr>
 <td><code class="story-id">US-16.2</code></td>
 <td>As a security researcher, I want a clear vulnerability-disclosure/bug-bounty policy (security.txt, contact channel, disclosure timeline), so that I can report issues responsibly and expect a timely response.</td>
-<td>security.txt published; documented responsible-disclosure policy with committed acknowledgment SLA (e.g., 48 hours).</td>
+<td>security.txt published; documented responsible-disclosure policy with committed acknowledgment SLA (e.g., 48 hours). <em>[Engineering backlog: US20.1, US20.3]</em> An independent external security firm pen-tests the router firmware/daemon, local API, mobile/web apps, cloud services, and remote-access tunnel before launch; all critical/high findings are fixed and re-verified before launch (launch-blocking, not optional); the audit is repeated for major releases; critical patches ship fleet-wide via the staged OTA pipeline within the published SLA, not months.</td>
 <td><span class="badge badge-p0">P0</span></td>
 <td>5</td>
 </tr>
@@ -1487,7 +1508,7 @@ Estimate: Story points (Fibonacci: 1,2,3,5,8,13).</p>
 <tr>
 <td><code class="story-id">US-17.5</code></td>
 <td>As a user with a physical/visual disability or without a modern smartphone, I want a documented, supported alternative setup and management path (e.g., full local web UI, larger-text mode, screen-reader support), so that I'm not excluded from using the product.</td>
-<td>Full setup achievable via local web UI without a smartphone; app and web UI pass a baseline WCAG 2.1 AA accessibility audit — directly addresses a documented real-world Firewalla complaint (companion doc Section 8.9/10.6).</td>
+<td>Full setup achievable via local web UI without a smartphone; app and web UI pass a baseline WCAG 2.1 AA accessibility audit — directly addresses a documented real-world Firewalla complaint (companion doc Section 8.9/10.6). <em>[Engineering backlog NFR]</em> Dark mode and a high-contrast mode are available in Settings; common actions (pause internet, block device, check status) complete in under 30 seconds for a non-technical user; no default-view screen uses networking jargon without a plain-language label.</td>
 <td><span class="badge badge-p1">P1</span></td>
 <td>13</td>
 </tr>
