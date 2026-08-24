@@ -1810,6 +1810,356 @@ Estimate: Story points (Fibonacci: 1,2,3,5,8,13).</p>
 </tr>
 </tbody>
 </table></div>
+<h2 id="4a-engineering-task-breakdown">4a. Engineering Task Breakdown</h2>
+<p>Design/Build/Test task triads per story, from the engineering backlog spreadsheet (<code>router-security-app-backlog.xlsx</code>, now merged into this document). Grouped by epic for cross-reference with §4 above; story IDs here use the source spreadsheet’s unhyphenated <code>USn.n</code> scheme, not this document’s <code>US-n.n</code> scheme, to preserve traceability to the original task list.</p>
+<h4>E1 — Account Setup &amp; Onboarding</h4>
+<div class="table-wrap"><table>
+<thead><tr><th>Task ID</th><th>Story ID</th><th>Role</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>T1</code></td><td><code class="story-id">US1.1</code></td><td>Design</td><td>Design UI/UX for: Guided setup wizard (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T2</code></td><td><code class="story-id">US1.1</code></td><td>Build</td><td>Implement front-end and back-end logic for: Guided setup wizard</td></tr>
+<tr><td><code>T3</code></td><td><code class="story-id">US1.1</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Guided setup wizard</td></tr>
+<tr><td><code>T4</code></td><td><code class="story-id">US1.2</code></td><td>Design</td><td>Design UI/UX for: MFA setup during onboarding (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T5</code></td><td><code class="story-id">US1.2</code></td><td>Build</td><td>Implement front-end and back-end logic for: MFA setup during onboarding</td></tr>
+<tr><td><code>T6</code></td><td><code class="story-id">US1.2</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: MFA setup during onboarding</td></tr>
+<tr><td><code>T7</code></td><td><code class="story-id">US1.3</code></td><td>Design</td><td>Design UI/UX for: Auto-detect existing devices (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T8</code></td><td><code class="story-id">US1.3</code></td><td>Build</td><td>Implement front-end and back-end logic for: Auto-detect existing devices</td></tr>
+<tr><td><code>T9</code></td><td><code class="story-id">US1.3</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Auto-detect existing devices</td></tr>
+<tr><td><code>T10</code></td><td><code class="story-id">US1.4</code></td><td>Design</td><td>Design UI/UX for: Skip wizard for manual setup (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T11</code></td><td><code class="story-id">US1.4</code></td><td>Build</td><td>Implement front-end and back-end logic for: Skip wizard for manual setup</td></tr>
+<tr><td><code>T12</code></td><td><code class="story-id">US1.4</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Skip wizard for manual setup</td></tr>
+</tbody></table></div>
+<h4>E2 — Security Dashboard (Home)</h4>
+<div class="table-wrap"><table>
+<thead><tr><th>Task ID</th><th>Story ID</th><th>Role</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>T13</code></td><td><code class="story-id">US2.1</code></td><td>Design</td><td>Design UI/UX for: Plain-language security status (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T14</code></td><td><code class="story-id">US2.1</code></td><td>Build</td><td>Implement front-end and back-end logic for: Plain-language security status</td></tr>
+<tr><td><code>T15</code></td><td><code class="story-id">US2.1</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Plain-language security status</td></tr>
+<tr><td><code>T16</code></td><td><code class="story-id">US2.2</code></td><td>Design</td><td>Design UI/UX for: One-tap fixes (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T17</code></td><td><code class="story-id">US2.2</code></td><td>Build</td><td>Implement front-end and back-end logic for: One-tap fixes</td></tr>
+<tr><td><code>T18</code></td><td><code class="story-id">US2.2</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: One-tap fixes</td></tr>
+<tr><td><code>T19</code></td><td><code class="story-id">US2.3</code></td><td>Design</td><td>Design UI/UX for: At-a-glance summary (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T20</code></td><td><code class="story-id">US2.3</code></td><td>Build</td><td>Implement front-end and back-end logic for: At-a-glance summary</td></tr>
+<tr><td><code>T21</code></td><td><code class="story-id">US2.3</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: At-a-glance summary</td></tr>
+<tr><td><code>T22</code></td><td><code class="story-id">US2.4</code></td><td>Design</td><td>Design UI/UX for: Detailed security log (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T23</code></td><td><code class="story-id">US2.4</code></td><td>Build</td><td>Implement front-end and back-end logic for: Detailed security log</td></tr>
+<tr><td><code>T24</code></td><td><code class="story-id">US2.4</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Detailed security log</td></tr>
+</tbody></table></div>
+<h4>E3 — Multi-Factor Authentication</h4>
+<div class="table-wrap"><table>
+<thead><tr><th>Task ID</th><th>Story ID</th><th>Role</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>T25</code></td><td><code class="story-id">US3.1</code></td><td>Design</td><td>Design UI/UX for: Default SMS/push MFA (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T26</code></td><td><code class="story-id">US3.1</code></td><td>Build</td><td>Implement front-end and back-end logic for: Default SMS/push MFA</td></tr>
+<tr><td><code>T27</code></td><td><code class="story-id">US3.1</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Default SMS/push MFA</td></tr>
+<tr><td><code>T28</code></td><td><code class="story-id">US3.2</code></td><td>Design</td><td>Design UI/UX for: Alternative MFA methods (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T29</code></td><td><code class="story-id">US3.2</code></td><td>Build</td><td>Implement front-end and back-end logic for: Alternative MFA methods</td></tr>
+<tr><td><code>T30</code></td><td><code class="story-id">US3.2</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Alternative MFA methods</td></tr>
+<tr><td><code>T31</code></td><td><code class="story-id">US3.3</code></td><td>Design</td><td>Design UI/UX for: Backup codes (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T32</code></td><td><code class="story-id">US3.3</code></td><td>Build</td><td>Implement front-end and back-end logic for: Backup codes</td></tr>
+<tr><td><code>T33</code></td><td><code class="story-id">US3.3</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Backup codes</td></tr>
+<tr><td><code>T34</code></td><td><code class="story-id">US3.4</code></td><td>Design</td><td>Design UI/UX for: Require MFA per admin action (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T35</code></td><td><code class="story-id">US3.4</code></td><td>Build</td><td>Implement front-end and back-end logic for: Require MFA per admin action</td></tr>
+<tr><td><code>T36</code></td><td><code class="story-id">US3.4</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Require MFA per admin action</td></tr>
+</tbody></table></div>
+<h4>E4 — Device Management &amp; Visibility</h4>
+<div class="table-wrap"><table>
+<thead><tr><th>Task ID</th><th>Story ID</th><th>Role</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>T37</code></td><td><code class="story-id">US4.1</code></td><td>Design</td><td>Design UI/UX for: Friendly device list (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T38</code></td><td><code class="story-id">US4.1</code></td><td>Build</td><td>Implement front-end and back-end logic for: Friendly device list</td></tr>
+<tr><td><code>T39</code></td><td><code class="story-id">US4.1</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Friendly device list</td></tr>
+<tr><td><code>T40</code></td><td><code class="story-id">US4.2</code></td><td>Design</td><td>Design UI/UX for: One-tap pause/block device (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T41</code></td><td><code class="story-id">US4.2</code></td><td>Build</td><td>Implement front-end and back-end logic for: One-tap pause/block device</td></tr>
+<tr><td><code>T42</code></td><td><code class="story-id">US4.2</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: One-tap pause/block device</td></tr>
+<tr><td><code>T43</code></td><td><code class="story-id">US4.3</code></td><td>Design</td><td>Design UI/UX for: New device alert (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T44</code></td><td><code class="story-id">US4.3</code></td><td>Build</td><td>Implement front-end and back-end logic for: New device alert</td></tr>
+<tr><td><code>T45</code></td><td><code class="story-id">US4.3</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: New device alert</td></tr>
+<tr><td><code>T46</code></td><td><code class="story-id">US4.4</code></td><td>Design</td><td>Design UI/UX for: Technical device details (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T47</code></td><td><code class="story-id">US4.4</code></td><td>Build</td><td>Implement front-end and back-end logic for: Technical device details</td></tr>
+<tr><td><code>T48</code></td><td><code class="story-id">US4.4</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Technical device details</td></tr>
+<tr><td><code>T49</code></td><td><code class="story-id">US4.5</code></td><td>Design</td><td>Design UI/UX for: Device network isolation (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T50</code></td><td><code class="story-id">US4.5</code></td><td>Build</td><td>Implement front-end and back-end logic for: Device network isolation</td></tr>
+<tr><td><code>T51</code></td><td><code class="story-id">US4.5</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Device network isolation</td></tr>
+</tbody></table></div>
+<h4>E5 — Website / App Blocking &amp; Block Page</h4>
+<div class="table-wrap"><table>
+<thead><tr><th>Task ID</th><th>Story ID</th><th>Role</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>T52</code></td><td><code class="story-id">US5.1</code></td><td>Design</td><td>Design UI/UX for: Block websites &amp; content categories (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T53</code></td><td><code class="story-id">US5.1</code></td><td>Build</td><td>Implement front-end and back-end logic for: Block websites &amp; content categories</td></tr>
+<tr><td><code>T54</code></td><td><code class="story-id">US5.1</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Block websites &amp; content categories</td></tr>
+<tr><td><code>T55</code></td><td><code class="story-id">US5.5</code></td><td>Design</td><td>Design UI/UX for: Mobile app blocking feasibility spike (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T56</code></td><td><code class="story-id">US5.5</code></td><td>Build</td><td>Implement front-end and back-end logic for: Mobile app blocking feasibility spike</td></tr>
+<tr><td><code>T57</code></td><td><code class="story-id">US5.5</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Mobile app blocking feasibility spike</td></tr>
+<tr><td><code>T58</code></td><td><code class="story-id">US5.6</code></td><td>Design</td><td>Design UI/UX for: Per-app blocking (scope set by spike) (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T59</code></td><td><code class="story-id">US5.6</code></td><td>Build</td><td>Implement front-end and back-end logic for: Per-app blocking (scope set by spike)</td></tr>
+<tr><td><code>T60</code></td><td><code class="story-id">US5.6</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Per-app blocking (scope set by spike)</td></tr>
+<tr><td><code>T61</code></td><td><code class="story-id">US5.7</code></td><td>Design</td><td>Design UI/UX for: HTTPS block-page handling (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T62</code></td><td><code class="story-id">US5.7</code></td><td>Build</td><td>Implement front-end and back-end logic for: HTTPS block-page handling</td></tr>
+<tr><td><code>T63</code></td><td><code class="story-id">US5.7</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: HTTPS block-page handling</td></tr>
+<tr><td><code>T64</code></td><td><code class="story-id">US5.2</code></td><td>Design</td><td>Design UI/UX for: Friendly block page (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T65</code></td><td><code class="story-id">US5.2</code></td><td>Build</td><td>Implement front-end and back-end logic for: Friendly block page</td></tr>
+<tr><td><code>T66</code></td><td><code class="story-id">US5.2</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Friendly block page</td></tr>
+<tr><td><code>T67</code></td><td><code class="story-id">US5.3</code></td><td>Design</td><td>Design UI/UX for: Admin unblock control (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T68</code></td><td><code class="story-id">US5.3</code></td><td>Build</td><td>Implement front-end and back-end logic for: Admin unblock control</td></tr>
+<tr><td><code>T69</code></td><td><code class="story-id">US5.3</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Admin unblock control</td></tr>
+<tr><td><code>T70</code></td><td><code class="story-id">US5.4</code></td><td>Design</td><td>Design UI/UX for: Custom block lists (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T71</code></td><td><code class="story-id">US5.4</code></td><td>Build</td><td>Implement front-end and back-end logic for: Custom block lists</td></tr>
+<tr><td><code>T72</code></td><td><code class="story-id">US5.4</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Custom block lists</td></tr>
+</tbody></table></div>
+<h4>E6 — Ad Blocking</h4>
+<div class="table-wrap"><table>
+<thead><tr><th>Task ID</th><th>Story ID</th><th>Role</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>T73</code></td><td><code class="story-id">US6.1</code></td><td>Design</td><td>Design UI/UX for: Network-wide ad block toggle (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T74</code></td><td><code class="story-id">US6.1</code></td><td>Build</td><td>Implement front-end and back-end logic for: Network-wide ad block toggle</td></tr>
+<tr><td><code>T75</code></td><td><code class="story-id">US6.1</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Network-wide ad block toggle</td></tr>
+<tr><td><code>T76</code></td><td><code class="story-id">US6.2</code></td><td>Design</td><td>Design UI/UX for: Custom ad-block lists (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T77</code></td><td><code class="story-id">US6.2</code></td><td>Build</td><td>Implement front-end and back-end logic for: Custom ad-block lists</td></tr>
+<tr><td><code>T78</code></td><td><code class="story-id">US6.2</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Custom ad-block lists</td></tr>
+</tbody></table></div>
+<h4>E7 — Remote Access VPN</h4>
+<div class="table-wrap"><table>
+<thead><tr><th>Task ID</th><th>Story ID</th><th>Role</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>T79</code></td><td><code class="story-id">US7.1</code></td><td>Design</td><td>Design UI/UX for: Remote connect via mobile app (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T80</code></td><td><code class="story-id">US7.1</code></td><td>Build</td><td>Implement front-end and back-end logic for: Remote connect via mobile app</td></tr>
+<tr><td><code>T81</code></td><td><code class="story-id">US7.1</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Remote connect via mobile app</td></tr>
+<tr><td><code>T82</code></td><td><code class="story-id">US7.2</code></td><td>Design</td><td>Design UI/UX for: Remote connect via web portal (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T83</code></td><td><code class="story-id">US7.2</code></td><td>Build</td><td>Implement front-end and back-end logic for: Remote connect via web portal</td></tr>
+<tr><td><code>T84</code></td><td><code class="story-id">US7.2</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Remote connect via web portal</td></tr>
+<tr><td><code>T85</code></td><td><code class="story-id">US7.3</code></td><td>Design</td><td>Design UI/UX for: Instant remote block/control (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T86</code></td><td><code class="story-id">US7.3</code></td><td>Build</td><td>Implement front-end and back-end logic for: Instant remote block/control</td></tr>
+<tr><td><code>T87</code></td><td><code class="story-id">US7.3</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Instant remote block/control</td></tr>
+<tr><td><code>T88</code></td><td><code class="story-id">US7.4</code></td><td>Design</td><td>Design UI/UX for: Scoped remote access (security boundary) — default mode (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T89</code></td><td><code class="story-id">US7.4</code></td><td>Build</td><td>Implement front-end and back-end logic for: Scoped remote access (security boundary) — default mode</td></tr>
+<tr><td><code>T90</code></td><td><code class="story-id">US7.4</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Scoped remote access (security boundary) — default mode</td></tr>
+<tr><td><code>T91</code></td><td><code class="story-id">US7.5</code></td><td>Design</td><td>Design UI/UX for: Full home network remote access — advanced mode (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T92</code></td><td><code class="story-id">US7.5</code></td><td>Build</td><td>Implement front-end and back-end logic for: Full home network remote access — advanced mode</td></tr>
+<tr><td><code>T93</code></td><td><code class="story-id">US7.5</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Full home network remote access — advanced mode</td></tr>
+<tr><td><code>T94</code></td><td><code class="story-id">US7.6</code></td><td>Design</td><td>Design UI/UX for: Remote session visibility &amp; alerts (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T95</code></td><td><code class="story-id">US7.6</code></td><td>Build</td><td>Implement front-end and back-end logic for: Remote session visibility &amp; alerts</td></tr>
+<tr><td><code>T96</code></td><td><code class="story-id">US7.6</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Remote session visibility &amp; alerts</td></tr>
+<tr><td><code>T97</code></td><td><code class="story-id">US7.7</code></td><td>Design</td><td>Design UI/UX for: Remote VPN technical details (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T98</code></td><td><code class="story-id">US7.7</code></td><td>Build</td><td>Implement front-end and back-end logic for: Remote VPN technical details</td></tr>
+<tr><td><code>T99</code></td><td><code class="story-id">US7.7</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Remote VPN technical details</td></tr>
+</tbody></table></div>
+<h4>E8 — Parental Controls</h4>
+<div class="table-wrap"><table>
+<thead><tr><th>Task ID</th><th>Story ID</th><th>Role</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>T100</code></td><td><code class="story-id">US8.1</code></td><td>Design</td><td>Design UI/UX for: Child profiles (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T101</code></td><td><code class="story-id">US8.1</code></td><td>Build</td><td>Implement front-end and back-end logic for: Child profiles</td></tr>
+<tr><td><code>T102</code></td><td><code class="story-id">US8.1</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Child profiles</td></tr>
+<tr><td><code>T103</code></td><td><code class="story-id">US8.2</code></td><td>Design</td><td>Design UI/UX for: Content filtering per profile (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T104</code></td><td><code class="story-id">US8.2</code></td><td>Build</td><td>Implement front-end and back-end logic for: Content filtering per profile</td></tr>
+<tr><td><code>T105</code></td><td><code class="story-id">US8.2</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Content filtering per profile</td></tr>
+<tr><td><code>T106</code></td><td><code class="story-id">US8.3</code></td><td>Design</td><td>Design UI/UX for: Time limits &amp; bedtime schedules (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T107</code></td><td><code class="story-id">US8.3</code></td><td>Build</td><td>Implement front-end and back-end logic for: Time limits &amp; bedtime schedules</td></tr>
+<tr><td><code>T108</code></td><td><code class="story-id">US8.3</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Time limits &amp; bedtime schedules</td></tr>
+<tr><td><code>T109</code></td><td><code class="story-id">US8.4</code></td><td>Design</td><td>Design UI/UX for: Instant pause per profile (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T110</code></td><td><code class="story-id">US8.4</code></td><td>Build</td><td>Implement front-end and back-end logic for: Instant pause per profile</td></tr>
+<tr><td><code>T111</code></td><td><code class="story-id">US8.4</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Instant pause per profile</td></tr>
+<tr><td><code>T112</code></td><td><code class="story-id">US8.5</code></td><td>Design</td><td>Design UI/UX for: Weekly usage reports (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T113</code></td><td><code class="story-id">US8.5</code></td><td>Build</td><td>Implement front-end and back-end logic for: Weekly usage reports</td></tr>
+<tr><td><code>T114</code></td><td><code class="story-id">US8.5</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Weekly usage reports</td></tr>
+<tr><td><code>T115</code></td><td><code class="story-id">US8.6</code></td><td>Design</td><td>Design UI/UX for: Per-app/site rules within profile (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T116</code></td><td><code class="story-id">US8.6</code></td><td>Build</td><td>Implement front-end and back-end logic for: Per-app/site rules within profile</td></tr>
+<tr><td><code>T117</code></td><td><code class="story-id">US8.6</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Per-app/site rules within profile</td></tr>
+</tbody></table></div>
+<h4>E9 — Guest Network</h4>
+<div class="table-wrap"><table>
+<thead><tr><th>Task ID</th><th>Story ID</th><th>Role</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>T118</code></td><td><code class="story-id">US9.1</code></td><td>Design</td><td>Design UI/UX for: One-tap guest network (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T119</code></td><td><code class="story-id">US9.1</code></td><td>Build</td><td>Implement front-end and back-end logic for: One-tap guest network</td></tr>
+<tr><td><code>T120</code></td><td><code class="story-id">US9.1</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: One-tap guest network</td></tr>
+<tr><td><code>T121</code></td><td><code class="story-id">US9.2</code></td><td>Design</td><td>Design UI/UX for: Guest access expiration (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T122</code></td><td><code class="story-id">US9.2</code></td><td>Build</td><td>Implement front-end and back-end logic for: Guest access expiration</td></tr>
+<tr><td><code>T123</code></td><td><code class="story-id">US9.2</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Guest access expiration</td></tr>
+</tbody></table></div>
+<h4>E10 — Alerts &amp; Notifications</h4>
+<div class="table-wrap"><table>
+<thead><tr><th>Task ID</th><th>Story ID</th><th>Role</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>T124</code></td><td><code class="story-id">US10.1</code></td><td>Design</td><td>Design UI/UX for: Push notifications for security events (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T125</code></td><td><code class="story-id">US10.1</code></td><td>Build</td><td>Implement front-end and back-end logic for: Push notifications for security events</td></tr>
+<tr><td><code>T126</code></td><td><code class="story-id">US10.1</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Push notifications for security events</td></tr>
+<tr><td><code>T127</code></td><td><code class="story-id">US10.2</code></td><td>Design</td><td>Design UI/UX for: Customizable alert preferences (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T128</code></td><td><code class="story-id">US10.2</code></td><td>Build</td><td>Implement front-end and back-end logic for: Customizable alert preferences</td></tr>
+<tr><td><code>T129</code></td><td><code class="story-id">US10.2</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Customizable alert preferences</td></tr>
+</tbody></table></div>
+<h4>E11 — Firmware &amp; Auto-Updates</h4>
+<div class="table-wrap"><table>
+<thead><tr><th>Task ID</th><th>Story ID</th><th>Role</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>T130</code></td><td><code class="story-id">US11.1</code></td><td>Design</td><td>Design UI/UX for: Automatic firmware updates (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T131</code></td><td><code class="story-id">US11.1</code></td><td>Build</td><td>Implement front-end and back-end logic for: Automatic firmware updates</td></tr>
+<tr><td><code>T132</code></td><td><code class="story-id">US11.1</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Automatic firmware updates</td></tr>
+<tr><td><code>T133</code></td><td><code class="story-id">US11.2</code></td><td>Design</td><td>Design UI/UX for: Manual update approval (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T134</code></td><td><code class="story-id">US11.2</code></td><td>Build</td><td>Implement front-end and back-end logic for: Manual update approval</td></tr>
+<tr><td><code>T135</code></td><td><code class="story-id">US11.2</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Manual update approval</td></tr>
+</tbody></table></div>
+<h4>E12 — Advanced / Power User Settings</h4>
+<div class="table-wrap"><table>
+<thead><tr><th>Task ID</th><th>Story ID</th><th>Role</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>T136</code></td><td><code class="story-id">US12.1</code></td><td>Design</td><td>Design UI/UX for: Advanced Mode toggle (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T137</code></td><td><code class="story-id">US12.1</code></td><td>Build</td><td>Implement front-end and back-end logic for: Advanced Mode toggle</td></tr>
+<tr><td><code>T138</code></td><td><code class="story-id">US12.1</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Advanced Mode toggle</td></tr>
+<tr><td><code>T139</code></td><td><code class="story-id">US12.2</code></td><td>Design</td><td>Design UI/UX for: Network configuration controls (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T140</code></td><td><code class="story-id">US12.2</code></td><td>Build</td><td>Implement front-end and back-end logic for: Network configuration controls</td></tr>
+<tr><td><code>T141</code></td><td><code class="story-id">US12.2</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Network configuration controls</td></tr>
+</tbody></table></div>
+<h4>E13 — Offline &amp; No-Internet Access</h4>
+<div class="table-wrap"><table>
+<thead><tr><th>Task ID</th><th>Story ID</th><th>Role</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>T142</code></td><td><code class="story-id">US13.1</code></td><td>Design</td><td>Design UI/UX for: Offline-capable MFA login (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T143</code></td><td><code class="story-id">US13.1</code></td><td>Build</td><td>Implement front-end and back-end logic for: Offline-capable MFA login</td></tr>
+<tr><td><code>T144</code></td><td><code class="story-id">US13.1</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Offline-capable MFA login</td></tr>
+<tr><td><code>T145</code></td><td><code class="story-id">US13.2</code></td><td>Design</td><td>Design UI/UX for: Clear messaging when internet-dependent MFA is unavailable (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T146</code></td><td><code class="story-id">US13.2</code></td><td>Build</td><td>Implement front-end and back-end logic for: Clear messaging when internet-dependent MFA is unavailable</td></tr>
+<tr><td><code>T147</code></td><td><code class="story-id">US13.2</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Clear messaging when internet-dependent MFA is unavailable</td></tr>
+<tr><td><code>T148</code></td><td><code class="story-id">US13.3</code></td><td>Design</td><td>Design UI/UX for: Local access continues without internet (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T149</code></td><td><code class="story-id">US13.3</code></td><td>Build</td><td>Implement front-end and back-end logic for: Local access continues without internet</td></tr>
+<tr><td><code>T150</code></td><td><code class="story-id">US13.3</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Local access continues without internet</td></tr>
+<tr><td><code>T151</code></td><td><code class="story-id">US13.4</code></td><td>Design</td><td>Design UI/UX for: Physical local-recovery fallback (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T152</code></td><td><code class="story-id">US13.4</code></td><td>Build</td><td>Implement front-end and back-end logic for: Physical local-recovery fallback</td></tr>
+<tr><td><code>T153</code></td><td><code class="story-id">US13.4</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Physical local-recovery fallback</td></tr>
+</tbody></table></div>
+<h4>E14 — Account Creation &amp; Multi-Router Management</h4>
+<div class="table-wrap"><table>
+<thead><tr><th>Task ID</th><th>Story ID</th><th>Role</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>T154</code></td><td><code class="story-id">US14.1</code></td><td>Design</td><td>Design UI/UX for: Local-first setup, no account required (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T155</code></td><td><code class="story-id">US14.1</code></td><td>Build</td><td>Implement front-end and back-end logic for: Local-first setup, no account required</td></tr>
+<tr><td><code>T156</code></td><td><code class="story-id">US14.1</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Local-first setup, no account required</td></tr>
+<tr><td><code>T157</code></td><td><code class="story-id">US14.2</code></td><td>Design</td><td>Design UI/UX for: Unique per-unit default credentials (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T158</code></td><td><code class="story-id">US14.2</code></td><td>Build</td><td>Implement front-end and back-end logic for: Unique per-unit default credentials</td></tr>
+<tr><td><code>T159</code></td><td><code class="story-id">US14.2</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Unique per-unit default credentials</td></tr>
+<tr><td><code>T160</code></td><td><code class="story-id">US14.3</code></td><td>Design</td><td>Design UI/UX for: Optional cloud account creation (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T161</code></td><td><code class="story-id">US14.3</code></td><td>Build</td><td>Implement front-end and back-end logic for: Optional cloud account creation</td></tr>
+<tr><td><code>T162</code></td><td><code class="story-id">US14.3</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Optional cloud account creation</td></tr>
+<tr><td><code>T163</code></td><td><code class="story-id">US14.4</code></td><td>Design</td><td>Design UI/UX for: Preserve local configuration when linking an account (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T164</code></td><td><code class="story-id">US14.4</code></td><td>Build</td><td>Implement front-end and back-end logic for: Preserve local configuration when linking an account</td></tr>
+<tr><td><code>T165</code></td><td><code class="story-id">US14.4</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Preserve local configuration when linking an account</td></tr>
+<tr><td><code>T166</code></td><td><code class="story-id">US14.5</code></td><td>Design</td><td>Design UI/UX for: Name each router (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T167</code></td><td><code class="story-id">US14.5</code></td><td>Build</td><td>Implement front-end and back-end logic for: Name each router</td></tr>
+<tr><td><code>T168</code></td><td><code class="story-id">US14.5</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Name each router</td></tr>
+<tr><td><code>T169</code></td><td><code class="story-id">US14.6</code></td><td>Design</td><td>Design UI/UX for: Multi-router dashboard (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T170</code></td><td><code class="story-id">US14.6</code></td><td>Build</td><td>Implement front-end and back-end logic for: Multi-router dashboard</td></tr>
+<tr><td><code>T171</code></td><td><code class="story-id">US14.6</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Multi-router dashboard</td></tr>
+</tbody></table></div>
+<h4>E15 — On-Router Software Foundation</h4>
+<div class="table-wrap"><table>
+<thead><tr><th>Task ID</th><th>Story ID</th><th>Role</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>T172</code></td><td><code class="story-id">US15.1</code></td><td>Design</td><td>Design UI/UX for: Custom OpenWrt build pipeline (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T173</code></td><td><code class="story-id">US15.1</code></td><td>Build</td><td>Implement front-end and back-end logic for: Custom OpenWrt build pipeline</td></tr>
+<tr><td><code>T174</code></td><td><code class="story-id">US15.1</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Custom OpenWrt build pipeline</td></tr>
+<tr><td><code>T175</code></td><td><code class="story-id">US15.2</code></td><td>Design</td><td>Design UI/UX for: On-device daemon with unified local API (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T176</code></td><td><code class="story-id">US15.2</code></td><td>Build</td><td>Implement front-end and back-end logic for: On-device daemon with unified local API</td></tr>
+<tr><td><code>T177</code></td><td><code class="story-id">US15.2</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: On-device daemon with unified local API</td></tr>
+<tr><td><code>T178</code></td><td><code class="story-id">US15.3</code></td><td>Design</td><td>Design UI/UX for: Local daemon degrades gracefully without internet (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T179</code></td><td><code class="story-id">US15.3</code></td><td>Build</td><td>Implement front-end and back-end logic for: Local daemon degrades gracefully without internet</td></tr>
+<tr><td><code>T180</code></td><td><code class="story-id">US15.3</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Local daemon degrades gracefully without internet</td></tr>
+</tbody></table></div>
+<h4>E16 — Firmware Build &amp; OTA Update Pipeline</h4>
+<div class="table-wrap"><table>
+<thead><tr><th>Task ID</th><th>Story ID</th><th>Role</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>T181</code></td><td><code class="story-id">US16.1</code></td><td>Design</td><td>Design UI/UX for: Integrate RAUC for A/B firmware updates (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T182</code></td><td><code class="story-id">US16.1</code></td><td>Build</td><td>Implement front-end and back-end logic for: Integrate RAUC for A/B firmware updates</td></tr>
+<tr><td><code>T183</code></td><td><code class="story-id">US16.1</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Integrate RAUC for A/B firmware updates</td></tr>
+<tr><td><code>T184</code></td><td><code class="story-id">US16.2</code></td><td>Design</td><td>Design UI/UX for: Cloud OTA update server (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T185</code></td><td><code class="story-id">US16.2</code></td><td>Build</td><td>Implement front-end and back-end logic for: Cloud OTA update server</td></tr>
+<tr><td><code>T186</code></td><td><code class="story-id">US16.2</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Cloud OTA update server</td></tr>
+<tr><td><code>T187</code></td><td><code class="story-id">US16.3</code></td><td>Design</td><td>Design UI/UX for: Staged/canary rollout control (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T188</code></td><td><code class="story-id">US16.3</code></td><td>Build</td><td>Implement front-end and back-end logic for: Staged/canary rollout control</td></tr>
+<tr><td><code>T189</code></td><td><code class="story-id">US16.3</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Staged/canary rollout control</td></tr>
+</tbody></table></div>
+<h4>E17 — Remote Access Relay Infrastructure</h4>
+<div class="table-wrap"><table>
+<thead><tr><th>Task ID</th><th>Story ID</th><th>Role</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>T190</code></td><td><code class="story-id">US17.1</code></td><td>Design</td><td>Design UI/UX for: Evaluate Headscale vs. custom WireGuard orchestration (spike) (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T191</code></td><td><code class="story-id">US17.1</code></td><td>Build</td><td>Implement front-end and back-end logic for: Evaluate Headscale vs. custom WireGuard orchestration (spike)</td></tr>
+<tr><td><code>T192</code></td><td><code class="story-id">US17.1</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Evaluate Headscale vs. custom WireGuard orchestration (spike)</td></tr>
+<tr><td><code>T193</code></td><td><code class="story-id">US17.2</code></td><td>Design</td><td>Design UI/UX for: Outbound-only WireGuard tunnel client (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T194</code></td><td><code class="story-id">US17.2</code></td><td>Build</td><td>Implement front-end and back-end logic for: Outbound-only WireGuard tunnel client</td></tr>
+<tr><td><code>T195</code></td><td><code class="story-id">US17.2</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Outbound-only WireGuard tunnel client</td></tr>
+<tr><td><code>T196</code></td><td><code class="story-id">US17.3</code></td><td>Design</td><td>Design UI/UX for: ACL-based access scope enforcement (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T197</code></td><td><code class="story-id">US17.3</code></td><td>Build</td><td>Implement front-end and back-end logic for: ACL-based access scope enforcement</td></tr>
+<tr><td><code>T198</code></td><td><code class="story-id">US17.3</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: ACL-based access scope enforcement</td></tr>
+</tbody></table></div>
+<h4>E18 — Frontend Platform Foundation</h4>
+<div class="table-wrap"><table>
+<thead><tr><th>Task ID</th><th>Story ID</th><th>Role</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>T199</code></td><td><code class="story-id">US18.1</code></td><td>Design</td><td>Design UI/UX for: Mobile app framework setup (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T200</code></td><td><code class="story-id">US18.1</code></td><td>Build</td><td>Implement front-end and back-end logic for: Mobile app framework setup</td></tr>
+<tr><td><code>T201</code></td><td><code class="story-id">US18.1</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Mobile app framework setup</td></tr>
+<tr><td><code>T202</code></td><td><code class="story-id">US18.2</code></td><td>Design</td><td>Design UI/UX for: Web dashboard framework setup (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T203</code></td><td><code class="story-id">US18.2</code></td><td>Build</td><td>Implement front-end and back-end logic for: Web dashboard framework setup</td></tr>
+<tr><td><code>T204</code></td><td><code class="story-id">US18.2</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Web dashboard framework setup</td></tr>
+<tr><td><code>T205</code></td><td><code class="story-id">US18.3</code></td><td>Design</td><td>Design UI/UX for: Unified API client layer (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T206</code></td><td><code class="story-id">US18.3</code></td><td>Build</td><td>Implement front-end and back-end logic for: Unified API client layer</td></tr>
+<tr><td><code>T207</code></td><td><code class="story-id">US18.3</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Unified API client layer</td></tr>
+<tr><td><code>T208</code></td><td><code class="story-id">US18.4</code></td><td>Design</td><td>Design UI/UX for: Exclude LuCI from the consumer product (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T209</code></td><td><code class="story-id">US18.4</code></td><td>Build</td><td>Implement front-end and back-end logic for: Exclude LuCI from the consumer product</td></tr>
+<tr><td><code>T210</code></td><td><code class="story-id">US18.4</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Exclude LuCI from the consumer product</td></tr>
+</tbody></table></div>
+<h4>E19 — Hardware &amp; Manufacturing</h4>
+<div class="table-wrap"><table>
+<thead><tr><th>Task ID</th><th>Story ID</th><th>Role</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>T211</code></td><td><code class="story-id">US19.1</code></td><td>Design</td><td>Design UI/UX for: Hardware platform selection spike (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T212</code></td><td><code class="story-id">US19.1</code></td><td>Build</td><td>Implement front-end and back-end logic for: Hardware platform selection spike</td></tr>
+<tr><td><code>T213</code></td><td><code class="story-id">US19.1</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Hardware platform selection spike</td></tr>
+<tr><td><code>T214</code></td><td><code class="story-id">US19.2</code></td><td>Design</td><td>Design UI/UX for: Factory per-unit credential provisioning (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T215</code></td><td><code class="story-id">US19.2</code></td><td>Build</td><td>Implement front-end and back-end logic for: Factory per-unit credential provisioning</td></tr>
+<tr><td><code>T216</code></td><td><code class="story-id">US19.2</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Factory per-unit credential provisioning</td></tr>
+<tr><td><code>T217</code></td><td><code class="story-id">US19.3</code></td><td>Design</td><td>Design UI/UX for: Physical recovery button specification (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T218</code></td><td><code class="story-id">US19.3</code></td><td>Build</td><td>Implement front-end and back-end logic for: Physical recovery button specification</td></tr>
+<tr><td><code>T219</code></td><td><code class="story-id">US19.3</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Physical recovery button specification</td></tr>
+<tr><td><code>T220</code></td><td><code class="story-id">US19.4</code></td><td>Design</td><td>Design UI/UX for: Regulatory certification (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T221</code></td><td><code class="story-id">US19.4</code></td><td>Build</td><td>Implement front-end and back-end logic for: Regulatory certification</td></tr>
+<tr><td><code>T222</code></td><td><code class="story-id">US19.4</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Regulatory certification</td></tr>
+<tr><td><code>T223</code></td><td><code class="story-id">US19.5</code></td><td>Design</td><td>Design UI/UX for: Pilot production run &amp; design validation (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T224</code></td><td><code class="story-id">US19.5</code></td><td>Build</td><td>Implement front-end and back-end logic for: Pilot production run &amp; design validation</td></tr>
+<tr><td><code>T225</code></td><td><code class="story-id">US19.5</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Pilot production run &amp; design validation</td></tr>
+</tbody></table></div>
+<h4>E20 — Security Assurance &amp; Privacy Compliance</h4>
+<div class="table-wrap"><table>
+<thead><tr><th>Task ID</th><th>Story ID</th><th>Role</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>T226</code></td><td><code class="story-id">US20.1</code></td><td>Design</td><td>Design UI/UX for: External security audit / penetration test (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T227</code></td><td><code class="story-id">US20.1</code></td><td>Build</td><td>Implement front-end and back-end logic for: External security audit / penetration test</td></tr>
+<tr><td><code>T228</code></td><td><code class="story-id">US20.1</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: External security audit / penetration test</td></tr>
+<tr><td><code>T229</code></td><td><code class="story-id">US20.2</code></td><td>Design</td><td>Design UI/UX for: Privacy compliance &amp; child-data minimization (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T230</code></td><td><code class="story-id">US20.2</code></td><td>Build</td><td>Implement front-end and back-end logic for: Privacy compliance &amp; child-data minimization</td></tr>
+<tr><td><code>T231</code></td><td><code class="story-id">US20.2</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Privacy compliance &amp; child-data minimization</td></tr>
+<tr><td><code>T232</code></td><td><code class="story-id">US20.3</code></td><td>Design</td><td>Design UI/UX for: Vulnerability disclosure &amp; patch SLA (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T233</code></td><td><code class="story-id">US20.3</code></td><td>Build</td><td>Implement front-end and back-end logic for: Vulnerability disclosure &amp; patch SLA</td></tr>
+<tr><td><code>T234</code></td><td><code class="story-id">US20.3</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Vulnerability disclosure &amp; patch SLA</td></tr>
+</tbody></table></div>
+<h4>E21 — Support &amp; Diagnostics</h4>
+<div class="table-wrap"><table>
+<thead><tr><th>Task ID</th><th>Story ID</th><th>Role</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>T235</code></td><td><code class="story-id">US21.1</code></td><td>Design</td><td>Design UI/UX for: In-app troubleshooting self-help (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T236</code></td><td><code class="story-id">US21.1</code></td><td>Build</td><td>Implement front-end and back-end logic for: In-app troubleshooting self-help</td></tr>
+<tr><td><code>T237</code></td><td><code class="story-id">US21.1</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: In-app troubleshooting self-help</td></tr>
+<tr><td><code>T238</code></td><td><code class="story-id">US21.2</code></td><td>Design</td><td>Design UI/UX for: Consent-based remote diagnostics for support (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T239</code></td><td><code class="story-id">US21.2</code></td><td>Build</td><td>Implement front-end and back-end logic for: Consent-based remote diagnostics for support</td></tr>
+<tr><td><code>T240</code></td><td><code class="story-id">US21.2</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Consent-based remote diagnostics for support</td></tr>
+<tr><td><code>T241</code></td><td><code class="story-id">US21.3</code></td><td>Design</td><td>Design UI/UX for: Diagnostic report export (wireframe + high-fidelity, Basic and Advanced view if applicable)</td></tr>
+<tr><td><code>T242</code></td><td><code class="story-id">US21.3</code></td><td>Build</td><td>Implement front-end and back-end logic for: Diagnostic report export</td></tr>
+<tr><td><code>T243</code></td><td><code class="story-id">US21.3</code></td><td>Test</td><td>Write and execute acceptance tests against the criteria for: Diagnostic report export</td></tr>
+</tbody></table></div>
 <h2 id="5-release-roadmap-suggested">5. Release Roadmap (Suggested)</h2>
 <h3 id="new-sprint-0-can-we-even-ship-this-pre-development-gate"><strong>[NEW] Sprint 0 — "Can We Even Ship This"</strong> (Pre-Development Gate)</h3>
 <p>Goal: resolve business/legal/compliance unknowns <em>before</em> committing engineering capacity to hardware.
