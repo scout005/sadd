@@ -543,7 +543,7 @@ Estimate: Story points (Fibonacci: 1,2,3,5,8,13).</p>
 <tr>
 <td><code class="story-id">US-1.1</code></td>
 <td>As Nadia, I want to set up my device in under 10 minutes using only my phone, so that I don't need technical help.</td>
-<td>App detects box via QR/Bluetooth; guided wizard completes WAN, LAN, and basic security defaults in ≤6 screens; success confirmation shown.</td>
+<td>App detects box via QR/Bluetooth; guided wizard completes WAN, LAN, and basic security defaults in ≤6 screens; success confirmation shown. <em>[Engineering backlog: US1.1]</em> Wizard forces the admin password change and Wi-Fi name/password change with no skip option; if setup is abandoned mid-way, it resumes at the last completed step on next launch; each step's config is committed atomically so a power loss mid-setup cannot brick the device; a wrong default-password entry points the user to the device's physical label/QR and rate-limits further attempts.</td>
 <td><span class="badge badge-p0">P0</span></td>
 <td>8</td>
 </tr>
@@ -588,6 +588,48 @@ Estimate: Story points (Fibonacci: 1,2,3,5,8,13).</p>
 <td>Passkey auth (WebAuthn/FIDO2) supported at launch for app and any web console — matches Firewalla's Aug 2026 MSP addition, should not lag as a "fast-follow."</td>
 <td><span class="badge badge-p1">P1</span></td>
 <td>5</td>
+</tr>
+<tr>
+<td><code class="story-id">US-1.8</code></td>
+<td><em>[Engineering backlog: US14.2]</em> As the company, I want every unit to ship with a unique, per-device default admin password (not a shared factory default) printed on a label/QR on the device itself, so that a network isn't exposed even before setup is completed.</td>
+<td>Each unit is flashed at the factory with a unique default admin password not derivable from serial number, MAC, or model; user is still required to change it during setup per <code class="story-id">US-1.1</code>.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>3</td>
+</tr>
+<tr>
+<td><code class="story-id">US-1.9</code></td>
+<td><em>[Engineering backlog: US1.2, US3.1–3.2]</em> As a new user, I want to set up multi-factor authentication during onboarding with SMS/push pre-selected as the default and an authenticator app (TOTP) or email visibly offered as alternatives, so that my account is protected from the start without needing to install extra apps.</td>
+<td>SMS/push is the pre-selected default during setup and in settings; TOTP (standard, compatible with Google Authenticator and similar) and email are shown as visible, not hidden, alternatives; user cannot complete onboarding without enabling at least one MFA method or an explicit acknowledged warning.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>5</td>
+</tr>
+<tr>
+<td><code class="story-id">US-1.10</code></td>
+<td><em>[Engineering backlog: US3.3, US13.1–13.2]</em> As a new user, I want to also set up at least one offline-capable MFA method (authenticator app or backup codes) during onboarding, verified entirely by the router with no internet connection required, so that I'm never locked out of my own network by an outage.</td>
+<td>One-time backup codes generated and shown once during setup, each usable exactly once, verified entirely locally; when the router has no WAN connectivity, SMS/push/email options are visibly disabled with a plain-language reason and the offline-capable alternative is surfaced on the same screen.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>5</td>
+</tr>
+<tr>
+<td><code class="story-id">US-1.11</code></td>
+<td><em>[Engineering backlog: US3.4]</em> As a power user, I want to require MFA re-authentication for every sensitive admin action (not just login), so that critical changes are extra-protected.</td>
+<td>Toggle in Advanced settings requiring re-authentication for sensitive actions (e.g., disabling firewall, adding an admin); off by default, on by user choice.</td>
+<td><span class="badge badge-p2">P2</span></td>
+<td>5</td>
+</tr>
+<tr>
+<td><code class="story-id">US-1.12</code></td>
+<td><em>[Engineering backlog: US14.3–14.4]</em> As a user, I want to create an optional cloud account and link my router to it once I have internet, without this being forced during initial setup, so that I can unlock remote features later while my existing local configuration (Wi-Fi, blocked devices, parental profiles) is always preserved, never overwritten.</td>
+<td>Account creation can start any time after local setup completes; if internet is detected but no account is linked, the app offers an easy path without blocking local features; existing local settings sync up, never reset automatically; a "reset and start fresh" option exists only as a separate, explicitly confirmed action.</td>
+<td><span class="badge badge-p1">P1</span></td>
+<td>5</td>
+</tr>
+<tr>
+<td><code class="story-id">US-1.13</code></td>
+<td><em>[Engineering backlog: US14.5–14.6]</em> As a user with more than one home, I want to name each router (e.g., "Main House," "Beach House") and switch between my named routers from one account, so that I can manage all my properties without separate logins.</td>
+<td>Router name requested during local setup, changeable anytime after; a name must be set before a second router can be linked; account home screen lists all linked routers by name with a status indicator; switching reuses the same login/MFA session; each router's devices/profiles/settings stay fully isolated from the others.</td>
+<td><span class="badge badge-p1">P1</span></td>
+<td>8</td>
 </tr>
 </tbody>
 </table></div>
@@ -662,7 +704,7 @@ Estimate: Story points (Fibonacci: 1,2,3,5,8,13).</p>
 <tr>
 <td><code class="story-id">US-3.1</code></td>
 <td>As Ivan, I want to create isolated network segments (VLANs) for IoT, guests, and family devices, so that a compromised smart plug can't reach my laptop. <span class="tag tag-new v5">[NEW v5]</span> <em>Re-scored: OpenWrt's native bridge/VLAN/nftables support means the underlying capability exists — remaining work is app UX, cross-tier QA, and integration with our quarantine/segment presets (<code class="story-id">US-3.2</code>), not building VLAN plumbing itself.</em></td>
-<td>Unlimited VLANs on ALL hardware tiers (explicit differentiator vs. Firewalla's tiered VLAN caps).</td>
+<td>Unlimited VLANs on ALL hardware tiers (explicit differentiator vs. Firewalla's tiered VLAN caps). <em>[Engineering backlog: US4.5]</em> At minimum, a power user can assign a device to an isolated segment directly from that device's detail screen, with at least one isolated segment available beyond the main and guest networks, and the isolated segment cannot see main-network traffic by default.</td>
 <td><span class="badge badge-p0">P0</span></td>
 <td>~~13~~ <strong>8</strong></td>
 </tr>
@@ -683,7 +725,7 @@ Estimate: Story points (Fibonacci: 1,2,3,5,8,13).</p>
 <tr>
 <td><code class="story-id">US-3.4</code></td>
 <td>As Rae, I want a fully isolated guest network with its own captive portal / QR-code Wi-Fi sharing, so that visitors never touch my main LAN.</td>
-<td>QR-generated guest access; guest segment cannot reach any other segment by default.</td>
+<td>QR-generated guest access; guest segment cannot reach any other segment by default. <em>[Engineering backlog: US9.1–9.2]</em> Guest network is reachable as a one-tap toggle from the home dashboard, not only from advanced setup; name/password are auto-generated but editable; user can optionally select an expiration duration (e.g., 24 hours, 1 week) at creation, after which the guest network disables itself automatically.</td>
 <td><span class="badge badge-p0">P0</span></td>
 <td>5</td>
 </tr>
@@ -725,7 +767,7 @@ Estimate: Story points (Fibonacci: 1,2,3,5,8,13).</p>
 <tr>
 <td><code class="story-id">US-4.2</code></td>
 <td>As any user, I want to see full historical logs (not just recent alarms), so that I can investigate past issues.</td>
-<td>Local log retention ≥30 days by default, exportable; no forced cloud dependency to view history.</td>
+<td>Local log retention ≥30 days by default, exportable; no forced cloud dependency to view history. <em>[Engineering backlog: US2.4]</em> Log is filterable by device/category/time range and exportable as CSV; accessible from Advanced mode.</td>
 <td><span class="badge badge-p0">P0</span></td>
 <td>5</td>
 </tr>
@@ -750,6 +792,13 @@ Estimate: Story points (Fibonacci: 1,2,3,5,8,13).</p>
 <td><span class="badge badge-p1">P1</span></td>
 <td>5</td>
 </tr>
+<tr>
+<td><code class="story-id">US-4.6</code></td>
+<td><em>[Engineering backlog: US2.1, US2.3]</em> As a homeowner, I want a single plain-language security status (Green/Yellow/Red plus a one-line reason) and an at-a-glance summary (connected device count, guest network status, last update date) on the home screen, so I know at a glance if my network is safe without digging for information.</td>
+<td>Status recomputed on change and on app open; each contributing issue maps to exactly one "Fix" action executing without menu navigation; if the daemon is unreachable the status shows an explicit "can't reach your router" state, never a false green; each summary item is tappable for more detail.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>5</td>
+</tr>
 </tbody>
 </table></div>
 <h3 id="epic-5-parental-controls-content-filtering">Epic 5 — Parental Controls &amp; Content Filtering</h3>
@@ -767,7 +816,7 @@ Estimate: Story points (Fibonacci: 1,2,3,5,8,13).</p>
 <tr>
 <td><code class="story-id">US-5.1</code></td>
 <td>As Nadia, I want to block content categories (adult, gambling, violence, social media) per device or per person, so that I can tailor rules to each child's age.</td>
-<td>Category list ≥15 categories; assignable per device or per user profile.</td>
+<td>Category list ≥15 categories; assignable per device or per user profile. <em>[Engineering backlog: US5.1]</em> Enforced at the network level (DNS/SNI), so it cannot be bypassed by uninstalling an app on the child's device — the core differentiator versus app-based controls.</td>
 <td><span class="badge badge-p0">P0</span></td>
 <td>8</td>
 </tr>
@@ -795,7 +844,7 @@ Estimate: Story points (Fibonacci: 1,2,3,5,8,13).</p>
 <tr>
 <td><code class="story-id">US-5.5</code></td>
 <td>As Nadia, I want to assign rules to a <em>person</em> (who may use multiple devices), not just a single device, so that rules follow my child across their phone, tablet, and laptop.</td>
-<td>"User" object aggregates multiple device MAC/IPs under one identity and rule set.</td>
+<td>"User" object aggregates multiple device MAC/IPs under one identity and rule set. <em>[Engineering backlog: US8.1]</em> Pre-set Kid/Teen profile templates are offered as starting points; profile setup takes fewer than 5 taps.</td>
 <td><span class="badge badge-p1">P1</span></td>
 <td>8</td>
 </tr>
@@ -805,6 +854,55 @@ Estimate: Story points (Fibonacci: 1,2,3,5,8,13).</p>
 <td>Auto-generated report, opt-in delivery via app/email.</td>
 <td><span class="badge badge-p1">P1</span></td>
 <td>5</td>
+</tr>
+<tr>
+<td><code class="story-id">US-5.7</code></td>
+<td><em>[Engineering backlog: US5.2]</em> As a blocked user, I want to see a friendly block page explaining why access was denied, so that I'm not confused by a generic error — with no self-serve "request access" button, since unblocking is a deliberate admin-only action.</td>
+<td>Block page uses friendly, non-alarming language; no self-serve unblock button is shown; page tells the user to ask the account admin to change this in the app.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>3</td>
+</tr>
+<tr>
+<td><code class="story-id">US-5.8</code></td>
+<td><em>[Engineering backlog: US5.7]</em> As a blocked user on an HTTPS site, I want a clear blocked experience instead of a browser certificate warning, so that the friendly block page actually works in practice.</td>
+<td>A chosen HTTPS-blocking approach (e.g., connection-reset with app-side explanation, or DNS-level NXDOMAIN with app notification) avoids scary certificate warnings, is tested on iOS/Android/major desktop browsers, and blocked HTTPS attempts remain visible to the admin in-app even when no page can render.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>3</td>
+</tr>
+<tr>
+<td><code class="story-id">US-5.9</code></td>
+<td><em>[Engineering backlog: US5.3]</em> As an admin, I want to unblock a site/app from the app, so that I can grant access when appropriate.</td>
+<td>Admin can search/select a blocked item and unblock it in two taps or fewer; change takes effect within a few seconds across the network.</td>
+<td><span class="badge badge-p1">P1</span></td>
+<td>3</td>
+</tr>
+<tr>
+<td><code class="story-id">US-5.10</code></td>
+<td><em>[Engineering backlog: US5.4]</em> As a power user, I want to create custom block lists by domain or IP, so that I can block things not covered by predefined categories.</td>
+<td>Advanced settings allow manual domain/IP entry for blocking; custom entries can be imported/exported as a list.</td>
+<td><span class="badge badge-p2">P2</span></td>
+<td>5</td>
+</tr>
+<tr>
+<td><code class="story-id">US-5.11</code></td>
+<td><em>[Engineering backlog: US5.5]</em> As a developer, I want a timeboxed spike evaluating how reliably we can block specific mobile apps (not just websites) at the router level, so that we commit only to what's technically achievable before marketing promises anything.</td>
+<td>Spike evaluates traffic-fingerprinting against real apps, including CDN-shared infrastructure, certificate pinning, and encrypted SNI/ECH; output is a written report classifying app-blocking capability as reliable / best-effort / not-feasible per category; product messaging and <code class="story-id">US-5.12</code>'s scope are set from this report, not before.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>5</td>
+</tr>
+<tr>
+<td><code class="story-id">US-5.12</code></td>
+<td><em>[Engineering backlog: US5.6]</em> As a parent/admin, I want to block specific mobile apps where technically reliable (per <code class="story-id">US-5.11</code>'s spike), so that I can control app usage beyond website blocking.</td>
+<td>Scope limited to app categories the spike classified as reliably blockable; best-effort apps are labeled as such, never presented as guaranteed; does not enter a sprint before the spike report is accepted.</td>
+<td><span class="badge badge-p1">P1</span></td>
+<td>8</td>
+</tr>
+<tr>
+<td><code class="story-id">US-5.13</code></td>
+<td><em>[Engineering backlog: US8.6]</em> As a parent, I want to set different rules per app/site within a profile, so that I have granular control beyond category defaults.</td>
+<td>Admin can override category defaults for a specific app/site within a profile; overrides are visible in an "exceptions" list per profile.</td>
+<td><span class="badge badge-p2">P2</span></td>
+<td>8</td>
 </tr>
 </tbody>
 </table></div>
@@ -861,6 +959,34 @@ Estimate: Story points (Fibonacci: 1,2,3,5,8,13).</p>
 <td>At least one obfuscated/censorship-resistant VPN protocol supported, matching Firewalla's Aug 2026 AmneziaWG addition.</td>
 <td><span class="badge badge-p2">P2</span></td>
 <td>8</td>
+</tr>
+<tr>
+<td><code class="story-id">US-6.7</code></td>
+<td><em>[Engineering backlog: US7.3 — confirmed product decision]</em> As a user, I want every core action available on the local dashboard (pause a device, block a site/app, pause a profile) to also be available remotely, applying within seconds, so that remote access is never a reduced feature set compared to being home.</td>
+<td>All core local actions are present remotely; remote changes apply within a few seconds, same as local; remote access includes both live visibility (device list, connection status, security status) and control — never a read-only or action-only subset.</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>5</td>
+</tr>
+<tr>
+<td><code class="story-id">US-6.8</code></td>
+<td><em>[Engineering backlog: US7.4 — confirmed product decision]</em> As an admin, I want remote access limited to router/network management functions by default (view + control the dashboard) rather than raw access to every device on my LAN, so that a leaked credential can't expose my home devices directly.</td>
+<td>This is the default, out-of-the-box behavior for every account, no setup required; expanding beyond management-only requires the separate, explicit Advanced setting (<code class="story-id">US-6.9</code>).</td>
+<td><span class="badge badge-p0">P0</span></td>
+<td>5</td>
+</tr>
+<tr>
+<td><code class="story-id">US-6.9</code></td>
+<td><em>[Engineering backlog: US7.5]</em> As a power user, I want the option to access my full home network remotely (e.g., a NAS or another LAN device), not just the router dashboard, alongside — not replacing — the default management-only mode.</td>
+<td>Advanced setting to enable full-LAN remote access, off by default; a clear warning is shown about the increased access scope before enabling; can be turned off independently, reverting to management-only, without losing remote dashboard access.</td>
+<td><span class="badge badge-p2">P2</span></td>
+<td>8</td>
+</tr>
+<tr>
+<td><code class="story-id">US-6.10</code></td>
+<td><em>[Engineering backlog: US7.6]</em> As a user, I want to see and be notified about remote connections to my network, so that I know if someone accessed it while I was away.</td>
+<td>Dashboard shows active and recent remote sessions with device/location context where available; push notification sent on each new remote login; user can revoke an active remote session instantly.</td>
+<td><span class="badge badge-p1">P1</span></td>
+<td>5</td>
 </tr>
 </tbody>
 </table></div>
@@ -921,7 +1047,7 @@ Estimate: Story points (Fibonacci: 1,2,3,5,8,13).</p>
 <tr>
 <td><code class="story-id">US-8.1</code></td>
 <td>As any user, I want network-wide ad and tracker blocking with no extra setup, so that all my devices get a cleaner, faster browsing experience automatically.</td>
-<td>Ad-block ON by default post-setup; measurable reduction in ad requests, visible in dashboard.</td>
+<td>Ad-block ON by default post-setup; measurable reduction in ad requests, visible in dashboard. <em>[Engineering backlog: US6.1]</em> Cross-reference: the engineering backlog specs this as opt-in (off until the user enables it during or after setup) rather than on-by-default — flagged alongside the other open decisions in §9, since it's a smaller product-policy question rather than an architecture conflict.</td>
 <td><span class="badge badge-p0">P0</span></td>
 <td>5</td>
 </tr>
