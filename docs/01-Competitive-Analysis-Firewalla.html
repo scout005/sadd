@@ -1,0 +1,1348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Firewalla Competitive Analysis · Sentinel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;650;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d1117;
+  --sidebar:#0a0e13;
+  --sidebar-border:#1c2530;
+  --paper:#fbfbf9;
+  --ink:#1b2027;
+  --ink-soft:#525a66;
+  --line:#e4e2dc;
+  --accent:#1fb6a8;
+  --accent-soft:#d5f3ef;
+  --accent-strong:#0e8f83;
+  --amber:#e2a53a;
+  --red:#e0596b;
+  --slate:#8a93a3;
+  --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+*{box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{
+  margin:0; font-family:var(--sans); color:var(--ink); background:var(--paper);
+  font-size:16px; line-height:1.6;
+}
+::selection{ background:var(--accent-soft); }
+
+/* ---------- progress bar ---------- */
+#progress{
+  position:fixed; top:0; left:0; height:3px; width:0%;
+  background:linear-gradient(90deg,var(--accent),var(--accent-strong));
+  z-index:1000; transition:width .1s linear;
+}
+
+/* ---------- sidebar ---------- */
+.sidebar{
+  position:fixed; top:0; left:0; bottom:0; width:300px;
+  background:var(--sidebar); border-right:1px solid var(--sidebar-border);
+  overflow-y:auto; padding:0 0 40px 0; z-index:100;
+  scrollbar-width: thin; scrollbar-color: #2a3542 transparent;
+}
+.sidebar::-webkit-scrollbar{width:8px;}
+.sidebar::-webkit-scrollbar-thumb{background:#2a3542; border-radius:4px;}
+
+.brand{
+  padding:22px 20px 16px 20px; border-bottom:1px solid var(--sidebar-border);
+  position:sticky; top:0; background:var(--sidebar); z-index:5;
+}
+.brand .mark{
+  display:inline-flex; align-items:center; gap:8px;
+  font-family:var(--mono); font-size:11px; letter-spacing:.14em; color:var(--accent);
+  text-transform:uppercase;
+}
+.brand .mark::before{
+  content:""; width:8px; height:8px; border-radius:50%;
+  background:var(--accent); box-shadow:0 0 8px var(--accent);
+  display:inline-block;
+}
+.brand h1{
+  font-size:16px; margin:10px 0 2px 0; color:#f2f4f7; font-weight:650; line-height:1.3;
+}
+.brand p{ margin:0; font-size:12.5px; color:#7d8998; }
+
+.docswitch{
+  display:block; margin:14px 20px 0 20px; padding:9px 12px;
+  border:1px solid var(--sidebar-border); border-radius:7px;
+  color:#c7d0db; text-decoration:none; font-size:12.5px; font-family:var(--mono);
+  transition:.15s; background:#0e141b;
+}
+.docswitch:hover{ border-color:var(--accent); color:var(--accent); }
+
+.searchwrap{ padding:14px 20px 4px 20px; }
+#search{
+  width:100%; padding:9px 10px; border-radius:7px; border:1px solid var(--sidebar-border);
+  background:#0e141b; color:#e7ebf0; font-size:13px; font-family:var(--sans);
+  outline:none;
+}
+#search:focus{ border-color:var(--accent); }
+#search::placeholder{ color:#5b6675; }
+
+nav.toc{ padding:10px 10px 20px 10px; }
+nav.toc ul{ list-style:none; margin:0; padding-left:0; }
+nav.toc > ul { padding-left:6px; }
+nav.toc ul ul{ padding-left:16px; border-left:1px solid var(--sidebar-border); margin-left:6px; }
+nav.toc li{ margin:0; }
+nav.toc a{
+  display:block; padding:6px 10px; color:#a7b1bf; text-decoration:none;
+  font-size:13px; border-radius:6px; line-height:1.35;
+  border-left:2px solid transparent;
+}
+nav.toc > ul > li > a{ font-weight:600; color:#dbe2ea; font-size:13.5px; margin-top:6px;}
+nav.toc a:hover{ background:#121a23; color:var(--accent); }
+nav.toc a.active{
+  background:#0f2622; color:var(--accent); border-left:2px solid var(--accent);
+}
+nav.toc li.hidden{ display:none; }
+
+/* ---------- main content ---------- */
+.wrap{ margin-left:300px; min-height:100vh; }
+.topbar{
+  position:sticky; top:0; z-index:50;
+  background:rgba(251,251,249,.88); backdrop-filter:blur(8px);
+  border-bottom:1px solid var(--line);
+  padding:10px 48px; display:flex; align-items:center; justify-content:space-between;
+}
+.topbar .path{ font-family:var(--mono); font-size:12px; color:var(--ink-soft); }
+.topbar .path b{ color:var(--ink); }
+.topbar .actions a{
+  font-size:12.5px; font-family:var(--mono); color:var(--accent-strong);
+  text-decoration:none; margin-left:16px; border:1px solid var(--accent-soft);
+  padding:5px 10px; border-radius:6px; background:var(--accent-soft);
+}
+.topbar .actions a:hover{ background:var(--accent); color:#fff; }
+
+main{ max-width:900px; padding:56px 48px 120px 48px; }
+
+.doc-header{ margin-bottom:40px; }
+.kicker{
+  font-family:var(--mono); font-size:12px; letter-spacing:.14em; color:var(--accent-strong);
+  text-transform:uppercase; margin:0 0 14px 0; display:flex; align-items:center; gap:10px;
+}
+.kicker::before{ content:"//"; color:var(--slate); }
+.doc-header h1{ font-size:38px; margin:0 0 8px 0; letter-spacing:-.02em; font-weight:700; }
+.doc-header .sub{ font-size:16px; color:var(--ink-soft); margin:0; }
+
+h2{
+  font-size:24px; margin:52px 0 16px 0; padding-top:8px; font-weight:700;
+  letter-spacing:-.01em; scroll-margin-top:80px; border-top:1px solid var(--line); padding-top:28px;
+}
+main > h2:first-of-type{ border-top:none; padding-top:0; }
+h3{ font-size:18.5px; margin:32px 0 12px 0; font-weight:650; color:#242a33; scroll-margin-top:80px; }
+h4{ font-size:15px; margin:22px 0 8px 0; font-weight:650; color:#3a414c; scroll-margin-top:80px;}
+p{ margin:0 0 16px 0; color:#333a44; }
+strong{ color:#151a20; }
+a{ color:var(--accent-strong); }
+hr{ border:none; border-top:1px solid var(--line); margin:36px 0; }
+
+ul,ol{ margin:0 0 16px 0; padding-left:22px; color:#333a44; }
+li{ margin-bottom:6px; }
+li > ul, li > ol{ margin-top:6px; }
+
+code{
+  font-family:var(--mono); font-size:.86em; background:#eef0ee; color:#1b2027;
+  padding:1.5px 5px; border-radius:4px;
+}
+code.story-id{
+  background:var(--accent-soft); color:var(--accent-strong); font-weight:600;
+  white-space:nowrap;
+}
+code.epic-id{
+  background:#eee6d8; color:#8a5a13; font-weight:700;
+}
+pre{ background:#11151a; color:#e7ebf0; padding:16px 18px; border-radius:10px; overflow-x:auto; }
+pre code{ background:none; color:inherit; padding:0; }
+
+blockquote.revnote{
+  margin:20px 0; padding:16px 20px; background:#fff8e9; border-left:3px solid var(--amber);
+  border-radius:0 8px 8px 0; color:#5a4b1f; font-size:14.5px;
+}
+blockquote.revnote p{ margin:0; color:#5a4b1f; }
+blockquote.revnote p + p{ margin-top:10px; }
+
+.table-wrap{ overflow-x:auto; margin:20px 0 28px 0; border:1px solid var(--line); border-radius:10px; }
+table{ border-collapse:collapse; width:100%; font-size:14px; }
+thead th{
+  text-align:left; background:#f1f0eb; color:#1b2027; font-weight:650;
+  padding:10px 14px; border-bottom:1px solid var(--line); white-space:nowrap;
+  position:sticky; top:0;
+}
+tbody td{ padding:10px 14px; border-bottom:1px solid #ecebe5; vertical-align:top; color:#3a414c; }
+tbody tr:last-child td{ border-bottom:none; }
+tbody tr:hover{ background:#f7f8f5; }
+
+.badge{
+  display:inline-block; font-family:var(--mono); font-size:11px; font-weight:700;
+  padding:2px 7px; border-radius:5px; letter-spacing:.03em;
+}
+.badge-p0{ background:#fde8e8; color:#b3273c; }
+.badge-p1{ background:#fdf1dc; color:#946111; }
+.badge-p2{ background:#eef1f5; color:#4c5967; }
+
+.tag{
+  display:inline-block; font-family:var(--mono); font-size:10.5px; font-weight:700;
+  padding:2px 7px; border-radius:5px; letter-spacing:.02em; vertical-align:2px;
+}
+.tag-new{ background:#e4f8f4; color:var(--accent-strong); }
+.tag-new.v2{ background:#e9edfb; color:#3949ab; }
+.tag-new.v3{ background:#f2e9fb; color:#7b2fbd; }
+.tag-new.v4{ background:#fbe9f0; color:#c22367; }
+.tag-new.v5{ background:#e8f2e0; color:#3f7d1f; }
+.tag-new.v6{ background:#fdeee0; color:#a85b12; }
+
+#topbtn{
+  position:fixed; bottom:28px; right:28px; z-index:60;
+  width:42px; height:42px; border-radius:50%; background:var(--ink);
+  color:#fff; border:none; cursor:pointer; opacity:0; pointer-events:none;
+  transition:.2s; font-size:16px; display:flex; align-items:center; justify-content:center;
+  box-shadow:0 6px 18px rgba(0,0,0,.25);
+}
+#topbtn.show{ opacity:1; pointer-events:auto; }
+#topbtn:hover{ background:var(--accent-strong); }
+
+@media (max-width: 880px){
+  .sidebar{ transform:translateX(-100%); transition:.2s; width:82vw; }
+  .sidebar.open{ transform:translateX(0); }
+  .wrap{ margin-left:0; }
+  main{ padding:40px 22px 100px 22px; }
+  .topbar{ padding:10px 18px; }
+  #menubtn{ display:inline-flex !important; }
+}
+#menubtn{ display:none; background:none; border:1px solid var(--line); border-radius:7px; padding:7px 10px; font-family:var(--mono); font-size:12px; cursor:pointer; }
+
+@media print{
+  .sidebar,.topbar,#topbtn,#progress{ display:none; }
+  .wrap{ margin-left:0; }
+  main{ max-width:none; padding:0; }
+}
+</style>
+</head>
+<body>
+<div id="progress"></div>
+
+<aside class="sidebar">
+  <div class="brand">
+    <span class="mark">Sentinel · Product Docs</span>
+    <h1>Firewalla Competitive Analysis</h1>
+    <p>Sentinel Home Network Security Router</p>
+  </div>
+  <a class="docswitch" href="02-Product-Backlog-User-Stories.html">Product Backlog →</a>
+  <div class="searchwrap">
+    <input id="search" type="text" placeholder="Filter sections…">
+  </div>
+  <nav class="toc">
+    <div class="toc">
+<ul>
+<li><a href="#prepared-for-new-home-network-security-router-product-sentinel">Prepared for: New Home Network Security / Router Product ("Sentinel")</a></li>
+<li><a href="#prepared-by-product-owner-scrum-master">Prepared by: Product Owner / Scrum Master</a></li>
+<li><a href="#date-august-21-2026-v5-consistency-review-pass">Date: August 21, 2026 — v5, Consistency &amp; Review Pass</a></li>
+<li><a href="#1-executive-summary">1. Executive Summary</a></li>
+<li><a href="#15-new-critical-market-entry-context-fcc-covered-list-rule-march-2026">1.5 [NEW] Critical Market-Entry Context: FCC Covered List Rule (March 2026)</a></li>
+<li><a href="#16-new-v4-architecture-decision-building-on-openwrt">1.6 [NEW v4] Architecture Decision: Building on OpenWrt</a></li>
+<li><a href="#2-company-business-model-snapshot">2. Company &amp; Business Model Snapshot</a></li>
+<li><a href="#3-product-line-hardware-comparison">3. Product Line &amp; Hardware Comparison</a></li>
+<li><a href="#4-full-feature-inventory">4. Full Feature Inventory</a><ul>
+<li><a href="#41-core-security-firewall-engine">4.1 Core Security / Firewall Engine</a></li>
+<li><a href="#42-network-segmentation-zero-trust">4.2 Network Segmentation &amp; Zero Trust</a></li>
+<li><a href="#43-vpn">4.3 VPN</a></li>
+<li><a href="#44-parental-controls-content-activity-control">4.4 Parental Controls / Content &amp; Activity Control</a></li>
+<li><a href="#45-networking-infrastructure">4.5 Networking &amp; Infrastructure</a></li>
+<li><a href="#46-wi-fi-orange-ap7-only">4.6 Wi-Fi (Orange / AP7 only)</a></li>
+<li><a href="#47-ai-automation">4.7 AI / Automation</a></li>
+<li><a href="#48-fleet-business-management">4.8 Fleet / Business Management</a></li>
+<li><a href="#49-advanced-power-user-features">4.9 Advanced / Power-User Features</a></li>
+</ul>
+</li>
+<li><a href="#5-ux-app-experience">5. UX / App Experience</a></li>
+<li><a href="#6-documented-strengths-what-firewalla-does-well">6. Documented Strengths (What Firewalla Does Well)</a></li>
+<li><a href="#7-documented-weaknesses-gaps-where-a-competitor-can-win">7. Documented Weaknesses / Gaps (Where a Competitor Can Win)</a></li>
+<li><a href="#8-adjacent-competitor-landscape-context">8. Adjacent Competitor Landscape (Context)</a></li>
+<li><a href="#85-new-security-trust-track-record-evidence-beyond-marketing-claims">8.5 [NEW] Security &amp; Trust Track Record — Evidence Beyond Marketing Claims</a></li>
+<li><a href="#86-new-business-model-risk-subscription-scope-creep">8.6 [NEW] Business Model Risk: Subscription Scope Creep</a></li>
+<li><a href="#87-new-category-context-consumer-security-box-competitors-are-mostly-dead">8.7 [NEW] Category Context: Consumer Security-Box Competitors Are Mostly Dead</a></li>
+<li><a href="#88-new-upcoming-firewalla-products-roadmap-awareness">8.8 [NEW] Upcoming Firewalla Products (Roadmap Awareness)</a></li>
+<li><a href="#89-new-app-store-real-world-user-sentiment">8.9 [NEW] App Store &amp; Real-World User Sentiment</a></li>
+<li><a href="#9-strategic-takeaways-for-our-product">9. Strategic Takeaways for Our Product</a></li>
+<li><a href="#10-new-v3-documentation-messaging-strategy-analysis">10. [NEW v3] Documentation &amp; Messaging Strategy Analysis</a><ul>
+<li><a href="#101-executive-summary-300-words">10.1 Executive Summary (300 words)</a></li>
+<li><a href="#102-value-proposition-analysis">10.2 Value Proposition Analysis</a></li>
+<li><a href="#103-target-audience-profiling">10.3 Target Audience Profiling</a></li>
+<li><a href="#104-strategic-intent-mapping-last-12-months-through-aug-2026">10.4 Strategic Intent Mapping (Last 12 Months, through Aug 2026)</a></li>
+<li><a href="#105-swot-matrix">10.5 SWOT Matrix</a></li>
+<li><a href="#106-content-gap-identification">10.6 Content Gap Identification</a></li>
+<li><a href="#107-strategic-recommendations-effortimpact-scored">10.7 Strategic Recommendations (Effort/Impact Scored)</a></li>
+<li><a href="#108-strategic-wedge">10.8 Strategic Wedge</a></li>
+</ul>
+</li>
+<li><a href="#11-sources">11. Sources</a></li>
+<li><a href="#12-change-log">12. Change Log</a></li>
+</ul>
+</div>
+
+  </nav>
+</aside>
+
+<div class="wrap">
+  <div class="topbar">
+    <span class="path"><b>Competitive Analysis</b> &nbsp;/&nbsp; COMPETITIVE INTELLIGENCE · v3</span>
+    <button id="menubtn">☰ Menu</button>
+    <span class="actions"><a href="02-Product-Backlog-User-Stories.html">Product Backlog →</a></span>
+  </div>
+  <main>
+    <div class="doc-header">
+      <p class="kicker">COMPETITIVE INTELLIGENCE · v3</p>
+      <h1>Firewalla Competitive Analysis</h1>
+      <p class="sub">Sentinel Home Network Security Router</p>
+    </div>
+    <h1 id="competitive-analysis-firewalla">Competitive Analysis: Firewalla</h1>
+<h3 id="prepared-for-new-home-network-security-router-product-sentinel">Prepared for: New Home Network Security / Router Product ("Sentinel")</h3>
+<h3 id="prepared-by-product-owner-scrum-master">Prepared by: Product Owner / Scrum Master</h3>
+<h3 id="date-august-21-2026-v5-consistency-review-pass">Date: August 21, 2026 — <strong>v5, Consistency &amp; Review Pass</strong></h3>
+<blockquote class="revnote">
+<p><strong>Revision note (v5):</strong> A full consistency review corrected structural issues carried over from earlier passes: Sections 8.5–8.9 were appearing <em>after</em> Section 9 (now reordered into correct reading position), two headings had unterminated bold markers, and one garbled word was fixed. No analytical content changed in this pass.</p>
+<p><strong>Revision note (v4):</strong> Sentinel's team has decided to build on <strong>OpenWrt</strong> rather than a general-purpose Linux distro. This pass adds Section 1.6, confirming (via research) that Firewalla is actually built on <strong>Ubuntu</strong>, not OpenWrt — a real, evidence-based architectural differentiator, not just a marketing claim. It updates the GL.iNet competitor row (Section 8) as the closest architectural precedent for this decision, and adds two new strategic takeaways. See the companion backlog doc (v5) for the full engineering implications, new Epic 18, and re-scored stories.</p>
+</blockquote>
+<hr />
+<h2 id="1-executive-summary">1. Executive Summary</h2>
+<p>Firewalla is the dominant consumer/prosumer "plug-in hardware firewall" brand. It occupies the gap between basic ISP routers (weak, opaque security) and enterprise firewalls (powerful, but too complex/expensive for a household). Its core pitch: <strong>enterprise-grade visibility, segmentation, IDS/IPS, VPN, and parental controls, in a mobile-app-first package, with no subscription fee.</strong></p>
+<p>To compete, a new entrant needs to match or exceed Firewalla on:
+- Core security stack (DPI, IDS/IPS, ad/tracker blocking, geo-IP filtering)
+- Network segmentation / VLAN / Zero Trust microsegmentation
+- VPN server + client
+- Parental controls / content filtering
+- Mobile-first UX with a genuinely simple onboarding flow
+- No-subscription business model (or a clearly better one)</p>
+<p>...while addressing Firewalla's known weak points: closed-source cloud pairing dependency, CPU/throughput ceilings on lower-tier hardware, limited third-party blocklist support, no built-in Wi-Fi on most models, and a steep learning curve for non-technical users.</p>
+<hr />
+<h2 id="15-new-critical-market-entry-context-fcc-covered-list-rule-march-2026">1.5 <strong>[NEW] Critical Market-Entry Context: FCC Covered List Rule (March 2026)</strong></h2>
+<p>This is the single most important new fact for a <strong>new hardware entrant</strong> and must inform go-to-market planning, not just competitive positioning.</p>
+<ul>
+<li><cite index="133-1">On March 23, 2026, the FCC updated its "Covered List" — communications equipment deemed an unacceptable national-security risk — to include consumer-grade routers produced in a foreign country, absent an exemption from the Departments of War or Homeland Security. This designation effectively prohibits the import of all consumer routers not produced in the United States.</cite></li>
+<li><cite index="147-1">A July 23, 2026 Third Report and Order went further: it prohibits authorization of any device that incorporates components produced by a Covered List entity, or that has been integrated with software/firmware produced by a Covered List entity — and requires applicants to submit a signed Hardware Bill of Materials (HBOM) and Software Bill of Materials (SBOM) at certification time.</cite></li>
+<li><cite index="144-1">A pending Further Notice of Proposed Rulemaking seeks comment on requiring HBOM/SBOM more broadly, expanding component restrictions to software/firmware, certification for more device categories, stronger import restrictions, authorization expiration dates, and marketplace obligations to display FCC ID/compliance info.</cite></li>
+<li><cite index="145-1">Independent industry analysis frames this as a first-of-its-kind action based on <em>where</em> equipment is produced (not merely which company made it) — with direct implications for the entire wireless router supply chain and a documented industry "exit from China" already underway.</cite></li>
+<li><cite index="140-1">Firewalla's own public response confirms it sees this as an opportunity: it frames itself as a small, agile company built specifically around network security since 2016, points to its open-source software as a trust signal, and does not indicate immediate compliance risk.</cite></li>
+</ul>
+<p><strong>Strategic implications for our product:</strong>
+1. <strong>Manufacturing origin is now a go/no-go gate, not a differentiator.</strong> A non-US-manufactured device may simply be unsellable in the US consumer router category going forward, independent of feature quality. This must be validated with counsel before finalizing a manufacturing partner.
+2. <strong>HBOM/SBOM readiness is now a compliance requirement, not a nice-to-have.</strong> Build supply-chain documentation into the hardware program from day one (ties into Epic 15 in the backlog).
+3. <strong>This is a rare structural opening.</strong> If competitors (including possibly parts of Firewalla's own supply chain) are exposed to these rules, a US-manufactured or clearly-compliant product has a real, defensible marketing claim: "designed and built to comply with FCC supply-chain security rules" — something most of today's router market cannot currently claim cleanly.
+4. <strong>Timeline risk.</strong> <cite index="146-1">Most final rules take effect 30 days after Federal Register publication, and the FCC itself acknowledges it cannot yet determine full compliance costs for small entities</cite> — treat this as a moving target requiring a dedicated compliance owner, not a one-time checklist.</p>
+<hr />
+<h2 id="16-new-v4-architecture-decision-building-on-openwrt">1.6 <strong>[NEW v4] Architecture Decision: Building on OpenWrt</strong></h2>
+<p>Sentinel's engineering team has decided to build the router platform on <strong>OpenWrt</strong> rather than a general-purpose Linux distribution. This is a foundational decision with direct competitive implications, confirmed against actual evidence rather than assumption.</p>
+<p><strong>Firewalla's actual base OS — verified, not assumed:</strong> <cite index="180-1">Firewalla is built on Ubuntu Linux, with core packages maintained by the Firewalla team and the base OS partition locked to protect system stability; any user-made OS changes are reverted after reboot unless explicitly persisted via a supplied script.</cite> This is a materially different foundation than OpenWrt: Ubuntu is a general-purpose server/desktop distribution adapted for router duty, not a purpose-built embedded router OS. <strong>This means "open-source firmware" — a strength claimed for Firewalla in Section 6 — is not the same claim as "built on a router-native, security-hardened embedded OS."</strong> Sentinel can now make a more specific, evidence-backed claim than Firewalla can.</p>
+<p><strong>Why this matters competitively:</strong>
+- <cite index="179-1">OpenWrt is a full Linux distribution purpose-built for routers and embedded network gear — a real filesystem, the opkg/apk package manager, a unified UCI config system, and the LuCI web interface — versus adapting a general desktop/server distribution to router use.</cite>
+- <cite index="179-1">OpenWrt has "the largest active developer community, the cleanest upgrade path, and by far the deepest package ecosystem" among router-firmware options as of 2026, and is described as the base "a surprising amount of the consumer market quietly builds on."</cite>
+- <cite index="179-1">GL.iNet — already listed as an adjacent competitor in Section 8 — ships "a friendly GUI layered over a real OpenWrt base," which the same source calls "such a soft landing for newcomers," validating that a beginner-friendly UX layered on OpenWrt is a proven, not speculative, commercial model.</cite>
+- <cite index="177-1">OpenWrt's core strength is providing "a stable, secure, and feature-rich operating system that replaces often-insecure and limited vendor firmware," with a robust nftables-based firewall (fw4) managed through LuCI, and its primary appeal is massive hardware compatibility via its published "Table of Hardware."</cite></p>
+<p><strong>Honest tradeoffs (not just upside):</strong>
+- <strong>Wi-Fi 7 driver maturity is an open risk.</strong> Mainline OpenWrt/mac80211 support for the newest Wi-Fi 7 silicon is still maturing as of 2026 — this is a real risk to the flagship Wi-Fi-7-integrated hardware commitment already in the backlog (<code class="story-id">US-7.1</code>) and needs a dedicated spike before any launch date is promised.
+- <strong>No built-in DPI/IDS engine.</strong> Unlike a from-scratch build, OpenWrt doesn't ship deep-packet-inspection or intrusion-detection out of the box — this still needs to be integrated (e.g., Suricata or nDPI as a package) and performance-validated on constrained embedded hardware. It is less work than building a network stack from zero, but it is not zero work.
+- <strong>GPL boundary must be deliberate.</strong> Any code shipped as part of the base OS/kernel/drivers is GPL-governed; Sentinel's proprietary app, cloud backend, and rule/classification engine can remain closed, but the architectural line between the two needs to be designed early, not discovered late.
+- <strong>New upstream dependency.</strong> Sentinel now inherits OpenWrt's own release and security-advisory cadence and must track and rebase onto it in a timely way — a new operational commitment, though one that directly strengthens the Epic 16 trust story (more independent eyes on the shared codebase) rather than undermining it.</p>
+<p><strong>Net competitive read:</strong> this is not a marketing choice, it's a real technical foundation that (a) meaningfully de-risks several of the hardest MVP engineering problems already flagged in the backlog's INVEST audit (DPI, VLAN/segmentation, VPN), and (b) gives Sentinel a more specific, defensible "built on a real router OS" claim than Firewalla's own Ubuntu-based approach can make. See the companion backlog document (v5) for the full Epic 18 and re-scored stories this decision drives.</p>
+<hr />
+<h2 id="2-company-business-model-snapshot">2. Company &amp; Business Model Snapshot</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Attribute</th>
+<th>Detail</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Founded</td>
+<td>2017 (crowdfunded launch)</td>
+</tr>
+<tr>
+<td>Founder</td>
+<td>Jerry Chen</td>
+</tr>
+<tr>
+<td>Reach</td>
+<td><cite index="30-1">Products shipped to 100+ countries</cite></td>
+</tr>
+<tr>
+<td>Pricing model</td>
+<td><cite index="16-1">One-time hardware purchase, no subscription required for core features</cite></td>
+</tr>
+<tr>
+<td>Optional paid tier</td>
+<td>Managed Security Portal (MSP) — cloud-hosted multi-box management, extended flow-data retention (30 days default, up to 180 days for a fee)</td>
+</tr>
+<tr>
+<td>Distribution</td>
+<td>Direct via firewalla.com, Amazon (select models)</td>
+</tr>
+<tr>
+<td>Support</td>
+<td>Email (help@firewalla.com), Help Center (Zendesk), Community Forum, Reddit (r/firewalla)</td>
+</tr>
+<tr>
+<td>Openness</td>
+<td><cite index="30-1">Firmware is open source on GitHub (stable/beta/alpha/master branches), while the mobile app and cloud pairing layer are closed</cite></td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2 id="3-product-line-hardware-comparison">3. Product Line &amp; Hardware Comparison</h2>
+<p>Firewalla sells a <strong>tiered hardware line</strong> running the same core software ("Firewalla Security Stack"), differentiated by throughput, ports, RAM, and CPU. <cite index="43-1">All Firewalla units run the same code base, and all Gold units share the same feature set — the main differences between Gold units are port speeds and their ability to process traffic at that speed.</cite></p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Approx. Price (2026)</th>
+<th>Ports</th>
+<th>Inspected Throughput</th>
+<th>CPU</th>
+<th>RAM</th>
+<th>Built-in Wi-Fi</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Red / Blue</strong> (legacy)</td>
+<td>$109–$199</td>
+<td>1 LAN/WAN</td>
+<td>~100 Mbps–1 Gbps</td>
+<td>ARM (low-power)</td>
+<td>Low</td>
+<td>No</td>
+<td>Entry-level, being phased down</td>
+</tr>
+<tr>
+<td><strong>Purple</strong></td>
+<td>~$369</td>
+<td>2 (LAN/WAN)</td>
+<td>Up to 1 Gbps</td>
+<td>Multi-core ARM</td>
+<td>Moderate</td>
+<td><cite index="15-1">Yes — short-range, low-power Wi-Fi for light usage, hotspot, and Wi-Fi tethering as secondary WAN</cite></td>
+<td><cite index="15-1">Includes "Trusted LAN" mode to secure travel/public Wi-Fi</cite></td>
+</tr>
+<tr>
+<td><strong>Purple SE</strong></td>
+<td>~$249</td>
+<td>2</td>
+<td><cite index="54-1">Up to 500 Mbps</cite></td>
+<td>ARM</td>
+<td>Lower (max 5 VLANs cap)</td>
+<td>Limited</td>
+<td>Budget entry into the ecosystem; <cite index="1-1">praised for its built-in VPN server enabling secure remote access to cameras/files</cite></td>
+</tr>
+<tr>
+<td><strong>Gold SE</strong></td>
+<td>~$419–$509</td>
+<td><cite index="42-1">2× 2.5GbE + 2× 1GbE</cite></td>
+<td><cite name="Gold SE">Up to 2 Gbps</cite></td>
+<td><cite index="42-1">Quad-core ARM, 4GB RAM, 32GB storage</cite></td>
+<td>4GB</td>
+<td>No</td>
+<td><cite index="53-1">Fanless, 0 dB(A) — fully passive cooling</cite>; best value multi-gig option</td>
+</tr>
+<tr>
+<td><strong>Gold Plus</strong></td>
+<td>~$569–$599</td>
+<td><cite index="61-1">4× 2.5GbE</cite></td>
+<td><cite index="61-1">Up to 5 Gbps inspection</cite></td>
+<td>x86 (Intel J4125)</td>
+<td>Moderate</td>
+<td>No</td>
+<td><cite index="55-1">LAG support for ~5Gb aggregate throughput</cite>; unlimited VLANs</td>
+</tr>
+<tr>
+<td><strong>Gold Pro</strong></td>
+<td>~$899</td>
+<td><cite index="18-1">2× 10GbE + 2× 2.5GbE</cite></td>
+<td><cite index="18-1">10+ Gbps</cite></td>
+<td><cite index="59-1">Intel Quad-Core N97 @ 3.4GHz, 8GB DDR4, 32GB eMMC</cite></td>
+<td>8GB</td>
+<td>No</td>
+<td><cite index="59-1">Active cooling (fan); HDMI out; two USB 3.1 + Type-C console</cite>; top-tier, handles 3,000+ devices</td>
+</tr>
+<tr>
+<td><strong>Orange</strong></td>
+<td>Mid-range</td>
+<td><cite index="3-1">2× 2.5GbE</cite></td>
+<td><cite index="3-1">2+ Gbps</cite></td>
+<td>—</td>
+<td>—</td>
+<td><cite index="3-1">Yes — dual-band Wi-Fi 7 built in</cite></td>
+<td><cite index="2-1">First Firewalla model to integrate Wi-Fi directly, closing the "needs a separate AP" gap</cite>; <cite index="50-1">lacks 6GHz band, PPSK, and MLO compared to the AP7</cite></td>
+</tr>
+<tr>
+<td><strong>AP7 (Ceiling/Desktop)</strong></td>
+<td>Accessory</td>
+<td>1× 2.5/10GbE</td>
+<td>N/A (access point)</td>
+<td>—</td>
+<td>—</td>
+<td><cite index="25-1">Wi-Fi 7, mesh-compatible, Wi-Fi/Ethernet backhaul</cite></td>
+<td>Requires a Gold/Purple/Orange box as the security gateway; extends Zero Trust/VqLAN to Wi-Fi clients</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Key competitive insight:</strong> Firewalla's line is fragmented across 7+ SKUs with confusing naming (SE/Plus/Pro/Orange) and near-universal community confusion about which model to buy (see recurring "Purple vs Gold" / "Gold SE vs Gold Plus" forum threads). <cite index="53-1">Firewalla itself acknowledges this targets users who've outgrown consumer routers but aren't ready for pfSense/enterprise gear.</cite> <strong>A simpler, clearer product ladder (e.g., 3 tiers max, plain-language naming) is a real differentiation opportunity.</strong></p>
+<hr />
+<h2 id="4-full-feature-inventory">4. Full Feature Inventory</h2>
+<h3 id="41-core-security-firewall-engine">4.1 Core Security / Firewall Engine</h3>
+<ul>
+<li><strong>Deep Packet Inspection (DPI):</strong> <cite index="13-1">On-device inspection categorizes traffic by app and activity.</cite></li>
+<li><strong>Intrusion Detection &amp; Prevention (IDS/IPS):</strong> <cite index="14-1">Continuous monitoring for unauthorized access attempts with real-time alerts.</cite> <cite index="7-1">Protects wired and wireless IoT devices from viruses and other network-borne threats.</cite></li>
+<li><strong>Active Protect:</strong> <cite index="3-1">Rule-based system that blocks malicious sites and mitigates hacks/attacks proactively.</cite></li>
+<li><strong>Device Active Protect:</strong> Per-device automated threat mitigation (newer feature).</li>
+<li><strong>Signature &amp; behavioral analysis:</strong> <cite index="19-1">Detects attacks and takes automated action when necessary.</cite></li>
+<li><strong>Geo-IP Filtering:</strong> <cite index="13-1">Blocks traffic by country (up to 10 countries on some tiers; unlimited on Gold).</cite></li>
+<li><strong>Ad &amp; Tracker Blocking:</strong> <cite index="19-1">Network-wide ad blocking so "you don't see ads and ads don't see you"</cite> — <cite index="13-1">overlaps with self-hosted Pi-hole but bundled with everything else.</cite></li>
+<li><strong>Open Port Scanning:</strong> Flags exposed ports/services on the network.</li>
+<li><strong>New Device Quarantine:</strong> Automatically isolates newly-joined devices until approved.</li>
+</ul>
+<h3 id="42-network-segmentation-zero-trust">4.2 Network Segmentation &amp; Zero Trust</h3>
+<ul>
+<li><strong>VLAN-based Network Segmentation:</strong> <cite index="12-1">Divides the network into regions with dynamic/static policies — isolate IoT, guest, or kid devices into their own network segments.</cite> <cite index="13-1">VLAN cap: Purple SE limited to 5 VLANs; Gold Pro unlimited.</cite></li>
+<li><strong>VqLAN Microsegmentation:</strong> <cite index="4-1">Isolates smart devices at the network layer without IP renumbering; users define segments by device type, security capability, or household role.</cite></li>
+<li><strong>Device Isolation:</strong> <cite index="3-1">Locks down individual connected devices, limiting lateral movement of threats.</cite></li>
+<li><strong>Zero Trust Architecture:</strong> <cite index="8-1">"Never automatically trust" model — least-privilege access, continuous monitoring/verification of all users and devices.</cite></li>
+<li><strong>Trusted LAN:</strong> <cite index="15-1">A portable, fully-Firewalla-protected network segment usable on public/shared Wi-Fi while traveling.</cite></li>
+</ul>
+<h3 id="43-vpn">4.3 VPN</h3>
+<ul>
+<li><strong>VPN Server:</strong> <cite index="19-1">Free, no-subscription VPN server for secure remote access from public Wi-Fi/coffee shops/hotels.</cite></li>
+<li><strong>WireGuard Server:</strong> <cite index="13-1">Up to ~220 Mbps throughput.</cite></li>
+<li><strong>OpenVPN Server:</strong> <cite index="13-1">Up to ~60 Mbps throughput.</cite></li>
+<li><strong>VPN Client:</strong> <cite index="23-1">Supports OpenVPN, WireGuard, and AnyConnect (beta)</cite> — routes chosen devices through a commercial VPN provider.</li>
+<li><strong>Site-to-Site VPN:</strong> Connects multiple physical locations/Firewalla boxes into one logical network.</li>
+<li><strong>Platform-specific setup guides:</strong> iOS, Android, Windows, Linux.</li>
+</ul>
+<h3 id="44-parental-controls-content-activity-control">4.4 Parental Controls / Content &amp; Activity Control</h3>
+<ul>
+<li><strong>Content Filtering by category:</strong> <cite index="17-1">Gaming, Social, Video, Porn, Gambling, P2P, and more.</cite></li>
+<li><strong>Safe Search enforcement:</strong> <cite index="17-1">Forces SafeSearch across Google, YouTube, Bing, DuckDuckGo; filters offensive search terms.</cite></li>
+<li><strong>App usage tracking &amp; limits:</strong> <cite index="17-1">Track and cap app usage for specific devices/device groups.</cite></li>
+<li><strong>Family Protect mode:</strong> <cite index="7-1">One-tap block of all access, or targeted blocks (e.g., gaming/social only) per device.</cite></li>
+<li><strong>Device blocking / webpage blocking:</strong> <cite index="19-1">Block specific webpages, applications, or cut off device access entirely.</cite></li>
+<li><strong>Users/Profiles:</strong> Assign rules to a person (not just a device).</li>
+<li><strong>"Disturb" (beta):</strong> New engagement/attention-management feature.</li>
+</ul>
+<h3 id="45-networking-infrastructure">4.5 Networking &amp; Infrastructure</h3>
+<ul>
+<li><strong>Router or Bridge Mode:</strong> <cite index="26-1">Can operate as the primary router or sit transparently behind an existing router.</cite></li>
+<li><strong>Multi-WAN:</strong> <cite index="26-1">Failover or load-balancing across two ISP connections (e.g., cable + Starlink + cellular).</cite></li>
+<li><strong>Network Manager:</strong> <cite index="22-1">WAN config, network segment creation, NAT/port forwarding, UPnP scoped per-VLAN.</cite></li>
+<li><strong>Policy-Based Routing:</strong> Route specific traffic/devices via specific paths (e.g., force a device through a VPN or a specific WAN).</li>
+<li><strong>Smart Queue (QoS):</strong> <cite index="57-1">Advanced traffic prioritization to reduce delay/bufferbloat under heavy load.</cite></li>
+<li><strong>DDNS, IPv6, SSH access.</strong></li>
+<li><strong>DNS over HTTPS + Unbound:</strong> <cite index="15-1">Local validating/recursive/caching DNS resolver for privacy; local NTP interception to reduce external calls.</cite></li>
+<li><strong>Bandwidth Usage Monitoring &amp; Network Performance/Quality Monitoring</strong> (latency, jitter).</li>
+<li><strong>Network Events log.</strong></li>
+</ul>
+<h3 id="46-wi-fi-orange-ap7-only">4.6 Wi-Fi (Orange / AP7 only)</h3>
+<ul>
+<li><strong>Wi-Fi 7, dual-band (Orange), tri-band with 6GHz (AP7).</strong></li>
+<li><cite index="28-1">Multi-Link Operation (MLO), QR-code Wi-Fi sharing, per-user/group Wi-Fi assignment, per-AP device blocking, backhaul mode selection, channel/TX power tuning, status light control.</cite></li>
+<li><cite index="25-1">Mesh-compatible with Wi-Fi or Ethernet backhaul.</cite></li>
+</ul>
+<h3 id="47-ai-automation">4.7 AI / Automation</h3>
+<ul>
+<li><strong>Firewalla AI Assistant ("Ask AI", beta):</strong> <cite index="17-1">Conversational help deciding how to configure/protect the network; can walk around the house to find Wi-Fi dead spots and tune connections in real time; shows roaming behavior, latency/jitter stats.</cite></li>
+</ul>
+<h3 id="48-fleet-business-management">4.8 Fleet / Business Management</h3>
+<ul>
+<li><strong>Firewalla MSP (Managed Security Portal):</strong> Cloud console to manage multiple boxes across sites; <cite index="29-1">public REST API (token-based auth) documented at docs.firewalla.net, with example code on GitHub.</cite></li>
+<li><strong>MSP Lite (beta):</strong> Lighter web interface, likely aimed at prosumers with 2–3 boxes.</li>
+</ul>
+<h3 id="49-advanced-power-user-features">4.9 Advanced / Power-User Features</h3>
+<ul>
+<li><cite index="41-1">Docker container support for expanding functionality on-box (documented "Advanced Setup" track).</cite></li>
+<li>Static IP configuration, beta firmware channel opt-in, SD-card-based OS reflashing (Purple), full open-source firmware repo with stable/beta/alpha/unstable branches.</li>
+<li>Rack-mount accessory for Gold-series units.</li>
+</ul>
+<hr />
+<h2 id="5-ux-app-experience">5. UX / App Experience</h2>
+<ul>
+<li>Fully <strong>mobile-app-first</strong>: iOS + Android apps are the primary interface; almost no reliance on a local web UI.</li>
+<li>Guided <strong>Auto-Configuration Wizard</strong> on first boot <cite index="27-1">asks a few questions to customize security defaults, which can be re-triggered any time from Settings.</cite></li>
+<li><strong>QR-code pairing</strong> to bind the physical box to the app.</li>
+<li>Multi-phone/multi-user pairing supported.</li>
+<li>Dashboard centers on: Top Graph (traffic overview), Devices, Alarms, Rules, Target List.</li>
+<li><cite index="20-1">Reviewers note core features work largely automatically without intervention, while deeper configuration (VLANs, routing) requires real networking knowledge.</cite></li>
+</ul>
+<hr />
+<h2 id="6-documented-strengths-what-firewalla-does-well">6. Documented Strengths (What Firewalla Does Well)</h2>
+<ol>
+<li><strong>Breadth of features per dollar</strong> — DPI + IDS/IPS + VPN + ad-block + parental controls + segmentation, bundled, one-time cost.</li>
+<li><strong>No subscription fee for core protection</strong> — a major differentiator vs. Norton Core, Bitdefender Box, and most enterprise vendors (FortiGate/SonicWall UTP bundles).</li>
+<li><strong>Genuinely simple basic setup</strong> — <cite index="20-1">"core features work largely automatically, without requiring any intervention at all."</cite></li>
+<li><strong>Strong community and support culture</strong> — <cite index="41-1">direct engineer-answered email support, active forum, Reddit community.</cite></li>
+<li><strong>IoT microsegmentation done at the network layer</strong> — <cite index="16-1">something no software/endpoint firewall can replicate; WIRED's 2026 guide called it ideal for people worried about smart-home security.</cite></li>
+<li><strong>Fast hardware iteration</strong> — 7+ hardware SKUs since 2017, regular firmware feature drops, beta channel for early adopters.</li>
+<li><strong>Local-first processing</strong> — <cite index="13-1">Core traffic inspection runs on-device, not in the cloud, by default.</cite></li>
+</ol>
+<hr />
+<h2 id="7-documented-weaknesses-gaps-where-a-competitor-can-win">7. Documented Weaknesses / Gaps (Where a Competitor Can Win)</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Weakness</th>
+<th>Evidence</th>
+<th>Opportunity</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Closed app/cloud-pairing stack</strong></td>
+<td><cite index="13-1">It's an honest local-processing story, but pairing and control flow through Firewalla's own cloud account; enabling MSP moves flow data off-box to AWS.</cite></td>
+<td>Offer a fully local-only management option (local web UI + optional cloud), with clearer, opt-in data retention controls.</td>
+</tr>
+<tr>
+<td><strong>Confusing product lineup / naming</strong></td>
+<td>Recurring "Purple vs Gold SE," "Gold Plus vs Gold SE" community questions; <cite index="53-1">"differs significantly... not just marketing labels."</cite></td>
+<td>Ship 2–3 clearly-differentiated tiers with plain-language names (e.g., "Home," "Home Pro," "Business").</td>
+</tr>
+<tr>
+<td><strong>No built-in Wi-Fi on most models</strong></td>
+<td><cite index="2-1">"Many users mistakenly buy Firewalla expecting faster Wi-Fi, only to realize their bottleneck remains their existing access point."</cite></td>
+<td>Make integrated Wi-Fi 7 the default on the flagship SKU, not a separate purchase/late addition.</td>
+</tr>
+<tr>
+<td><strong>CPU/device-count ceilings on lower tiers</strong></td>
+<td><cite index="48-1">User report: Purple SE "CPU can't handle 85 devices... routinely get latency hiccups."</cite></td>
+<td>Right-size CPU/RAM headroom even on entry tier; publish realistic (not just marketing) device-count benchmarks.</td>
+</tr>
+<tr>
+<td><strong>WAN stability complaints</strong></td>
+<td><cite index="16-1">Reddit report of a Gold-series unit "WAN disconnections several times a day."</cite></td>
+<td>Invest in WAN failover robustness and diagnostics; make root-cause logs actually visible in-app (see next row).</td>
+</tr>
+<tr>
+<td><strong>Weak diagnostics / opaque blocking decisions</strong></td>
+<td><cite index="20-1">"Users won't always see a clear reason why a site has been blocked."</cite> <cite index="63-1">Third-party review: "no way to check logs to see what the problem is."</cite></td>
+<td>Build a transparent, human-readable "why was this blocked" log/explainer as a first-class feature.</td>
+</tr>
+<tr>
+<td><strong>Restrictive third-party blocklist support</strong></td>
+<td><cite index="16-1">Blocklists capped at 200 IPs each, ruling out most community-maintained lists.</cite></td>
+<td>Support larger/community blocklists (or full custom list import) natively.</td>
+</tr>
+<tr>
+<td><strong>Steep learning curve beyond basics</strong></td>
+<td><cite index="16-1">WIRED noted it "may prove intimidating for inexperienced folks."</cite> <cite index="11-1">"A firewall you never open is a router with extra steps."</cite></td>
+<td>Design a genuinely tiered UX: dead-simple defaults for non-technical users, progressive disclosure for power users, with proactive (not passive) engagement nudges.</td>
+</tr>
+<tr>
+<td><strong>"Not set-and-forget" — explicit disclaimer</strong></td>
+<td><cite index="31-1">Firewalla itself states active management is required to get enterprise-grade value, and assumes prior knowledge of IP/subnet/DNS/NAT/VPN concepts.</cite></td>
+<td>Build smart auto-pilot defaults + optional guided "security health score" that reduces the active-management burden for casual users.</td>
+</tr>
+<tr>
+<td><strong>Multiple installation modes with reduced future support</strong></td>
+<td><cite index="33-1">Simple/DHCP mode support "may be reduced soon"; Bridge/Router mode recommended instead — a legacy-transition pain point.</cite></td>
+<td>Ship with one clear, well-supported install path and deprecate cleanly with in-app migration tooling.</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2 id="8-adjacent-competitor-landscape-context">8. Adjacent Competitor Landscape (Context)</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Competitor</th>
+<th>Positioning</th>
+<th>Key differentiator vs. Firewalla</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Ubiquiti UniFi (Cloud Gateway line)</strong></td>
+<td><cite index="10-1">Full pro networking stack at consumer prices (e.g., $279 all-in-one Wi-Fi 7 gateway).</cite></td>
+<td><cite index="55-1">Better native multi-WAN and port count; weaker firewall/traffic-inspection depth — Firewalla reviewers rate its IDS/IPS as not as strong.</cite> Some UniFi tiers require a paid "CyberSecure" subscription for full IDS/IPS.</td>
+</tr>
+<tr>
+<td><strong>pfSense / OPNsense (Netgate, Protectli, generic mini-PCs)</strong></td>
+<td><cite index="16-1">Open-source firewall OS on flexible hardware, from $369+.</cite></td>
+<td>Maximum configurability and no vendor lock-in, but no mobile-app UX, no built-in parental controls/ad-block out of the box — DIY-only audience.</td>
+</tr>
+<tr>
+<td><strong>FortiGate (Fortinet)</strong></td>
+<td><cite index="16-1">Enterprise-grade UTM with defensible small-business TCO, but subscription-based threat feeds ("UTP bundle").</cite></td>
+<td>Deeper enterprise compliance/reporting; far less consumer-friendly, ongoing licensing cost.</td>
+</tr>
+<tr>
+<td><strong>Bitdefender Box / Norton Core</strong></td>
+<td>Consumer security appliances, subscription-based.</td>
+<td>Simpler UX for non-technical buyers, but ongoing fees and much shallower network-layer control (no real VLAN/segmentation).</td>
+</tr>
+<tr>
+<td><strong>GL.iNet (OpenWrt-based routers)</strong></td>
+<td><cite index="10-1">Community-favorite, runs whole home through a VPN at near line speed.</cite> <span class="tag tag-new v4">[NEW v4]</span> This is Sentinel's closest architectural precedent, not just an adjacent competitor: <cite index="179-1">GL.iNet ships a friendly GUI layered over a real OpenWrt base, described as "such a soft landing for newcomers" who can drop into stock LuCI underneath when they outgrow the simplified interface.</cite></td>
+<td>Strong VPN/travel-router niche; weaker structured parental controls and no dedicated mobile security app layer — this is precisely the gap Sentinel's app/UX layer targets on top of the same class of foundation.</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2 id="85-new-security-trust-track-record-evidence-beyond-marketing-claims">8.5 <strong>[NEW] Security &amp; Trust Track Record — Evidence Beyond Marketing Claims</strong></h2>
+<p>A security product's credibility rests on how it has actually handled vulnerabilities and disclosure, not just its feature list.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Incident / Pattern</th>
+<th>Evidence</th>
+<th>Takeaway for Our Product</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Undocumented SSH access with a fixed, short factory password</strong></td>
+<td><cite index="79-1">A community report (long-standing, still referenced) describes SSH being enabled by default and protected only by a weak, non-user-changeable 8-character password, with the user unable to disable it — the reporter called this "a sizable security vulnerability" and "poor security practice."</cite></td>
+<td>Our product must let the owner fully disable remote/support-triggered SSH access, and any support-access credential must be per-device, rotatable, and disclosed.</td>
+</tr>
+<tr>
+<td><strong>Slow/absent public vulnerability disclosure process</strong></td>
+<td><cite index="80-1">A widely-upvoted community thread titled "I'm tired of getting hacked because I use this product" documents a user listing multiple CVEs (including CVE-2016-20012, CVE-2020-12062, and others) that went unanswered by Firewalla for over three weeks; commenters explicitly asked for "a simple CVE status page" and noted "this is not an appropriate way to handle security concerns for a security device company."</cite> Firewalla's own team, when it does respond, states it <cite index="75-1">only patches vulnerabilities specific to how Firewalla actually uses a component, and actively monitors and patches relevant CVEs each release</cite> — a reasonable filtering policy, but one that was <strong>not proactively communicated</strong>, which is what triggered the community backlash.</td>
+<td>Ship a <strong>public, regularly-updated CVE/security-advisory page</strong> from day one (ties to Epic 16 below) — this is a cheap, high-trust differentiator directly evidenced as a competitor gap.</td>
+</tr>
+<tr>
+<td><strong>DNS resolver DoS vulnerabilities (2023–2024)</strong></td>
+<td><cite index="78-1">CVE-2023-50387 and CVE-2023-50868 (DNS resolver flaws) prompted community debate about whether LAN-originated attacks matter for a home firewall; a commenter pushed back hard on the assumption that internal/LAN threats are low-risk, noting IoT proliferation expands the internal attack surface significantly.</cite></td>
+<td>Validate our Zero Trust/segmentation design against LAN-originated (not just WAN-originated) attack paths as a first-class threat model, not an edge case.</td>
+</tr>
+<tr>
+<td><strong>Log4j response (2021) — a positive example</strong></td>
+<td><cite index="77-1">Firewalla published clear guidance during Log4j, including a dynamically-updated "Log4j attackers" target list and specific in-app steps (enable Active Protect, use VPN when remote, set Active Protect to Strict mode).</cite></td>
+<td>This is the right model: fast, specific, actionable public guidance during an active industry-wide incident. Adopt as our incident-response playbook standard.</td>
+</tr>
+<tr>
+<td><strong>Internal/IoT vulnerability scanning as a stated privacy commitment</strong></td>
+<td><cite index="83-1">Firewalla states scan results are never sent to its own servers, explicitly prioritizing user privacy for this feature.</cite></td>
+<td>Match this commitment explicitly for any on-device security scanning feature.</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Net assessment:</strong> Firewalla's underlying security engineering appears reasonably sound (its stated CVE-triage policy is defensible), but its <strong>disclosure communications are a repeated, evidenced weak point</strong> — multiple community threads exist specifically because users could not find a status page or timely acknowledgment. This is a concrete, low-cost opportunity: a public security.txt / advisory page, disclosed patch SLAs, and an optional bug-bounty program would be a genuine trust differentiator, not just a marketing claim.</p>
+<h2 id="86-new-business-model-risk-subscription-scope-creep">8.6 <strong>[NEW] Business Model Risk: Subscription Scope Creep</strong></h2>
+<p>Firewalla's "no subscription" positioning (Section 6, Strength #2) is real for core features today, but there is now clear, dated evidence of <strong>scope creep and community backlash</strong>, which matters both as a competitive opening and as a cautionary pattern to avoid ourselves.</p>
+<ul>
+<li><cite index="119-1">Firewalla's official policy states it avoids monthly fees but reserves the right to charge for "pro or small business" features that are more resource-intensive than a typical family network, with the Managed Security Portal (MSP) as the current example.</cite></li>
+<li><cite index="113-1">A community member specifically pressed Firewalla in May 2026 on whether "pro" pricing language could eventually apply to any user wanting advanced features, not just Pro-hardware owners — Firewalla confirmed MSP is, so far, the only paid add-on service.</cite></li>
+<li><cite index="114-1">However, in March 2026, Firewalla announced it is retiring the free "my.firewalla.com" web portal and migrating users to the paid MSP tier (starting around $3/month for MSP + extended flow storage). A user directly objected that this took functionality "any home user would expect to be basic and included" and moved it "behind a paywall even though that functionality is already included in the phone app" — calling it a reversal of the original business model.</cite></li>
+<li><cite index="97-1">A June 28, 2026 Google Play review states bluntly: "now they switched to a subscription based model and are trying to get you to pay for simple features rendering these amazing devices garbage. really disappointed."</cite> This is a live, dated (weeks-old relative to this analysis) data point that the "no subscription" trust position is actively eroding in the eyes of at least some users.</li>
+<li>Context: <cite index="139-1">FTC 2026 enforcement guidance explicitly flags "subscription and negative-option marketing practices that obscure true costs or frustrate cancellation" as a growing scrutiny area</cite> — any competitor (including us) needs subscription terms that are unambiguous from first purchase.</li>
+</ul>
+<p><strong>Strategic implication:</strong> The "no subscription for core features" claim is now a <strong>live trust battleground</strong>, not settled ground. If we commit to it, we should (a) define contractually and publicly, at launch, exactly which features are guaranteed free forever vs. which are explicitly optional/paid, and (b) never retire a previously-free capability into a paywall — ship any new paid tier as strictly additive. This maps to Epic 13/14 stories in the backlog and should be reflected in a public "pricing promise" commitment.</p>
+<h2 id="87-new-category-context-consumer-security-box-competitors-are-mostly-dead">8.7 <strong>[NEW] Category Context: Consumer Security-Box Competitors Are Mostly Dead</strong></h2>
+<p>This matters for market sizing and for how "risky" a new entrant's category actually is.</p>
+<ul>
+<li><cite index="159-1">Bitdefender BOX 2 is no longer manufactured or sold as of 2021 due to post-pandemic market conditions; existing owners retain support, but the product line is closed to new customers.</cite> <cite index="155-1">The community consensus is that BOX 2 is "no longer being manufactured," with Bitdefender's home-network security now folded into router-vendor partnerships (e.g., NETGEAR Armor) rather than sold as a standalone appliance.</cite></li>
+<li><cite index="161-1">Norton Core, Symantec/NortonLifeLock's competing device, was discontinued in January 2019 after "limited acceptance from the public" and criticism over requiring an expensive subscription; support fully ended in April 2022.</cite></li>
+<li><cite index="157-1">The abandoned Bitdefender BOX v1 hardware subsequently had a critical unpatched vulnerability (CVE-2024-13872) discovered in its update mechanism after end-of-life — a cautionary tale about what happens to abandoned security-hardware fleets.</cite></li>
+</ul>
+<p><strong>Net assessment:</strong> Firewalla is not just a strong competitor — <strong>it is close to the only surviving player in the exact "standalone consumer/prosumer security-firewall appliance" category.</strong> UniFi, pfSense/OPNsense hardware, and FortiGate/SonicWall compete adjacently but target different buyers (networking enthusiasts, DIY, or SMB/enterprise respectively) rather than the "security appliance for a household" positioning Firewalla, Bitdefender BOX, and Norton Core all originally targeted. This is both an opportunity (real whitespace, validated demand, two prior failed attempts to learn from) and a risk (two well-funded competitors — Symantec and Bitdefender — already tried and gave up on this exact category).</p>
+<h2 id="88-new-upcoming-firewalla-products-roadmap-awareness">8.8 <strong>[NEW] Upcoming Firewalla Products (Roadmap Awareness)</strong></h2>
+<p>Firewalla is actively expanding, and we should track this pipeline rather than benchmark against a static product line.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Announced Product</th>
+<th>Status (as of Aug 2026)</th>
+<th>Relevance</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Firewalla Gold Plus SFP</strong></td>
+<td><cite index="123-1">Pre-sale expected September–November 2026; positioned between Gold Plus and Gold Pro at 5Gbit with an SFP+ port and two 10Gbit ports.</cite></td>
+<td>Further fragments an already-confusing lineup (see Section 3 critique) — reinforces our simplification opportunity.</td>
+</tr>
+<tr>
+<td><strong>Firewalla Software (Bring Your Own Hardware)</strong></td>
+<td><cite index="123-1">Firewalla's own software running on customer-owned hardware; pre-sale date unknown, still gathering survey interest.</cite></td>
+<td>Signals Firewalla itself sees value in decoupling software from proprietary hardware — validates a potential "software-first" or open-hardware-compatible strategy for us.</td>
+</tr>
+<tr>
+<td><strong>Firewalla AP7 (World version)</strong></td>
+<td><cite index="123-1">Expanding regional availability (UK, EU, Switzerland, Iceland, Liechtenstein, Norway, Türkiye, Singapore, and a USA version extended to Canada) with shipping expected September 2026.</cite></td>
+<td>International Wi-Fi 7 AP rollout still in progress — a window to beat them to broader international availability.</td>
+</tr>
+<tr>
+<td><strong>Firewalla Switch</strong></td>
+<td><cite index="122-1">Referenced in community discussion ("Help us make the Firewalla Switch") — likely a managed switch product extending the ecosystem beyond routing/Wi-Fi.</cite></td>
+<td>Signals category expansion into full home-network-stack ownership (router + AP + switch) — worth monitoring as a scope signal for what "complete" now means in this market.</td>
+</tr>
+<tr>
+<td><strong>DAP (Device Active Protect)</strong></td>
+<td><cite index="140-1">Referenced by Firewalla's CEO as a newly invented feature.</cite> Cross-references the "Device Active Protect" feature already listed in Section 4.1.</td>
+<td>Confirms per-device automated protection is an active area of Firewalla R&amp;D investment, not a finished feature — good area to leapfrog.</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="89-new-app-store-real-world-user-sentiment">8.9 <strong>[NEW] App Store &amp; Real-World User Sentiment</strong></h2>
+<p>Quantifying actual user sentiment (not just professional reviews) sharpens where the real UX gaps are.</p>
+<ul>
+<li><cite index="93-1">Android app rating: 4.51/5 based on 360 ratings (as of the most recent update tracked, March 2026).</cite></li>
+<li><cite index="92-1">Aggregate app store rating cited at 4.5/5 across 718 analyzed reviews, with an estimated "legitimacy score" of 66.6/100 by one third-party analysis tool — a mediocre trust score despite a high star rating, worth noting as a signal that surface ratings don't fully capture sentiment nuance.</cite></li>
+<li><strong>Recurring, specific complaints found in review text (not just aggregate scores):</strong></li>
+<li><cite index="92-1">No true iPad-optimized layout — one reviewer describes getting "a scaled iPhone app stretched on my iPad Pro" despite the app's nice graphs.</cite></li>
+<li><cite index="92-1">Rule scheduling is asymmetric: users can define a custom <em>block</em> window but not a matching custom <em>allow</em> window, forcing awkward workarounds (e.g., wanting to block a work app only on weekdays 4pm–8am, but the tool only supports blocking, not the inverse).</cite></li>
+<li><cite index="101-1">MAC address randomization (default on modern iOS/Android) triggers constant "new/unknown device" false positives, since Firewalla identifies devices primarily by MAC. The suggested fix — disabling a device's private Wi-Fi address — is explicitly a privacy regression, which one reviewer called "a philosophical contradiction" for a product built on zero-trust principles.</cite></li>
+<li><cite index="93-1">Community guidance confirms this is a known, accepted trade-off today ("if you connect with randomized Mac addresses, firewalla won't recognize the device and will block until you unblock. This is a good thing... if annoyed, turn on [an override]").</cite></li>
+<li><cite index="97-1">A June 2026 review reports a "widget for the app" is still a requested-but-missing feature (quick-glance alarms/speed without opening the full app).</cite></li>
+<li><strong>Trustpilot (hardware/company-level, distinct from app store):</strong></li>
+<li><cite index="107-1">One recent (within the last month) Trustpilot review reports a Gold Plus losing all Wi-Fi/AP connectivity after ~9 months of otherwise-stable operation, with the reviewer noting "multiple specialists" were unable to resolve it and attributing it to the Firewalla unit itself.</cite></li>
+<li><cite index="107-1">A countervailing review from a long-time customer reports having upgraded across Gold → Gold Plus → Gold Pro with all three being "excellent, stable and reliable" — illustrating real variance in hardware reliability experience rather than a uniform failure pattern.</cite></li>
+<li><cite index="107-1">A third review flags an accessibility gap: the product requires a modern smartphone for setup and configuration, with no accommodation path described for users without one, and reports refund friction in that scenario.</cite></li>
+</ul>
+<p><strong>Strategic implication:</strong> Beyond the previously-identified gaps, this adds three concrete, cheap-to-fix UX opportunities: (1) native tablet layouts, (2) symmetric allow/block scheduling, (3) a privacy-respecting device-identification approach that doesn't force a trade-off against OS-level MAC randomization (e.g., combine behavioral/traffic fingerprinting with MAC so privacy-conscious users aren't penalized for using a platform-default privacy feature).</p>
+<h2 id="810-broader-competitor-landscape-benchmark">8.10 Broader Competitor Landscape Benchmark</h2>
+<p>Merged from the home-router user-needs analysis reference. Where &sect;&sect;1&ndash;9 above focus specifically on Firewalla, this section benchmarks the wider consumer/prosumer router market (eero, Gryphon, ASUS, TP-Link, NETGEAR, Ubiquiti UniFi) across the same feature categories.</p>
+<h3 id="8101-cross-persona-feature-matrix">8.10.1 Cross-Persona Feature-to-Value Matrix</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>Feature Category</th><th>Primary Beneficiary(ies)</th><th>Core Value Proposition</th></tr></thead>
+<tbody>
+<tr><td>Wi-Fi 7 / MLO &amp; 6 GHz</td><td>Gamers, Power Users</td><td>Ultra-low latency, congestion-free spectrum</td></tr>
+<tr><td>Mesh Support / EasyMesh</td><td>Large Households, Multi-story Homes, Smart Home users</td><td>Eliminates dead zones with unified roaming SSID</td></tr>
+<tr><td>Parental Controls &amp; Profiles</td><td>Parents/Guardians</td><td>Access restriction and active time management</td></tr>
+<tr><td>Multi-Gig WAN/LAN Ports</td><td>Remote Workers, Gamers, Content Creators</td><td>Unlocks gigabit+ fiber speeds, low-latency wired play</td></tr>
+<tr><td>Security Subscriptions / Threat Blocking</td><td>Families, Seniors, Privacy-conscious users</td><td>Automated defense without extra software</td></tr>
+<tr><td>App-Based QR Setup</td><td>Seniors, Non-tech-savvy users</td><td>Removes technical setup barrier</td></tr>
+<tr><td>VLAN / Guest Network / IoT Isolation</td><td>Remote Workers, Smart Home Enthusiasts, Parents, Small Business, Roommates</td><td>Segregates untrusted, vulnerable, or unrelated devices</td></tr>
+<tr><td>Multi-WAN / Failover</td><td>Remote Workers, Small Business, Vacation Home Owners</td><td>Prevents downtime during critical work or unattended periods</td></tr>
+<tr><td>QoS (Device &amp; App-Aware)</td><td>Gamers, Remote Workers, Streamers</td><td>Fair, prioritized bandwidth allocation under load</td></tr>
+<tr><td>Automatic Firmware Updates</td><td>Seniors, Privacy-conscious users, all households</td><td>Security maintained without user effort</td></tr>
+<tr><td>VPN Client/Server Support</td><td>Remote Workers, Privacy-conscious users, Gamers, Away-From-Home Users</td><td>Secure remote access and traffic privacy</td></tr>
+<tr><td>Band Steering / OFDMA / MU-MIMO</td><td>Streamers, Large Households</td><td>Efficient handling of many simultaneous devices</td></tr>
+<tr><td>Time-Limited Guest Credentials</td><td>Vacation Home Owners, Roommates</td><td>Access control without on-site presence</td></tr>
+<tr><td>Per-Device Usage Reporting</td><td>Roommates, Parents</td><td>Fair cost-splitting or oversight without ambiguity</td></tr>
+</tbody></table></div>
+<h3 id="8102-real-world-brand-benchmarks">8.10.2 Real-World Brand Benchmarks</h3>
+<h4>Performance &amp; Coverage</h4>
+<div class="table-wrap"><table>
+<thead><tr><th>Vendor / Line</th><th>Strength</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td><strong>ASUS (ROG, RT-BE series)</strong></td><td>Gaming-focused QoS, Wi-Fi 7/MLO, strong wired backhaul options</td><td>AiMesh lets ASUS routers mesh together; often best raw throughput for gamers</td></tr>
+<tr><td><strong>NETGEAR Orbi / Nighthawk</strong></td><td>Strong mesh coverage, high-end multi-gig models</td><td>Historically premium-priced but consistent whole-home performance</td></tr>
+<tr><td><strong>TP-Link Deco / Archer BE series</strong></td><td>Best value for Wi-Fi 7 entry, EasyMesh support</td><td>Strong price-to-performance; wide device compatibility</td></tr>
+<tr><td><strong>eero (Pro, Max series)</strong></td><td>Best-in-class wireless mesh performance and ease of use</td><td>Weaker on advanced/free VLAN or business-grade features without paid tier</td></tr>
+<tr><td><strong>Ubiquiti UniFi (Dream Router/Machine line)</strong></td><td>Prosumer/enterprise-grade throughput, full control</td><td>Steeper learning curve; best when paired with wired backhaul</td></tr>
+</tbody></table></div>
+<h4>Security &amp; Control</h4>
+<p><strong>Ad Blocking:</strong> eero Plus bundles network-wide ad blocking with content filtering and threat protection across every connected device, no per-device software. TP-Link HomeShield gates ad blocking inside the paid Security+ tier. The DIY/power-user route is Pi-hole or AdGuard Home on ASUS-Merlin, OpenWRT, or a Raspberry Pi for households wanting granular, self-hosted ad blocking without a subscription.</p>
+<p><strong>App-Specific Blocking:</strong> Gryphon is the standout &mdash; parents can allow or block specific named apps per profile (TikTok, Instagram, Facebook, WhatsApp, Netflix, YouTube, Xbox, etc.) and permit an app only during "free time" windows. eero Secure/Plus offers a per-profile "Block apps" screen with categorized lists. TP-Link HomeShield (Advanced/Pro) ties app/category filtering to family profiles. Circle (Disney Circle)/Bark are third-party ecosystems specializing in app-level blocking plus content/message monitoring. <strong>Limitation to note:</strong> router-level blocking generally blocks the app or domain entirely &mdash; it can't selectively filter content inside an allowed app, since the router can't inspect encrypted in-app content; best combined with device-level tools (Apple Screen Time, Google Family Link).</p>
+<p><strong>Screen Time / Scheduling:</strong> Gryphon schedules in 15-minute blocks with three modes &mdash; Homework (internet stays on, distracting apps/sites blocked), Bedtime (internet off overnight), Suspend (on-demand blackout) &mdash; with daily time budgets that can convert unused time to "reward time." eero offers a per-profile pause button, scheduled bedtime pauses, and screen-time insights. TP-Link HomeShield/Netgear Armor/ASUS offer basic time-based profiles. Google Wifi/Nest Wifi integrates per-device pause with Google Family Link.</p>
+<p><strong>IoT Isolation:</strong> TP-Link HomeShield auto-identifies IoT devices and isolates sensitive devices like cameras onto a segmented network. ASUS Guest Network Pro supports up to 5 separate SSIDs each with its own VPN/firewall assignment. Netgear Armor (powered by Bitdefender) does device-level scanning and vulnerability detection. Firewalla/Ubiquiti offer the deeper prosumer option: true VLAN segmentation, per-device firewall rules, traffic-flow visibility.</p>
+<p><strong>VPN &mdash; Remote Access:</strong> ASUS has a built-in VPN server (OpenVPN and WireGuard) plus site-to-site VPN. TP-Link (HomeShield-enabled models) supports simultaneous VPN client and server. Netgear offers VPN server support (model-dependent). eero Plus's Guardian VPN is a bundled consumer VPN client (up to 5 devices) for private browsing &mdash; distinct from a self-hosted "reach my home network" VPN server. Firewalla/Ubiquiti/pfSense offer full site-to-site VPN with granular remote-access policy for power users.</p>
+<p><strong>Network-Wide Threat Protection:</strong> Independent testing (AV-Comparatives with Bitdefender, Nov 2024) scored NETGEAR Armor (Bitdefender) highest on real intrusion/attack scenarios, with device vulnerability scanning and dark-web/identity monitoring in higher tiers. ASUS AiProtection/Pro (Trend Micro) offers malware blocking and intrusion prevention, often free-for-life. TP-Link HomeShield (Avira) offers malicious-site blocking and IoT vulnerability scanning across tiered plans. eero Plus (OpenDNS-based filtering) scored lowest in that particular test, though strong on ease-of-use and parental-control breadth.</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Vendor / Product</th><th>Ad Block</th><th>Named-App Block</th><th>Kids' Scheduling</th><th>IoT Isolation</th><th>VPN (remote access)</th><th>Subscription Model</th></tr></thead>
+<tbody>
+<tr><td><strong>eero Plus / Secure</strong></td><td>Yes</td><td>Yes (per profile)</td><td>Yes (pause, bedtime)</td><td>Basic (guest network)</td><td>Guardian VPN (client)</td><td>Monthly/annual</td></tr>
+<tr><td><strong>Gryphon</strong></td><td>Partial</td><td>Yes &mdash; deepest app-level control</td><td>Yes &mdash; most granular (15-min blocks, reward time)</td><td>Basic</td><td>Limited</td><td>One-time + optional premium</td></tr>
+<tr><td><strong>ASUS AiProtection Pro</strong></td><td>No (separate tool needed)</td><td>Limited (category-based)</td><td>Basic</td><td>Strong (Guest Network Pro, up to 5 SSIDs)</td><td>Yes &mdash; OpenVPN/WireGuard server, free</td><td>Free for life (most models)</td></tr>
+<tr><td><strong>TP-Link HomeShield</strong></td><td>Yes (paid tier)</td><td>Yes (paid tiers)</td><td>Yes</td><td>Strong (auto IoT detection + isolation)</td><td>Yes &mdash; client &amp; server</td><td>Free tier + paid tiers</td></tr>
+<tr><td><strong>NETGEAR Armor</strong></td><td>No</td><td>Limited</td><td>Basic</td><td>Strong (per-device scanning)</td><td>Yes (model-dependent)</td><td>Free trial + subscription</td></tr>
+<tr><td><strong>Firewalla / UniFi / pfSense</strong></td><td>Via add-on (Pi-hole)</td><td>Via policy rules</td><td>Via policy rules</td><td>Enterprise-grade VLANs</td><td>Full site-to-site VPN</td><td>One-time hardware cost</td></tr>
+</tbody></table></div>
+<h4>Remote Camera &amp; IoT Access</h4>
+<p>Ubiquiti UniFi Protect's cloud relay works through a Ubiquiti account with no port forwarding or VPN required, and the free tier supports unlimited cameras on a single account with no monthly subscription; for fully private access, Ubiquiti's own community guidance recommends a dedicated site-to-site VPN instead of cloud relay, and UniFi's core platform bundles VLAN segmentation with one-click VPN-based remote access for free with hardware purchase. eero has no native camera ecosystem, but eero Plus's Guardian VPN and remote-management app cover general "check on my home network from anywhere" use, and eero 6 series units include a built-in Zigbee hub. ASUS/TP-Link/NETGEAR routers don't include cameras, but their built-in VPN servers are commonly used specifically so households can self-host camera NVRs (Reolink, Synology Surveillance Station, Blue Iris) and reach them remotely without a third-party cloud. Dedicated camera-brand apps (Ring, Nest, Reolink, Hikvision, Lorex, Amcrest, Swann) each ship their own P2P cloud app, with free remote live view/playback/clip downloads and paid plans mainly adding off-device clip archiving.</p>
+<h4>Vendor Cloud-Account &amp; Data Privacy</h4>
+<div class="table-wrap"><table>
+<thead><tr><th>Vendor</th><th>Cloud Account Required?</th><th>Works Fully Offline/Local?</th><th>Notable Privacy Note</th></tr></thead>
+<tbody>
+<tr><td><strong>eero</strong></td><td>Yes (mandatory)</td><td>No &mdash; setup and management require the eero app/cloud</td><td>Owned by Amazon; account tied to Amazon ecosystem</td></tr>
+<tr><td><strong>Ubiquiti UniFi</strong></td><td>Optional for local network app; required for cloud/remote features</td><td>Yes &mdash; local controller can run fully offline</td><td>Local-first design praised by privacy-conscious users; cloud features opt-in</td></tr>
+<tr><td><strong>ASUS</strong></td><td>Optional (AiCloud/account for remote features)</td><td>Yes &mdash; core router functions locally without an account</td><td>Historically more local-control-friendly than eero/Google</td></tr>
+<tr><td><strong>TP-Link</strong></td><td>Yes for HomeShield/Tether app features</td><td>Partial &mdash; basic Wi-Fi works locally, security features need cloud</td><td>Has faced past scrutiny over cloud data handling; CISA Secure-by-Design signatory</td></tr>
+<tr><td><strong>Google Nest Wifi</strong></td><td>Yes (mandatory Google account)</td><td>No</td><td>Deepest ecosystem tie-in to Google services/data</td></tr>
+<tr><td><strong>OpenWRT / pfSense / Firewalla</strong></td><td>No</td><td>Yes &mdash; fully local, self-hosted</td><td>The choice for users who want zero vendor cloud dependency</td></tr>
+</tbody></table></div>
+<h3 id="8103-decision-factors">8.10.3 Decision Factors Beyond Features</h3>
+<h4>Cost &amp; Subscription Fatigue</h4>
+<p>Many of the strongest features above (ad blocking, app blocking, threat protection, VPN) are gated behind monthly subscriptions (eero Plus, TP-Link HomeShield tiers, Netgear Armor). Buyers increasingly weigh a one-time-cost preference (ASUS's free-for-life AiProtection, Gryphon's one-time-purchase model), bundled vs. &agrave; la carte tradeoffs, and trial-to-paid conversion friction (e.g., Netgear Armor's 30-day trial lapsing silently).</p>
+<h4>ISP-Provided Router vs. Retail Router</h4>
+<p>A large share of buyers' real first decision is whether to replace the ISP-provided gateway at all. Reasons to keep it: zero cost, ISP-managed troubleshooting, sometimes bundled security. Reasons to replace it: weak Wi-Fi range, limited/no parental controls, no VPN server, forced update schedule, inability to use your own mesh system, double-NAT issues. A common but non-obvious hybrid: keep the ISP router in modem/bridge mode and add a retail router or mesh system for actual Wi-Fi and control.</p>
+<h4>Mesh Node Count &amp; Placement Economics</h4>
+<p>A typical single router covers ~1,500&ndash;2,000 sq ft; most 2&ndash;3 story or 2,500+ sq ft homes need mesh (rule of thumb: 1 node per ~1,500 sq ft, plus one per floor or major obstruction). Wired backhaul between mesh nodes dramatically outperforms wireless backhaul for large homes &mdash; a differentiator often buried in spec sheets but decisive for actual performance.</p>
+<h4>Physical &amp; Environmental Factors</h4>
+<p>Home construction materials (plaster/lath, brick, concrete, foil-backed insulation) significantly degrade Wi-Fi signal regardless of router quality; multi-floor homes need vertical coverage planning; neighboring-network interference (especially in apartments/condos) requires automatic channel selection; router placement (central, elevated, away from metal appliances/mirrors) affects performance as much as hardware spec.</p>
+<h4>Accessibility</h4>
+<p>An underserved dimension across nearly all mainstream router apps: voice-guided or screen-reader-compatible setup flows for visually impaired users, large-text/high-contrast app UI options for seniors or low-vision users, and simple physical indicators (status lights, audible setup confirmation) as a fallback to app-only setup.</p>
+<h3 id="8104-symptom-to-feature-mapping">8.10.4 Symptom-to-Feature Mapping</h3>
+<p>Buyers rarely describe needs in technical terms &mdash; they describe symptoms:</p>
+<ul>
+<li>"The Wi-Fi doesn't reach upstairs" &rarr; Mesh coverage / wired backhaul</li>
+<li>"The kids won't get off their phones" &rarr; Parental controls / app blocking / scheduled pauses</li>
+<li>"My Zoom keeps freezing" &rarr; App-aware QoS, failover WAN</li>
+<li>"Too many devices, everything's slow" &rarr; Wi-Fi 6E/7 + OFDMA/MU-MIMO</li>
+<li>"I don't want to deal with settings" &rarr; App-guided setup, self-healing network, auto-updates</li>
+<li>"I want to check on my house/pet/parents while I'm away" &rarr; Remote camera access + VPN server + DDNS</li>
+<li>"I don't trust what my router company does with my data" &rarr; Local-first vendor, no mandatory cloud account, open-source firmware option</li>
+<li>"I keep paying for stuff I already own" &rarr; One-time-cost hardware with free-for-life security (e.g., ASUS AiProtection)</li>
+</ul>
+<p>A well-positioned router (or its marketing) translates each symptom into the specific feature category that resolves it &mdash; this mapping is the backbone of both product design prioritization and messaging strategy.</p>
+<h3 id="810-5-competitive-positioning">8.10.5 Competitive Positioning</h3>
+<div class="table-wrap"><table>
+<thead><tr><th></th><th>This Product</th><th>eero</th><th>Gryphon</th><th>ASUS</th><th>UniFi</th></tr></thead>
+<tbody>
+<tr><td>Setup simplicity</td><td>&#9989; Guided, &lt;5 min</td><td>&#9989; Strong</td><td>Moderate</td><td>Moderate&ndash;hard</td><td>Hard</td></tr>
+<tr><td>Named app blocking</td><td>&#9989; Built-in, simple UI</td><td>&#9989; Yes</td><td>&#9989; Best-in-class depth</td><td>Limited</td><td>Via policy rules</td></tr>
+<tr><td>Free core security (no subscription)</td><td>&#9989; Yes</td><td>&#10060; Paid (eero Plus)</td><td>Partial</td><td>&#9989; Yes (AiProtection)</td><td>&#9989; Yes (core)</td></tr>
+<tr><td>One-tap remote VPN</td><td>&#9989; Yes, auto-DDNS</td><td>Partial (Guardian VPN = client only)</td><td>&#10060; Limited</td><td>Manual setup required</td><td>Manual setup required</td></tr>
+<tr><td>Advanced mode available</td><td>&#9989; Yes, opt-in</td><td>&#10060; No</td><td>&#10060; No</td><td>&#9989; Yes (default, not opt-in)</td><td>&#9989; Yes (default, steep)</td></tr>
+<tr><td>Target user</td><td>Non-technical + security-conscious</td><td>Non-technical</td><td>Parents specifically</td><td>Enthusiasts</td><td>Prosumers/IT</td></tr>
+</tbody></table></div>
+<p><strong>The gap this product fills:</strong> every existing option forces a tradeoff between <em>simple</em> (eero, Gryphon) and <em>powerful/free</em> (ASUS, UniFi). None combine free-for-life core security, one-tap remote VPN access, Gryphon-level parental app blocking, and a true progressive-disclosure interface in one product. Full requirements backlog in <a href="02-Product-Backlog-User-Stories.html#4d-product-concept-positioning">02-Product-Backlog-User-Stories.html &sect;4d</a>.</p>
+
+<h2 id="9-strategic-takeaways-for-our-product">9. Strategic Takeaways for Our Product</h2>
+<ol>
+<li><strong>Match the "no subscription for core security" model</strong> — this is now a baseline expectation, not a differentiator, unless we can offer something subscription-based that's clearly optional and high-value (e.g., extended cloud history, multi-site MSP).</li>
+<li><strong>Fix the transparency gap</strong> — a first-class "why was this blocked / why did this alert fire" experience is a clear, evidenced whitespace.</li>
+<li><strong>Simplify the hardware ladder</strong> — 2–3 SKUs, clear plain-language names, integrated Wi-Fi from day one on at least one tier.</li>
+<li><strong>Reduce the "active management" burden</strong> — smarter defaults, a security-health score, and proactive plain-English guidance rather than assuming networking literacy.</li>
+<li><strong>Local-first, privacy-first cloud story</strong> — be explicit and generous about local processing vs. cloud opt-in, better than Firewalla's MSP disclosure.</li>
+<li><strong>Match table-stakes features exactly</strong> (see Section 4) — anything less than DPI + IDS/IPS + VPN server/client + segmentation + parental controls + ad-block will read as a lesser product to informed buyers.</li>
+<li><strong>Differentiate on device-count headroom and WAN stability</strong> at the entry tier, where Firewalla's own community reports friction.</li>
+<li><strong>[NEW] Treat FCC supply-chain compliance (Section 1.5) as a launch-blocking workstream</strong>, not a marketing footnote — confirm manufacturing origin and HBOM/SBOM readiness with legal/compliance before committing to a hardware partner.</li>
+<li><strong>[NEW] Ship a public security advisory/CVE page and disclosed patch SLA from day one</strong> — this is a directly evidenced, low-cost trust gap in Firewalla's track record (Section 8.5).</li>
+<li><strong>[NEW] Make an explicit, durable "pricing promise"</strong> about which features are free forever vs. optional/paid, and never retroactively paywall a previously-free capability — Firewalla's MSP/my.firewalla.com transition is a documented cautionary tale (Section 8.6) actively damaging trust as of mid-2026.</li>
+<li><strong>[NEW] Recognize this category has already claimed two well-funded casualties</strong> (Bitdefender BOX, Norton Core) — validate willingness-to-pay and support-cost assumptions carefully before scaling; Firewalla's own success here (built slowly since 2017, largely via community/enthusiast channels) may be a more realistic go-to-market model than a mass-market retail launch.</li>
+<li><strong>[NEW] Fix device-identification privacy trade-offs</strong>: don't force users to choose between accurate device tracking and OS-level MAC-randomization privacy features (Section 8.9).</li>
+<li><span class="tag tag-new v4">[NEW v4]</span> Lead with the specific claim that Sentinel is built on OpenWrt, a router-native embedded OS — not the generic "we're open source too" claim Firewalla can already make from its Ubuntu base (Section 1.6). Specificity beats parity here.</li>
+<li><span class="tag tag-new v4">[NEW v4]</span> Treat Wi-Fi 7 driver maturity on OpenWrt as a named technical risk requiring a pre-launch spike (Section 1.6) — do not let marketing commit to a ship date the driver ecosystem can't yet support.</li>
+</ol>
+<hr />
+<h2 id="10-new-v3-documentation-messaging-strategy-analysis">10. <strong>[NEW v3] Documentation &amp; Messaging Strategy Analysis</strong></h2>
+<h3 id="101-executive-summary-300-words">10.1 Executive Summary (300 words)</h3>
+<p>Firewalla's documentation portal (help.firewalla.com, backed by firewalla.com's marketing pages) communicates a consistent three-part promise: <strong>enterprise-grade visibility, control, and protection, made simple, with no subscription.</strong> <cite index="118-1">Its own docs describe the product as "enterprise security made simpler, built for professional users who want deeper visibility, policy control, segmentation, VPN, threat protection, zero trust network architecture and ongoing network management beyond a typical small business or home router."</cite> This positions Firewalla deliberately <em>above</em> consumer routers and <em>below</em> true enterprise firewalls — a "prosumer" wedge it has held largely uncontested since 2017, especially now that Bitdefender BOX and Norton Core have both exited the category (Section 8.7).</p>
+<p>The documentation itself is comprehensive and well-organized (a single "User Manual" hub links to ~80 articles across Getting Started, Features, Tutorials, Advanced Setup, and Community), but it assumes real networking literacy almost immediately past onboarding — <cite index="31-1">Firewalla explicitly tells users it assumes familiarity with IP addressing, subnets, DNS, NAT, and VPN concepts</cite>, and reviewers independently confirm the manual setup guide uses "seriously technical language... likely to intimidate beginners" <cite index="103-1">even for basic install scenarios.</cite></p>
+<p>Strategically, Firewalla's documentation cadence (near-weekly release notes as of August 2026, per Section 8.8/12.3) signals an active, engineering-led company still iterating quickly — a strength for a small player but also a sign that documentation must work hard to keep pace with a rapidly-changing feature set, which creates the gaps identified below.</p>
+<p>For our product, this analysis identifies a clear <strong>Strategic Wedge</strong> (Section 10.6): documentation and onboarding designed for true beginners from message one, not as an afterthought layered onto professional-grade docs — paired with the trust and compliance differentiators already identified in Sections 1.5, 8.5, and 8.6.</p>
+<hr />
+<h3 id="102-value-proposition-analysis">10.2 Value Proposition Analysis</h3>
+<p><strong>Primary messaging themes identified across firewalla.com and help.firewalla.com:</strong></p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Theme</th>
+<th>Evidence</th>
+<th>Explicit or Implicit?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>No subscription / affordability</strong></td>
+<td><cite index="119-1">"Our motto is 'Simple and Affordable'... we avoid charging any monthly fees."</cite></td>
+<td>Explicit, repeated across product pages, FAQ, and community posts</td>
+</tr>
+<tr>
+<td><strong>Enterprise-grade, simplified</strong></td>
+<td><cite index="118-1">"Enterprise security made simpler, built for professional users."</cite></td>
+<td>Explicit</td>
+</tr>
+<tr>
+<td><strong>Visibility → Control → Protect framework</strong></td>
+<td><cite index="41-1">Three dedicated "Benefits" pillar pages (Visibility, Control, Protect) form the top-level navigation structure of the entire documentation site.</cite></td>
+<td>Explicit — this is Firewalla's core narrative architecture</td>
+</tr>
+<tr>
+<td><strong>Zero Trust as a named architecture, not just a buzzword</strong></td>
+<td><cite index="8-1">A dedicated Zero Trust framework page defines "never automatically trust," least-privilege access, and continuous monitoring as first-class product pillars.</cite></td>
+<td>Explicit</td>
+</tr>
+<tr>
+<td><strong>Privacy-first / local processing</strong></td>
+<td><cite index="13-1">Local DPI processing is positioned as a trust differentiator versus cloud-dependent competitors.</cite></td>
+<td>Implicit promise, explicit in the "Privacy Protection" benefits page</td>
+</tr>
+<tr>
+<td><strong>"Not a toy" / serious tool for serious users</strong></td>
+<td><cite index="31-1">Repeated explicit disclaimers that Firewalla is "not a set-and-forget security device" and requires "active management."</cite></td>
+<td>Explicit — an unusual choice to foreground a limitation, suggesting Firewalla is deliberately filtering for a technical audience rather than optimizing for mass-market ease</td>
+</tr>
+<tr>
+<td><strong>Open source as a trust signal</strong></td>
+<td><cite index="140-1">"Firewalla's software is open source and is being contributed to, tested, inspected, and watched by many around the world."</cite></td>
+<td>Explicit, used defensively in response to the FCC regulatory news (Section 1.5)</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Implicit promise not explicitly stated but clearly implied:</strong> that buying more expensive hardware (Gold Pro vs. Purple SE) meaningfully changes your security posture, when in practice — per Firewalla's own FAQ — <cite index="43-1">all units run the same code base and have the same feature set; the differences are almost entirely throughput/scale, not capability.</cite> This is a documentation clarity gap Firewalla has not fully closed (see 12.5).</p>
+<h3 id="103-target-audience-profiling">10.3 Target Audience Profiling</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Persona Signal</th>
+<th>Confidence</th>
+<th>Evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Home users w/ moderate technical comfort</strong></td>
+<td>High</td>
+<td>Getting Started guide and Auto-Configuration Wizard target this group explicitly, but assume baseline networking vocabulary immediately after.</td>
+</tr>
+<tr>
+<td><strong>IoT/smart-home enthusiasts</strong></td>
+<td>High</td>
+<td><cite index="4-1">Entire "Zero Trust" and VqLAN documentation track is built around segmenting IoT devices — the single most-emphasized use case across benefits pages.</cite></td>
+</tr>
+<tr>
+<td><strong>Remote workers / small-office users</strong></td>
+<td>Medium-High</td>
+<td><cite index="41-1">"Working from home, better, smarter, and secure" is a dedicated use-case doc; multi-WAN and Trusted LAN content targets this group.</cite></td>
+</tr>
+<tr>
+<td><strong>Security/IT professionals &amp; MSPs</strong></td>
+<td>High</td>
+<td><cite index="35-1">A fully separate documented REST API, MSP web console, and community threads discussing "infosec professionals" managing multiple boxes indicate a deliberate secondary audience.</cite></td>
+</tr>
+<tr>
+<td><strong>True beginners with no networking background</strong></td>
+<td><strong>Low</strong></td>
+<td>No dedicated "networking 101" glossary or truly jargon-free onboarding track exists in the current manual structure; the site explicitly assumes prior knowledge (Section 10.2) rather than teaching it.</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Onboarding path assessment:</strong> Firewalla offers exactly <strong>one</strong> onboarding track (the mobile-app wizard) regardless of declared user sophistication — there is no "I'm new to networking" vs. "I run a home lab" branching path in the docs themselves, even though the community and feature set clearly serve both. <strong>Content ratio estimate</strong> (based on the User Manual structure, Section headers reviewed): roughly 20% conceptual ("Benefits" pages), 55% task-based (feature guides, tutorials, installation), 25% reference/troubleshooting — a reasonably healthy split, but skewed toward assuming the reader already knows <em>why</em> they'd want a feature before explaining <em>how</em> to use it.</p>
+<h3 id="104-strategic-intent-mapping-last-12-months-through-aug-2026">10.4 Strategic Intent Mapping (Last 12 Months, through Aug 2026)</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Signal</th>
+<th>Date</th>
+<th>What It Reveals</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Firewalla Orange launch (Wi-Fi 7 + firewall combined)</td>
+<td><cite index="122-1">Dec 3, 2025</cite></td>
+<td>Closing the "no built-in Wi-Fi" gap identified in Section 7 — validates that gap was real and Firewalla is now racing to close it.</td>
+</tr>
+<tr>
+<td>AP7 (Wi-Fi 7 access point) rollout, expanding internationally</td>
+<td><cite index="123-1">Ongoing through Sept 2026, new regions added</cite></td>
+<td>International expansion is an active priority, not yet complete — a timing opportunity for us.</td>
+</tr>
+<tr>
+<td>Firewalla: statement on FCC regulatory developments</td>
+<td><cite index="140-1">Apr 26, 2026</cite></td>
+<td>Confirms regulatory risk is being actively managed reactively, not from a pre-existing compliance-first posture — see Section 1.5.</td>
+</tr>
+<tr>
+<td>Note on pricing and supply-chain costs</td>
+<td><cite index="137-1">Apr 29, 2026</cite></td>
+<td>Signals real margin/cost pressure — an opening for aggressive value positioning if we can control COGS.</td>
+</tr>
+<tr>
+<td>my.firewalla.com retirement → MSP migration</td>
+<td><cite index="114-1">Mar 25, 2026</cite></td>
+<td>Confirms the subscription-creep pattern documented in Section 8.6 is a strategic (not accidental) monetization shift.</td>
+</tr>
+<tr>
+<td><span class="tag tag-new v3">[NEW v3]</span> Gold Plus SFP pre-sale announced</td>
+<td><cite index="123-1">Expected Sept–Nov 2026</cite></td>
+<td>Continued SKU fragmentation (Section 3 critique still holds).</td>
+</tr>
+<tr>
+<td><span class="tag tag-new v3">[NEW v3]</span> Firewalla Switch — shipping</td>
+<td><cite index="172-1">MSP 2.11.1 (Aug 11, 2026) adds "Switch Management"; App 1.69.3 beta adds "Switch Enhancements"</cite></td>
+<td>Confirms Firewalla is expanding from router/firewall/AP into the <strong>full home-network hardware stack</strong> (router + AP + switch) — raising the bar for what "complete ecosystem" means in this category.</td>
+</tr>
+<tr>
+<td><span class="tag tag-new v3">[NEW v3]</span> AmneziaWG VPN client support added</td>
+<td><cite index="172-1">App 1.69.3 (beta), Aug 11, 2026</cite></td>
+<td>AmneziaWG is a censorship-resistant WireGuard variant — signals Firewalla is courting a privacy/circumvention-conscious user segment (e.g., travelers in restrictive countries), a use case not previously emphasized in its documentation.</td>
+</tr>
+<tr>
+<td><span class="tag tag-new v3">[NEW v3]</span> Passkey support added to MSP</td>
+<td><cite index="172-1">MSP 2.11.1, Aug 11, 2026</cite></td>
+<td>Modern auth investment — table-stakes we should match at launch, not add later.</td>
+</tr>
+<tr>
+<td><span class="tag tag-new v3">[NEW v3]</span> Release cadence</td>
+<td><cite index="172-1">Four app/MSP releases in the ~4 weeks preceding Aug 11, 2026 alone</cite></td>
+<td>Confirms a fast, near-weekly release cadence — our own release/documentation process must be able to match this pace or our docs will visibly lag a faster-moving competitor.</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Reading between the lines:</strong> Firewalla's roadmap (Orange, AP7, Switch) shows a clear trajectory toward <strong>owning the entire home-network hardware stack</strong>, not just the firewall. If we launch as a router-only product, we risk being perceived as less "complete" within 12-18 months as Firewalla's ecosystem fills out. This should inform our own hardware roadmap sequencing (Epic 7 Wi-Fi integration is even more urgent than v2 assessed it; a switch/AP roadmap item should be added for consideration).</p>
+<h3 id="105-swot-matrix">10.5 SWOT Matrix</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th><strong>STRENGTHS</strong></th>
+<th><strong>WEAKNESSES</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1. <cite index="16-1">Full-stack security bundle (DPI+IDS/IPS+VPN+segmentation+parental controls) at a one-time hardware cost beats 3-4 years of typical subscription competitors.</cite></td>
+<td>1. <cite index="16-1">Documented WAN instability reports and "may prove intimidating for inexperienced folks" per WIRED's own 2026 review.</cite></td>
+</tr>
+<tr>
+<td>2. <cite index="4-1">Genuine network-layer IoT microsegmentation (VqLAN) — a capability no software-only competitor can replicate.</cite></td>
+<td>2. <cite index="16-1">Third-party blocklists capped at 200 IPs, ruling out most community lists.</cite></td>
+</tr>
+<tr>
+<td>3. <cite index="41-1">Comprehensive, well-organized single-hub documentation (~80 linked articles) with an active, engineering-staffed community forum.</cite></td>
+<td>3. <span class="tag tag-new v3">[NEW v3]</span> Documentation and onboarding is single-track, not tailored to true beginners despite significant marketing toward "home users" (Section 10.3).</td>
+</tr>
+<tr>
+<td>4. <cite index="140-1">Open-source firmware, actively used as a public trust signal in regulatory-response communications.</cite></td>
+<td>4. <span class="tag tag-new v3">[NEW v3]</span> Value-tier confusion is baked into the docs themselves: hardware differences are throughput-only, but marketing/naming (SE/Plus/Pro) implies capability differences, per Section 10.2.</td>
+</tr>
+<tr>
+<td>5. <cite index="172-1">Fast, near-weekly release cadence shows genuine ongoing engineering investment.</cite></td>
+<td>5. <cite index="80-1">Documented, repeated community frustration over slow/opaque CVE disclosure communication (Section 8.5).</cite></td>
+</tr>
+<tr>
+<td>6. <cite index="1-1">Strong, well-documented VPN-server story enabling secure remote access without exposing services directly to the internet.</cite></td>
+<td>6. <cite index="114-1">Active, evidenced erosion of the "no subscription" trust position via the my.firewalla.com→MSP migration (Section 8.6).</cite></td>
+</tr>
+<tr>
+<td>7. <cite index="30-1">Shipped to 100+ countries with 9 years of market presence (since 2017) — proven manufacturing/logistics/support scale.</cite></td>
+<td>7. <span class="tag tag-new v3">[NEW v3]</span> No dedicated "networking 101" educational content — assumes literacy rather than building it, limiting true mass-market reach.</td>
+</tr>
+</tbody>
+</table></div>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th><strong>OPPORTUNITIES</strong></th>
+<th><strong>THREATS</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1. <span class="tag tag-new v3">[NEW v3]</span> March 2026 FCC Covered List rule (Section 1.5) creates a narrow window for a compliance-first, US-sourced competitor to make a defensible "built for the new rules" claim most incumbents cannot yet make cleanly.</td>
+<td>1. <span class="tag tag-new v3">[NEW v3]</span> Firewalla's expansion into router + AP (Orange) + switch (Switch, shipping Aug 2026) signals a race toward full-stack home-network ownership — a slow-moving competitor risks looking incomplete within 12-18 months.</td>
+</tr>
+<tr>
+<td>2. <cite index="8-1">Both major legacy competitors (Bitdefender BOX, Norton Core) are fully discontinued — validated demand, reduced direct competition, but also two prior commercial failures to learn from (Section 8.7).</cite></td>
+<td>2. <cite index="172-1">Firewalla's release cadence (multiple releases per month) means any feature gap we identify today may already be closing by the time we ship — competitive analysis has a real shelf life here, not a static one.</cite></td>
+</tr>
+<tr>
+<td>3. A true beginner-first documentation and onboarding track — currently absent from Firewalla's single-path approach — is a clear, evidenced whitespace (Section 10.3).</td>
+<td>3. <cite index="140-1">Firewalla's open-source posture and long market tenure (since 2017) give it a credibility head start on the exact "trust" differentiators we're planning to compete on (Sections 8.5, 8.6) — we must execute, not just claim, better trust practices.</cite></td>
+</tr>
+<tr>
+<td>4. <cite index="172-1">AmneziaWG/censorship-resistant VPN adoption signals a growing privacy-conscious/traveler segment that is currently under-served by explicit documentation on either side — an opportunity to lead with clear guidance here.</cite></td>
+<td>4. Firewalla's 100+-country logistics and 9-year support/community infrastructure represents a real switching-cost and trust moat that is expensive and slow to replicate.</td>
+</tr>
+<tr>
+<td>5. Clarify the "does hardware tier change security, not just speed" confusion (Section 10.2) that even Firewalla hasn't fully resolved in its own docs — a documentation-clarity win that's cheap to execute.</td>
+<td>5. Regulatory risk (Section 1.5) cuts both ways — if compliance costs rise industry-wide, a small new entrant may be less able to absorb HBOM/SBOM/certification overhead than an established player with existing legal/compliance infrastructure.</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="106-content-gap-identification">10.6 Content Gap Identification</h3>
+<p><strong>Topics Firewalla's documentation covers that our planned "Sentinel" docs (per the backlog) do not yet explicitly scope:</strong>
+1. A dedicated "Which model do I need" comparison guide <em>cross-referencing declared use cases</em> (though we plan a simpler quiz — <code class="story-id">US-14.2</code> — theirs is more exhaustive today)
+2. Router-compatibility legacy documentation for varied ISP/mesh setups (Firewalla has years of accumulated edge-case coverage here)
+3. Docker/container expansion guide for power users (maps to our Epic 12, not yet detailed at the same depth)
+4. Site-to-site VPN configuration across multiple physical locations
+5. DNS-specific deep dives (Unbound, DNS over HTTPS, NTP interception) as standalone technical articles
+6. A dedicated "Under the Hood" section explaining architecture/STEM-level internals for technically curious users
+7. Community-sourced "Fun things to do with Firewalla" advanced/hobbyist content
+8. A formal "how does Firewalla intercept traffic" conceptual explainer distinct from setup instructions
+9. Detailed router-mode vs. bridge-mode decision documentation with topology diagrams for many specific ISP/router combinations
+10. Historical release notes archive spanning years, useful for troubleshooting version-specific behavior</p>
+<p><strong>Topics our planned product/docs should cover that Firewalla's does not (from backlog differentiation stories):</strong>
+1. A public, dated security advisory/CVE status page (<code class="story-id">US-16.1</code>) — Firewalla has no equivalent public page today (Section 8.5)
+2. A published responsible-disclosure/bug-bounty policy (<code class="story-id">US-16.2</code>) — no equivalent found in Firewalla's docs
+3. A plain-language "why was this blocked" explainer as native documentation, not just a UI feature (Epic 4) — Firewalla's docs don't address this gap either (reviewers note it as a live pain point, Section 7 v1)
+4. A public, versioned "Pricing Promise" page (<code class="story-id">US-13.4</code>) — no equivalent exists for Firewalla, and none of its competitors publish one
+5. Manufacturing origin / supply-chain compliance statement (<code class="story-id">US-15.4</code>) — no competitor in this category currently publishes this
+6. A true "networking 101" glossary/primer track for non-technical buyers (Section 10.3 gap)
+7. Explicit guidance reconciling OS-level privacy features (MAC randomization) with device-identification accuracy (<code class="story-id">US-3.6</code>) — not addressed in Firewalla's docs beyond a community workaround
+8. Symmetric allow/block scheduling documentation (<code class="story-id">US-10.7</code>) — doesn't exist because the underlying feature doesn't exist in Firewalla today
+9. A documented incident-response playbook/SLA (<code class="story-id">US-16.4</code>) publicly visible, not just reconstructed from a single historical Log4j post
+10. A tablet-specific UX/documentation track (<code class="story-id">US-10.6</code>)</p>
+<p><strong>High-value topics neither portal adequately addresses:</strong>
+1. A neutral, vendor-agnostic "how to think about home network segmentation" educational piece (both companies document <em>their</em> implementation, not the underlying concept for beginners)
+2. Clear guidance for households with mixed technical literacy (e.g., one tech-savvy parent, one non-technical) — multi-user permission/UX guidance is thin on both sides
+3. Environmental/e-waste and hardware-lifecycle guidance (what happens to the device at end-of-life, repairability) — neither company documents this clearly
+4. Comparative "is a hardware firewall right for me at all" honest decision-support content (most competitor content assumes the reader has already decided to buy)
+5. Accessibility documentation for users with disabilities or without a modern smartphone — <cite index="107-1">a live, real complaint against Firewalla ("not suited for disabled individuals," mandatory smartphone requirement) with no documented alternative path.</cite></p>
+<h3 id="107-strategic-recommendations-effortimpact-scored">10.7 Strategic Recommendations (Effort/Impact Scored)</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>Initiative</th>
+<th>Effort</th>
+<th>Impact</th>
+<th>Rationale</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Ship a public Security Advisory/CVE page + disclosure policy at launch (<code class="story-id">US-16.1</code>/16.2)</td>
+<td>Low</td>
+<td>High</td>
+<td>Directly closes an evidenced, repeated Firewalla trust gap (Section 8.5); cheap relative to payoff.</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Build a true "networking 101" onboarding track distinct from the power-user path</td>
+<td>Medium</td>
+<td>High</td>
+<td>Addresses the single clearest, unaddressed audience gap on both sides of the market (Section 10.6, item 6).</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Publish a versioned "Pricing Promise" at launch (<code class="story-id">US-13.4</code>)</td>
+<td>Low</td>
+<td>High</td>
+<td>No competitor offers this; directly counters the live subscription-trust erosion Firewalla is currently experiencing (Section 8.6).</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Resolve manufacturing-origin/compliance messaging before launch (Epic 15)</td>
+<td>High</td>
+<td>Critical</td>
+<td>Not optional — a market-entry gate per Section 1.5, but also a rare, currently-uncontested positioning claim if executed well.</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Design a non-MAC-dependent device identification approach (<code class="story-id">US-3.6</code>)</td>
+<td>High</td>
+<td>Medium-High</td>
+<td>Technically hard, but resolves a documented privacy/UX contradiction neither Firewalla nor (to our knowledge) any direct competitor has solved.</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="108-strategic-wedge">10.8 Strategic Wedge</h3>
+<p>The most promising differentiation opportunity is not a single feature — it is <strong>being the trustworthy, beginner-honest alternative in a category where the market leader has explicitly chosen to prioritize power users over accessibility.</strong> Firewalla has spent nine years building genuine technical depth and a loyal enthusiast community, but its own documentation repeatedly tells non-technical buyers, in effect, "this isn't really for you yet" — through assumed networking literacy, unresolved CVE-disclosure friction, a fragmenting SKU lineup, and a subscription promise that is visibly eroding in real time. A new entrant that matches Firewalla's core security stack feature-for-feature while (1) teaching networking concepts instead of assuming them, (2) publishing verifiable, dated trust commitments (security disclosure SLA, a permanent pricing promise, and — newly critical — a manufacturing/compliance statement responsive to the March 2026 FCC rule), and (3) fixing the specific, evidenced UX papercuts Firewalla has left unresolved (MAC-randomization friction, asymmetric scheduling, tablet layouts) can credibly win the large, currently-underserved segment of households who want real protection but have been implicitly told, by the market leader's own words, that they need to become more technical first.</p>
+<hr />
+<h2 id="11-sources">11. Sources</h2>
+<ul>
+<li>firewalla.com (product pages, user manual, install guides)</li>
+<li>help.firewalla.com (Zendesk help center — feature guides, troubleshooting, community threads)</li>
+<li>docs.firewalla.net (MSP API documentation)</li>
+<li>github.com/firewalla/firewalla (open-source firmware repo)</li>
+<li>TechRadar reviews (Gold, Gold Pro, Purple)</li>
+<li>TechAdvisor (Gold SE review)</li>
+<li>MightyGadget (Gold Plus review)</li>
+<li>Help Net Security, TechCrunch (product launch coverage)</li>
+<li>CyberSec24, StrongMocha, Cryptogram Platform, Digitech Bytes, checkthat.ai (2026 buying-guide roundups)</li>
+<li>Community: Firewalla forum, Reddit r/firewalla, help.firewalla.com community threads</li>
+<li><span class="tag tag-new">[NEW]</span> CVEdetails.com, OpenCVE, NVD (nvd.nist.gov) — CVE records</li>
+<li><span class="tag tag-new">[NEW]</span> Crowell &amp; Moring, Hogan Lovells, Cooley, Wiley Law — FCC Covered List / supply-chain regulatory alerts (March–July 2026)</li>
+<li><span class="tag tag-new">[NEW]</span> FCC.gov, docs.fcc.gov — primary regulatory notices and fact sheets</li>
+<li><span class="tag tag-new">[NEW]</span> Google Play Store, Apple App Store, JustUseApp, AppBrain, SplitMetrics — app ratings and review sentiment</li>
+<li><span class="tag tag-new">[NEW]</span> Trustpilot (firewalla.com reviews)</li>
+<li><span class="tag tag-new">[NEW]</span> Bitdefender official EOL/FAQ pages, Wikipedia (Norton Core), MalwareTips, Comparitech — discontinued-competitor verification</li>
+<li><span class="tag tag-new">[NEW]</span> The Gadgeteer (Firewalla Orange field review, Feb 2026)</li>
+<li><span class="tag tag-new">[NEW]</span> iFeeltech (2026 no-subscription SMB firewall buyer's guide)</li>
+</ul>
+<hr />
+<h2 id="12-change-log">12. Change Log</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Version</th>
+<th>Date</th>
+<th>Changes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>v1</td>
+<td>Aug 21, 2026</td>
+<td>Initial competitive analysis: product lineup, feature inventory, strengths/weaknesses, adjacent competitors.</td>
+</tr>
+<tr>
+<td>v2</td>
+<td>Aug 21, 2026</td>
+<td>Added: FCC Covered List regulatory analysis (Section 1.5), security/CVE track record (8.5), subscription scope-creep evidence (8.6), discontinued-competitor market context (8.7), upcoming Firewalla products (8.8), app store/Trustpilot sentiment (8.9), and 5 additional strategic takeaways.</td>
+</tr>
+<tr>
+<td>v3</td>
+<td>Aug 21, 2026</td>
+<td>Applied formal documentation-strategy framework (Section 10): value proposition analysis, target audience profiling with confidence ratings, strategic intent mapping (confirming Firewalla Switch now shipping, AmneziaWG VPN, Passkey auth), full SWOT matrix, three-way content gap analysis, 5 effort/impact-scored strategic recommendations, and a closing Strategic Wedge statement.</td>
+</tr>
+<tr>
+<td>v5</td>
+<td>Aug 21, 2026</td>
+<td>Consistency/QA pass: reordered Sections 8.5–8.9 into correct reading position (they were rendering after Section 9), fixed two headings with unterminated bold markers, corrected a garbled word in the security track-record table. No analytical content changed.</td>
+</tr>
+<tr>
+<td>v4</td>
+<td>Aug 21, 2026</td>
+<td>Added Section 1.6 documenting Sentinel's decision to build on OpenWrt, confirmed (via research) that Firewalla is actually built on Ubuntu Linux — not OpenWrt — making Sentinel's "router-native embedded OS" claim more specific and defensible than Firewalla's general "open source" claim. Updated the GL.iNet competitor row as the closest architectural precedent. Added 2 new strategic takeaways (specificity-over-parity messaging; Wi-Fi 7 driver maturity risk).</td>
+</tr>
+</tbody>
+</table></div>
+  </main>
+</div>
+
+<button id="topbtn" title="Back to top">↑</button>
+<script>
+// active-section highlighting
+const links = [...document.querySelectorAll('nav.toc a')];
+const targets = links.map(a => document.querySelector(a.getAttribute('href'))).filter(Boolean);
+function onScroll(){
+  let idx = 0;
+  const y = window.scrollY + 100;
+  targets.forEach((t,i) => { if (t && t.offsetTop <= y) idx = i; });
+  links.forEach(l => l.classList.remove('active'));
+  if (links[idx]) links[idx].classList.add('active');
+
+  // progress bar
+  const h = document.documentElement;
+  const scrolled = (h.scrollTop) / (h.scrollHeight - h.clientHeight) * 100;
+  document.getElementById('progress').style.width = scrolled + '%';
+
+  // back to top
+  document.getElementById('topbtn').classList.toggle('show', window.scrollY > 600);
+}
+document.addEventListener('scroll', onScroll, {passive:true});
+onScroll();
+
+document.getElementById('topbtn').addEventListener('click', () => window.scrollTo({top:0, behavior:'smooth'}));
+
+// search filter over TOC
+const search = document.getElementById('search');
+search.addEventListener('input', () => {
+  const q = search.value.trim().toLowerCase();
+  document.querySelectorAll('nav.toc li').forEach(li => {
+    const a = li.querySelector(':scope > a');
+    if (!a) return;
+    const text = a.textContent.toLowerCase();
+    const childMatch = [...li.querySelectorAll('a')].some(x => x.textContent.toLowerCase().includes(q));
+    li.classList.toggle('hidden', q.length > 0 && !text.includes(q) && !childMatch);
+  });
+});
+
+// mobile menu toggle
+const menubtn = document.getElementById('menubtn');
+const sidebar = document.querySelector('.sidebar');
+if (menubtn){
+  menubtn.addEventListener('click', () => sidebar.classList.toggle('open'));
+  document.addEventListener('click', (e) => {
+    if (sidebar.classList.contains('open') && !sidebar.contains(e.target) && e.target !== menubtn){
+      sidebar.classList.remove('open');
+    }
+  });
+}
+
+// also filter body content? keep simple: just jump + highlight via browser find (no-op)
+document.querySelectorAll('nav.toc a').forEach(a=>{
+  a.addEventListener('click', () => { if(sidebar.classList.contains('open')) sidebar.classList.remove('open'); });
+});
+</script>
+</body>
+</html>
