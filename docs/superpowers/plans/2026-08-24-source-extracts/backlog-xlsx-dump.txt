@@ -1,0 +1,636 @@
+=== SHEET: Read Me ===
+Secure Home Router — Product Backlog
+Scrum backlog: Epics, User Stories, Tasks, and Non-Functional Requirements
+
+How this workbook is organized:
+  • Epics — the 18 major capability areas of the product, spanning user-facing features and the engineering foundation they run on.
+  • User Stories — the backlog, one row per story, with acceptance criteria, MoSCoW priority, story points, and mode.
+  • Tasks — implementation breakdown (Design/Build/Test) per user story, ready to import into a sprint board.
+  • Non-Functional Requirements — cross-cutting quality requirements (usability, accessibility, security, performance, reliability, architecture).
+
+Design principle behind every story: Basic mode is the default experience for non-technical users (big actions,
+plain language, one-tap fixes). Advanced mode is opt-in, for power users who want technical control — it never
+replaces the Basic default. Infra stories are engineering foundation work with no direct end-user surface.
+
+Priority key (MoSCoW): Must = required for its release · Should = important, not release-blocking · Could = nice to have.
+Release key: MVP = first sellable launch (smallest product proving the core thesis) · v1.1 = first post-launch release
+(remote access, ad block, guest, multi-router) · v1.2 = Advanced mode & power-user features. Priorities apply WITHIN a
+release — a v1.1 'Must' is required for v1.1, not for launch. See the Release Plan sheet for the phased execution order.
+Story points: rough relative sizing (Fibonacci: 1,2,3,5,8,13) — re-estimate with your team before committing.
+Mode key: Basic = default non-technical experience · Advanced = power-user/opt-in · Both = present in both, adapted per mode ·
+Infra = engineering/platform foundation work (no direct end-user UI).
+
+CONFIRMED PRODUCT DECISIONS (locked in, reflected throughout the backlog):
+  1. Account & setup flow: LOCAL-FIRST, CLOUD-SECOND. Router is fully secured and usable on the local network with
+     zero internet/account required (Epic E14). Cloud account is optional, created whenever internet becomes
+     available, and unlocks remote access + multi-router management. Local and cloud identities are architecturally
+     independent — losing one never locks out the other.
+  2. Existing local configuration is always preserved when a cloud account is created/linked, never reset
+     automatically. A full reset is a separate, explicit, user-confirmed action only (US14.4).
+  3. Every router ships with a unique, per-unit default admin password (not a shared factory default), and the
+     default must be changed before setup can complete, with no skip option (US1.1, US14.2).
+  4. Routers are named by the user and support multiple routers under one account (e.g., two homes), each with
+     fully isolated devices/settings (Epic E14).
+  5. MFA default method is SMS/mobile push. At least one offline-capable method (authenticator app or backup
+     codes) must also be enrolled and is verified entirely locally by the router — the user is never fully
+     dependent on internet connectivity to log in (Epic E13, US1.2, US3.3).
+  6. The block page (for blocked sites/apps) uses a friendly tone with NO self-serve 'request access' option;
+     unblocking is a deliberate action only the admin can take from the app (US5.2).
+  7. Remote VPN access (Epic E7) provides both live visibility AND control actions remotely — never a read-only
+     or action-only subset. Two access scopes coexist: management-only (default) and full home-network access
+     (advanced, opt-in) — enabling one does not remove the other.
+  8. Base platform: OpenWrt (custom-built image, not stock OpenWrt+LuCI). Chosen over DD-WRT for clean GPL
+     licensing with no commercial-license dependency, broader/faster current-hardware support, and its fit as a
+     build platform for a distinct commercial product rather than a fixed hobbyist feature bundle (Epic E15).
+  9. Firmware updates ship via RAUC (A/B partitions, signed bundles, auto-rollback), and remote access runs over
+     an outbound-only WireGuard tunnel (Headscale vs. custom orchestration to be settled via spike US17.1) —
+     both chosen specifically because they stay compatible with a future TR-069/TR-369 ISP integration without
+     requiring rework (Epics E16, E17).
+  10. TECHNICAL REVIEW OUTCOMES (this revision): MVP re-scoped to the smallest sellable product — remote access,
+     ad blocking, guest network, multi-router, and all Advanced-mode features moved to v1.1/v1.2 (see Release
+     column + Release Plan sheet). Hardware & Manufacturing added as a parallel workstream (E19) — it is the
+     likely critical path. External security audit + privacy compliance added as launch-blocking (E20). Mobile
+     APP blocking downgraded from a promised feature to a feasibility spike (US5.5) — site/category blocking
+     (US5.1) is the reliable, committed capability; per-app blocking (US5.6) is scoped only after the spike.
+
+OPEN BUSINESS DECISION (decide before cloud architecture finalizes): hardware-only revenue vs. hardware +
+subscription. Content-filter category databases, the remote-access relay, push infrastructure, and lifetime
+security patching are all ongoing per-user costs. Most competitors charge a subscription for exactly these.
+This decision caps what the cloud architecture can afford and what marketing can promise — make it in Phase 0.
+
+Future scope note: centralized/ISP remote management (TR-069/TR-369-style) is intentionally NOT included in this
+backlog. See the separate document 'future-consideration-isp-centralized-management.md' for architectural notes
+to keep in mind now so that project doesn't require a rework later.
+
+=== SHEET: Release Plan ===
+Execution Plan — Phased Roadmap | 
+Assumes ~2-week sprints. Sprint counts are planning estimates — re-baseline after Sprint 2 velocity is known. Hardware (E19) runs as a parallel track throughout; it is the likely critical path. | 
+ | 
+PHASE 0 — De-risk & Foundations   (Sprints 1–2) | 
+Goal | Kill the unknowns before committing to anything built on them.
+Scope | US19.1 (hardware platform spike — GATING: blocks everything downstream) · US5.5 (app-blocking feasibility spike) · US15.1 (OpenWrt build pipeline) · US18.1–18.3 (app/web/API-client scaffolding) · US20.2 started (privacy/data inventory — cheap now, expensive later)
+Exit / Notes | Exit criteria: hardware selected + dev boards ordered; app-blocking scope decided; CI produces a flashable image; both app skeletons build.
+ | 
+PHASE 1 — Core Product Loop   (Sprints 3–8) | 
+Goal | The daemon, onboarding, and dashboard — the product's spine. Everything else hangs off this.
+Scope | US15.2–15.3 (daemon + offline degradation) · US14.1–14.5 + US1.1–1.3 (local-first onboarding, unique credentials, naming) · US3.1–3.3 (MFA incl. offline TOTP/backup codes) · US2.1–2.3 (dashboard) · US4.1–4.3 (device list, pause/block, new-device alerts) · US16.1 (RAUC integration) · US18.4 (LuCI excluded)
+Exit / Notes | Exit criteria: a dev-board router can be unboxed, secured, and managed end-to-end from the app with no internet.
+ | 
+PHASE 2 — Family & Safety Features   (Sprints 9–12) | 
+Goal | The differentiating features, built on the now-stable spine.
+Scope | US5.1–5.3, 5.7 (site/category blocking + block page incl. HTTPS handling) · US8.1–8.4 (profiles, filtering, time limits, instant pause) · US13.1–13.4 (offline access verified end-to-end incl. recovery button w/ US19.3) · US10.1 (push alerts) · US11.1 + US16.2–16.3 (auto-updates + OTA server + staged rollout) · US21.1 (self-help troubleshooting)
+Exit / Notes | Exit criteria: feature-complete MVP on pilot hardware (US19.5 pilot run lands here in the hardware track).
+ | 
+PHASE 3 — Harden & Launch   (Sprints 13–15) | 
+Goal | No new features. Audit, fix, certify, ship.
+Scope | US20.1 (external pen-test — launch-blocking) · US20.2 completed (privacy/counsel review) · US20.3 (disclosure policy + patch SLA) · US19.4 certification completes (hardware track, started much earlier) · Bug-fix and polish only
+Exit / Notes | Exit criteria: zero open critical/high audit findings; certification granted; pilot units in real homes. → MVP LAUNCH
+ | 
+v1.1 — Remote & Convenience   (Post-launch, ~Sprints 16–21) | 
+Goal | The big remote-access investment, now validated by a live product.
+Scope | US17.1 (Headscale-vs-custom spike) then US17.2–17.3 (tunnel + ACL scoping) · US7.1–7.4, 7.6 (remote app/web access, remote control, session visibility) · US6.1 (ad blocking) · US9.1–9.2 (guest network) · US14.6 (multi-router) · US8.5 (weekly reports) · US5.6 (per-app blocking, scope per spike) · US10.2, US21.2–21.3 (alert prefs, support diagnostics)
+Exit / Notes | Remote access re-runs a focused external security review before release (per US20.1 release process).
+ | 
+v1.2 — Advanced Mode   (Later) | 
+Goal | Power-user surface, gated behind the Advanced toggle.
+Scope | US12.1 (Advanced Mode toggle — first, since everything below lives behind it) · US12.2 (port forwarding/DNS/static IP) · US1.4, US2.4, US3.4, US4.4–4.5, US5.4, US6.2, US7.5, US7.7, US8.6, US11.2
+Exit / Notes | Sequenced by user demand after launch — treat this bucket as a re-rankable pool, not a fixed order.
+
+=== SHEET: Epics ===
+Epic ID | Epic Name | Goal
+E1 | Account Setup & Onboarding | Get a non-technical user from unboxing to a secured, working network in one guided flow.
+E2 | Security Dashboard (Home) | Give the user a single, plain-language view of their network's security status with one-tap fixes.
+E3 | Multi-Factor Authentication | Protect the admin account with flexible, easy-to-set-up MFA (SMS/push, email, authenticator app).
+E4 | Device Management & Visibility | Let users see and control every device on their network without technical detail.
+E5 | Website / App Blocking & Block Page | Let admins block sites, apps, and mobile apps, with a clear, friendly block page.
+E6 | Ad Blocking | Network-wide ad blocking with a simple on/off default and advanced list management for power users.
+E7 | Remote Access VPN | Let the user securely connect back into their home network from outside (mobile app, web, or computer) to both view live status and control the router/network as if they were home. Supports two access scopes: management-only (default) and full home-network access (advanced, opt-in).
+E8 | Parental Controls | Profile-based, network-level controls for content, time, and scheduling that can't be bypassed by removing an app.
+E9 | Guest Network | One-tap guest Wi-Fi that's isolated from the main network.
+E10 | Alerts & Notifications | Proactive, friendly alerts so users don't have to remember to check anything.
+E11 | Firmware & Auto-Updates | Keep the router secure by default via automatic updates, with manual control for advanced users.
+E12 | Advanced / Power User Settings | A separate space for technical settings that doesn't clutter the default experience.
+E13 | Offline & No-Internet Access | Guarantee the user can always get into their own router from the local network, even when the router has no internet connection — including a working MFA path that doesn't depend on connectivity.
+E14 | Account Creation & Multi-Router Management | Local-first setup (no account or internet required) with an optional cloud account layered on top for remote features and managing multiple named routers (e.g., across two homes) from one login.
+E15 | On-Router Software Foundation | Build the custom OpenWrt image and the on-device daemon/API that everything else in this backlog runs on top of.
+E16 | Firmware Build & OTA Update Pipeline | Engineering infrastructure for atomic, signed, rollback-capable firmware updates and safe staged rollout to the fleet.
+E17 | Remote Access Relay Infrastructure | The outbound-only WireGuard tunnel and relay layer that makes Epic E7's remote access features technically possible, including ACL-based scope enforcement.
+E18 | Frontend Platform Foundation | The shared technical foundation (frameworks, API client, component base) that the mobile app and web dashboard are built on.
+E19 | Hardware & Manufacturing | The physical product workstream: SoC selection, factory provisioning, regulatory certification, and pilot production. Runs in parallel with software from day one — likely the critical path.
+E20 | Security Assurance & Privacy Compliance | Launch-blocking security validation (external audit, disclosure process) and privacy compliance for sensitive data — especially children's activity data. A security product cannot launch without these.
+E21 | Support & Diagnostics | Tooling so non-technical customers can get help: self-service troubleshooting and consent-based remote diagnostics for the support team.
+
+=== SHEET: User Stories ===
+Story ID | Epic | Title | User Story | Acceptance Criteria | Priority (MoSCoW) | Story Points | Mode | Release
+US1.1 | E1 - Account Setup & Onboarding | Guided setup wizard | As a new user, I want a guided setup wizard, so that I can secure my router without technical knowledge. | - Wizard launches automatically on first connection
+- Forces admin password change (no skip)
+- Forces Wi-Fi name/password change (no skip)
+- Full flow completable in under 5 minutes
+- Any optional step is clearly labeled 'not recommended' if skipped | Must | 8 | Basic | MVP
+US1.2 | E1 - Account Setup & Onboarding | MFA setup during onboarding | As a new user, I want to set up MFA during onboarding, so that my account is protected from the start. | - SMS/push is the pre-selected default method
+- Email and authenticator app shown as visible alternatives, not hidden
+- User cannot complete onboarding without enabling at least one MFA method or explicit acknowledged warning
+- User is also guided to set up at least one offline-capable method (authenticator app or backup codes) during the same flow, even if SMS/push is chosen as primary, so the router remains accessible if it ever loses its own internet connection (see Epic E13) | Must | 5 | Basic | MVP
+US1.3 | E1 - Account Setup & Onboarding | Auto-detect existing devices | As a new user, I want the wizard to auto-detect devices already on my network, so I don't have to add them manually. | - All active devices scanned and listed during setup
+- Best-guess friendly name/icon assigned per device type
+- User can rename or skip renaming during setup | Should | 5 | Basic | MVP
+US1.4 | E1 - Account Setup & Onboarding | Skip wizard for manual setup | As a power user, I want to skip the guided wizard and configure settings manually, so I can set up my network exactly how I want. | - 'Advanced setup' option visible on first screen
+- Skipping wizard still forces password change for security baseline
+- User lands directly in full settings view | Could | 3 | Advanced | v1.2
+US2.1 | E2 - Security Dashboard (Home) | Plain-language security status | As a homeowner, I want to see a single plain-language security status on the home screen, so I know at a glance if my network is safe. | - Status shown as Green/Yellow/Red with a one-line explanation
+- No technical jargon in the default view
+- Tapping the status opens a details screen | Must | 5 | Basic | MVP
+US2.2 | E2 - Security Dashboard (Home) | One-tap fixes | As a homeowner, I want one-tap fixes for security issues, so I don't need to navigate menus. | - Each flagged issue has a single 'Fix' button
+- Fixing an issue updates the status in real time
+- No confirmation dialogs longer than one tap for low-risk fixes | Must | 5 | Basic | MVP
+US2.3 | E2 - Security Dashboard (Home) | At-a-glance summary | As a homeowner, I want to see connected device count, guest network status, and update status at a glance, so I don't have to dig for basic info. | - Home screen shows device count, guest network on/off, and last update date
+- Each summary item is tappable to see more detail | Should | 3 | Basic | MVP
+US2.4 | E2 - Security Dashboard (Home) | Detailed security log | As a power user, I want a detailed security log with timestamps and technical details, so I can audit network activity. | - Log includes timestamp, device, event type, and action taken
+- Log is filterable and exportable (CSV)
+- Accessible only from Advanced mode | Could | 5 | Advanced | v1.2
+US3.1 | E3 - Multi-Factor Authentication | Default SMS/push MFA | As a user, I want to log in with SMS/push MFA by default, so my account stays secure without installing extra apps. | - SMS/push pre-selected as default during setup and in settings
+- Code delivery confirmed within 30 seconds in normal conditions
+- Failed delivery offers fallback method | Must | 3 | Basic | MVP
+US3.2 | E3 - Multi-Factor Authentication | Alternative MFA methods | As a user, I want the option to use an authenticator app or email instead of SMS, so I can choose the method that works best for me. | - Authenticator app setup supports standard TOTP (compatible with Google Authenticator and similar)
+- Email code option available with same UX pattern as SMS
+- User can switch primary method at any time from settings | Should | 5 | Both | MVP
+US3.3 | E3 - Multi-Factor Authentication | Backup codes | As a user, I want backup codes in case I lose access to my MFA method, so I'm not locked out of my router. | - System generates one-time backup codes at MFA setup
+- User is prompted to save/download codes before finishing setup
+- Each backup code can be used exactly once
+- Backup codes are verified entirely locally by the router — no internet connection required to use them | Must | 3 | Basic | MVP
+US3.4 | E3 - Multi-Factor Authentication | Require MFA per admin action | As a power user, I want to require MFA for every sensitive admin action (not just login), so critical changes are extra protected. | - Toggle in Advanced settings to require re-authentication for sensitive actions (e.g., disabling firewall, adding admin)
+- Setting is off by default, on by user choice | Could | 5 | Advanced | v1.2
+US4.1 | E4 - Device Management & Visibility | Friendly device list | As a user, I want to see all connected devices with friendly names and icons, so I understand what's on my network without technical detail. | - Device list shows icon, friendly name, and last-seen time by default
+- No MAC address or IP shown unless user taps into device detail
+- List supports 20+ devices without performance issues | Must | 5 | Basic | MVP
+US4.2 | E4 - Device Management & Visibility | One-tap pause/block device | As a user, I want to pause or block a device with one tap, so I can control access instantly. | - Pause/Block actions available directly from the device list or device card
+- Action takes effect within a few seconds
+- User can undo the action easily | Must | 5 | Basic | MVP
+US4.3 | E4 - Device Management & Visibility | New device alert | As a user, I want to be alerted when a new/unknown device joins, so I can decide whether to allow it. | - Push notification sent when an unrecognized device connects
+- Notification includes a direct 'Block' action
+- New/unknown devices are visually flagged in the device list | Must | 5 | Basic | MVP
+US4.4 | E4 - Device Management & Visibility | Technical device details | As a power user, I want to view technical device details (MAC address, IP, traffic usage), so I can troubleshoot or investigate further. | - Device detail screen (Advanced mode) shows MAC, IP, connection type, and data usage
+- Data available for at least the last 7 days | Could | 3 | Advanced | v1.2
+US4.5 | E4 - Device Management & Visibility | Device network isolation | As a power user, I want to assign devices to isolated network segments (VLANs), so IoT devices can't access my main devices. | - User can create at least one isolated segment beyond the main and guest networks
+- Devices can be assigned to a segment from the device detail screen
+- Isolated segment cannot see traffic on the main network by default | Could | 8 | Advanced | v1.2
+US5.1 | E5 - Website / App Blocking & Block Page | Block websites & content categories | As a parent/admin, I want to block specific websites or whole content categories (e.g., adult content, gambling), so household members can't access them. | - Admin can block by category or by specific site/domain
+- Blocking applies network-wide or per-profile
+- Enforced at the network level (DNS/SNI), so it cannot be bypassed by uninstalling an app on the child's device | Must | 5 | Basic | MVP
+US5.5 | E5 - Website / App Blocking & Block Page | Mobile app blocking feasibility spike | As a developer, I want a timeboxed spike evaluating how reliably we can block specific mobile apps (not just websites) at the router level, so we commit only to what's technically achievable before marketing promises anything. | - Spike evaluates traffic-fingerprinting approaches against real apps, including CDN-shared infrastructure, certificate pinning, and encrypted SNI/ECH
+- Output is a written report classifying app-blocking capability as reliable / best-effort / not-feasible per app category
+- Product messaging and US5.6 scope are set based on this report — not before | Must | 5 | Infra | MVP
+US5.6 | E5 - Website / App Blocking & Block Page | Per-app blocking (scope set by spike) | As a parent/admin, I want to block specific mobile apps where technically reliable, so I can control app usage beyond website blocking. | - Scope limited to app categories the US5.5 spike classified as reliably blockable
+- Apps classified best-effort are labeled as such in the UI, never presented as guaranteed
+- Depends on US5.5 completion — must not enter a sprint before the spike report is accepted | Should | 8 | Basic | v1.1
+US5.7 | E5 - Website / App Blocking & Block Page | HTTPS block-page handling | As a blocked user on an HTTPS site, I want a clear blocked experience instead of a browser certificate warning, so the friendly block page (US5.2) actually works in practice. | - Design decided for HTTPS blocking: connection-reset with app-side explanation, DNS-level NXDOMAIN with app notification, or another approach that avoids scary certificate warnings
+- Chosen approach documented and tested on iOS, Android, and major desktop browsers
+- Blocked HTTPS attempts are visible to the admin in the app even when a full block page can't render in the browser | Must | 3 | Basic | MVP
+US5.2 | E5 - Website / App Blocking & Block Page | Friendly block page | As a blocked user, I want to see a friendly block page explaining why access was denied, so I'm not confused by a generic error. | - Block page uses friendly, non-alarming language
+- No self-serve 'request access' button is shown
+- Page tells the user to ask the account admin to change this in the app | Must | 3 | Basic | MVP
+US5.3 | E5 - Website / App Blocking & Block Page | Admin unblock control | As an admin, I want to unblock a site/app from the app, so I can grant access when appropriate. | - Admin can search/select a blocked item and unblock it in two taps or fewer
+- Change takes effect within a few seconds across the network | Must | 3 | Basic | MVP
+US5.4 | E5 - Website / App Blocking & Block Page | Custom block lists | As a power user, I want to create custom block lists by domain or IP, so I can block things not covered by predefined categories. | - Advanced settings allow manual domain/IP entry for blocking
+- Custom entries can be imported/exported as a list | Could | 5 | Advanced | v1.2
+US6.1 | E6 - Ad Blocking | Network-wide ad block toggle | As a user, I want a single on/off toggle for network-wide ad blocking, so all my devices are protected without individual setup. | - Single toggle enables/disables ad blocking for the whole network
+- Default state is off until user opts in during setup or later
+- Status visible on the security dashboard | Should | 3 | Basic | v1.1
+US6.2 | E6 - Ad Blocking | Custom ad-block lists | As a power user, I want to manage custom ad-block lists/filters, so I can fine-tune what's blocked. | - Advanced settings allow adding/removing filter list URLs
+- Changes apply without requiring a router restart | Could | 5 | Advanced | v1.2
+US7.1 | E7 - Remote Access VPN | Remote connect via mobile app | As a user, I want to connect to my home network from outside using the mobile app, so I can manage my router securely while away. | - Remote connection establishes with no manual VPN configuration, certificates, or keys for the user to install
+- Works over mobile data and other Wi-Fi networks
+- Connection status (connected/connecting/failed) shown clearly in the app
+- Login + MFA required before a remote session is granted | Must | 8 | Basic | v1.1
+US7.2 | E7 - Remote Access VPN | Remote connect via web portal | As a user, I want to access my router's management dashboard from a web browser while away from home, so I can manage settings from any computer. | - Secure web portal reachable from outside the home network
+- Requires login + MFA, same as the mobile flow
+- Session automatically times out after a period of inactivity | Must | 8 | Basic | v1.1
+US7.3 | E7 - Remote Access VPN | Instant remote block/control | As a user, I want to block an app or pause a device while I'm away from home, so I can respond to a situation without being physically present. | - All core actions available on the local dashboard (pause device, block app/site, pause profile) are also available remotely
+- Remote changes apply to the router within a few seconds, same as local changes
+- No separate/reduced feature set for the remote experience vs. the at-home experience for these core actions
+- Remote access includes both live visibility (device list, connection status, security status) and control actions (block/pause/etc.) — visibility is never limited to a read-only or action-only subset of the local dashboard | Must | 5 | Basic | v1.1
+US7.4 | E7 - Remote Access VPN | Scoped remote access (security boundary) — default mode | As an admin, I want remote access limited to router/network management functions (view + control the dashboard) rather than raw access to every device on the LAN, so a leaked credential can't expose my home devices directly. This is the default mode for every account. | - Remote session grants access to the management app/dashboard only (visibility + control, per US7.3), not open network-level access to LAN devices, by default
+- This is the out-of-the-box behavior for all users, no setup required
+- Expanding beyond management-only access requires the separate, explicit Advanced setting in US7.5 | Must | 5 | Basic | v1.1
+US7.5 | E7 - Remote Access VPN | Full home network remote access — advanced mode | As a power user, I want the option to access my full home network remotely (e.g., a NAS or another LAN device), not just the router dashboard, so I can use my home network like a traditional VPN when I need to. Both this and the default management-only mode (US7.4) are supported side by side. | - Advanced setting to enable full-LAN remote access, off by default, alongside (not replacing) the default management-only access
+- Clear warning shown about the increased access scope before enabling
+- Can be turned off independently, reverting to management-only mode, without losing remote dashboard access | Could | 8 | Advanced | v1.2
+US7.6 | E7 - Remote Access VPN | Remote session visibility & alerts | As a user, I want to see and be notified about remote connections to my network, so I know if someone accessed it while I was away. | - Dashboard shows active and recent remote sessions with device/location context where available
+- Push notification sent on each new remote login
+- User can revoke an active remote session instantly | Should | 5 | Basic | v1.1
+US7.7 | E7 - Remote Access VPN | Remote VPN technical details | As a power user, I want to see the technical details of the remote connection (protocol, encryption method), so I can verify its security. | - Advanced screen shows protocol (e.g., WireGuard/OpenVPN/IPsec) and encryption standard in use
+- Read-only for Basic-mode users; not shown by default in Basic mode | Could | 3 | Advanced | v1.2
+US8.1 | E8 - Parental Controls | Child profiles | As a parent, I want to create a profile for each child, so I can apply consistent rules across their devices. | - Admin can create a named profile and assign one or more devices to it
+- Profile setup takes fewer than 5 taps
+- Pre-set profile templates (Kid/Teen) offered as starting points | Must | 8 | Basic | MVP
+US8.2 | E8 - Parental Controls | Content filtering per profile | As a parent, I want to set content filtering categories per profile, so I can block inappropriate content. | - Category toggles (e.g., adult content, violence, gambling) available per profile
+- Safe search enforced automatically when content filtering is on | Must | 5 | Basic | MVP
+US8.3 | E8 - Parental Controls | Time limits & bedtime schedules | As a parent, I want to set screen time limits and bedtime schedules per profile, so I can manage usage without manual intervention. | - Visual schedule/slider for setting daily time limits and bedtime cutoff
+- Schedule applies automatically without daily parent action
+- Child sees a friendly countdown/warning before cutoff | Must | 8 | Basic | MVP
+US8.4 | E8 - Parental Controls | Instant pause per profile | As a parent, I want to instantly pause internet for a child's profile, so I can enforce rules in real time (e.g., dinner time). | - One-tap 'Pause' button on the profile card
+- Pause takes effect within a few seconds across all devices in the profile
+- Easy one-tap resume | Must | 3 | Basic | MVP
+US8.5 | E8 - Parental Controls | Weekly usage reports | As a parent, I want a weekly usage report per child, so I can understand their online habits. | - Report shows top sites/apps and total time per day
+- Delivered in-app and optionally via notification/email summary
+- Uses simple charts, not raw data tables | Should | 5 | Basic | v1.1
+US8.6 | E8 - Parental Controls | Per-app/site rules within profile | As a parent, I want to set different rules per app/site within a profile, so I have granular control beyond categories. | - Admin can override category defaults for a specific app/site within a profile
+- Overrides visible in an 'exceptions' list per profile | Could | 8 | Advanced | v1.2
+US9.1 | E9 - Guest Network | One-tap guest network | As a user, I want to create a guest Wi-Fi network in one tap, so visitors can connect without accessing my main devices. | - Guest network toggle available on the home dashboard
+- Guest network is isolated from main network devices by default
+- Guest network name/password auto-generated but editable | Should | 5 | Basic | v1.1
+US9.2 | E9 - Guest Network | Guest access expiration | As a user, I want to set an expiration time for guest access, so I don't have to manually turn it off. | - User can select a duration (e.g., 24 hours, 1 week) when enabling guest network
+- Network disables automatically at expiration | Could | 3 | Basic | v1.1
+US10.1 | E10 - Alerts & Notifications | Push notifications for security events | As a user, I want push notifications for important security events, so I'm informed without checking the app constantly. | - Notifications sent for new device, blocked threat, and failed login attempts by default
+- Notifications use plain language, no technical codes | Must | 5 | Basic | MVP
+US10.2 | E10 - Alerts & Notifications | Customizable alert preferences | As a user, I want to customize which alerts I receive, so I'm not overwhelmed with notifications. | - Settings screen lists alert categories with individual toggles
+- Changes apply immediately | Should | 3 | Advanced | v1.1
+US11.1 | E11 - Firmware & Auto-Updates | Automatic firmware updates | As a user, I want automatic firmware updates, so my router stays secure without my having to act. | - Firmware updates install automatically by default
+- Updates apply during a low-usage window to minimize disruption
+- Dashboard shows last update date | Must | 5 | Basic | MVP
+US11.2 | E11 - Firmware & Auto-Updates | Manual update approval | As a power user, I want to review release notes and manually approve updates, so I can control when changes happen. | - Advanced setting to switch from automatic to manual update approval
+- Release notes shown in plain and technical summary before approval | Could | 3 | Advanced | v1.2
+US12.1 | E12 - Advanced / Power User Settings | Advanced Mode toggle | As a power user, I want an 'Advanced Mode' toggle, so I can access technical settings without cluttering the default experience. | - Single, clearly labeled toggle switches the whole app between Basic and Advanced views
+- Setting persists across sessions
+- Basic mode remains the default for new users | Should | 5 | Advanced | v1.2
+US12.2 | E12 - Advanced / Power User Settings | Network configuration controls | As a power user, I want access to port forwarding, DNS settings, and static IP assignment, so I can configure my network for specific needs. | - Port forwarding, custom DNS, and static IP/DHCP reservation available in Advanced mode
+- Each setting includes an inline plain-language explanation of what it does | Could | 8 | Advanced | v1.2
+US13.1 | E13 - Offline & No-Internet Access | Offline-capable MFA login | As a user, I want to log into my router using an authenticator app or backup code even when the router has no internet connection, so I'm never locked out of my own network by an outage. | - Authenticator app (TOTP) codes are verified entirely locally by the router — no external service call required
+- Backup codes are verified entirely locally, same as US3.3
+- Login succeeds with these methods regardless of the router's WAN/internet status | Must | 5 | Basic | MVP
+US13.2 | E13 - Offline & No-Internet Access | Clear messaging when internet-dependent MFA is unavailable | As a user, I want to be told clearly when SMS, push, or email MFA isn't available because the router has no internet connection, so I know to use another method instead of assuming something is broken. | - SMS/push/email options are visibly disabled with a plain-language reason (e.g., 'Requires internet — try your authenticator app or a backup code instead') when the router has no WAN connectivity
+- The recommended offline-capable alternative is surfaced directly on the same screen, not buried in help text | Must | 3 | Basic | MVP
+US13.3 | E13 - Offline & No-Internet Access | Local access continues without internet | As a user, I want to access and manage my router from a device on my home Wi-Fi/Ethernet even when the router has no internet connection, so a lost ISP connection never locks me out of my own network. | - The local dashboard (app or web UI reached from the same LAN) remains fully functional with WAN down
+- Core actions — device management, parental controls, blocking — continue to work locally without internet
+- Only genuinely cloud-dependent features (e.g., remote-from-outside access, ISP cloud sync) are unavailable, and are clearly labeled as such rather than silently failing | Must | 8 | Basic | MVP
+US13.4 | E13 - Offline & No-Internet Access | Physical local-recovery fallback | As a user, I want a physical, local last-resort recovery method on the router itself, so I'm never permanently locked out even if I lose access to every MFA method I've set up. | - A defined physical action on the router (e.g., holding a button for a set duration) triggers a local recovery flow
+- Recovery requires physical presence at the device and a setup-time recovery code (generated and shown once during onboarding)
+- The flow clearly warns the user in advance what recovery does (e.g., resets admin credentials) so it's understood before it's ever needed | Should | 5 | Basic | MVP
+US14.1 | E14 - Account Creation & Multi-Router Management | Local-first setup, no account required | As a new user, I want to set up and secure my router immediately after unboxing without creating an account first, so I can start using it even if I don't have internet yet. | - Setup connects locally via the app (Bluetooth/local Wi-Fi) or a local web page at the router's default address
+- No internet connection or account creation is required to complete local Wi-Fi and security setup
+- Default admin username/password must be changed before setup can finish, with no skip option
+- The router is fully functional on the local network after this step alone, with no cloud account created | Must | 8 | Basic | MVP
+US14.2 | E14 - Account Creation & Multi-Router Management | Unique per-unit default credentials | As a user, I want my router's out-of-the-box default password to be unique to my device, not a shared factory default, so my network isn't exposed even before I complete setup. | - Each router ships with a unique default admin password, printed on a label or QR code on the device itself
+- Default credentials cannot be derived from the router's model number or a public list
+- User is still required to change these during setup per US14.1 and US1.1 | Must | 3 | Basic | MVP
+US14.3 | E14 - Account Creation & Multi-Router Management | Optional cloud account creation | As a user, I want to create a cloud account and link my router to it once I have internet, so I can unlock remote access and manage my router from outside — without this being forced during initial setup. | - Account creation (email/phone + password) can be started any time after local setup completes, not only during first-run
+- If internet is detected but no account is linked yet, the app prompts the user with an easy path to create one, without blocking local features
+- Account creation includes MFA enrollment, consistent with Epic E3
+- Local admin credentials and the cloud account are kept as separate, independent identities — losing one doesn't lock out the other | Must | 5 | Basic | MVP
+US14.4 | E14 - Account Creation & Multi-Router Management | Preserve local configuration when linking an account | As a user, I want any configuration I've already made locally (Wi-Fi settings, blocked devices, parental profiles) to be kept when I create or link a cloud account, so I don't lose my work by going online later. | - Existing local settings are synced up to the new cloud account, never overwritten or discarded automatically
+- There is no scenario in the normal flow where creating an account requires a reset
+- A 'reset and start fresh' option exists separately, is clearly optional, and requires explicit confirmation | Must | 5 | Basic | MVP
+US14.5 | E14 - Account Creation & Multi-Router Management | Name each router | As a user with more than one home, I want to give each router a name (e.g., 'Main House', 'Beach House'), so I can tell them apart when managing more than one from the same account. | - Router name is requested during local setup and can be changed anytime afterward
+- A name must be set before a second router can be linked to the same cloud account
+- Routers are shown by name everywhere in the app, never by serial number or technical ID by default | Must | 3 | Basic | MVP
+US14.6 | E14 - Account Creation & Multi-Router Management | Multi-router dashboard | As a user with multiple homes, I want to switch between my named routers from one account, so I can manage all my properties without separate logins. | - Account home screen lists all linked routers by name with a quick status indicator per router
+- Switching between routers reuses the same login/MFA session, no re-authentication required per router
+- Each router's devices, profiles, and settings remain fully isolated from the others — no cross-router data leakage | Should | 8 | Basic | v1.1
+US15.1 | E15 - On-Router Software Foundation | Custom OpenWrt build pipeline | As a developer, I want a reproducible, scripted build of a custom OpenWrt image with only our required packages, so we ship a minimal, purpose-built firmware instead of stock OpenWrt with LuCI exposed. | - Build produces a flashable image per target hardware platform
+- Only the approved package list is included (dnsmasq, nftables, hostapd, wireguard-tools, adblock, rpcd/ubus, etc.)
+- Build is scripted/CI-ready and reproducible from a clean checkout
+- LuCI is excluded from the consumer build, or present but access-restricted to engineering/support only (see US18.4) | Must | 8 | Infra | MVP
+US15.2 | E15 - On-Router Software Foundation | On-device daemon with unified local API | As a developer, I want a single on-device daemon that wraps ubus/UCI and exposes one clean local REST/JSON API, so all clients talk to one stable contract instead of touching OpenWrt internals directly. | - Daemon runs as a persistent system service on the router
+- API covers device list/control, block/pause, parental profiles, security status, and MFA verification endpoints
+- No frontend code (mobile or web) calls ubus/UCI directly — all access goes through this API
+- API contract is documented and versioned | Must | 13 | Infra | MVP
+US15.3 | E15 - On-Router Software Foundation | Local daemon degrades gracefully without internet | As a developer, I want the on-device daemon to keep serving the full local API when the router has no internet connection, so Epic E13's offline-access guarantees are technically enforced at the daemon level, not just assumed by the app. | - Daemon detects WAN status and clearly flags cloud-dependent endpoints as unavailable rather than timing out silently
+- All LAN-servable endpoints (device control, blocking, parental controls, local MFA) remain fully functional with WAN down
+- Daemon resumes cloud sync automatically once connectivity returns, without requiring a restart | Must | 5 | Infra | MVP
+US16.1 | E16 - Firmware Build & OTA Update Pipeline | Integrate RAUC for A/B firmware updates | As a developer, I want RAUC integrated into our custom OpenWrt image for A/B partition updates, so firmware updates are atomic, cryptographically signed, and automatically roll back on failed boot. | - A/B partition slots configured for rootfs updates
+- Update bundles are cryptographically signed with a vendor-held key and rejected if verification fails
+- A failed boot on the new slot automatically reverts to the last-known-good slot
+- This satisfies the existing 'automatic firmware updates' requirement (US11.1) at the implementation level | Must | 13 | Infra | MVP
+US16.2 | E16 - Firmware Build & OTA Update Pipeline | Cloud OTA update server | As a developer, I want a cloud service that hosts signed firmware bundles and tracks each router's version/update status, so we can distribute updates to the fleet securely and know what's deployed where. | - Server stores versioned, signed firmware bundles
+- Server tracks per-device current version and last check-in time
+- Routers fetch updates over their existing outbound connection — no inbound access required to the fleet | Must | 8 | Infra | MVP
+US16.3 | E16 - Firmware Build & OTA Update Pipeline | Staged/canary rollout control | As a product owner, I want firmware rollouts to start with a small percentage of devices before wide release, so we catch failures before they affect the whole fleet. | - Rollout percentage/cohort is configurable per release from the OTA server, not hardcoded
+- Fleet-wide rollout failure rate is monitored, with the ability to halt a rollout mid-way
+- Canary cohort can be defined (e.g., internal devices first, then a small real-user percentage) | Must | 5 | Infra | MVP
+US17.1 | E17 - Remote Access Relay Infrastructure | Evaluate Headscale vs. custom WireGuard orchestration (spike) | As a developer, I want to evaluate self-hosted Headscale against building custom WireGuard orchestration, so we choose the remote-access relay approach with the best tradeoff of speed-to-market, control, and lock-in risk. | - Spike is timeboxed and produces a written recommendation
+- Evaluation explicitly covers: build/ops cost, degree of control, fit with management-only vs. full-LAN ACL scoping (Epic E7), and vendor lock-in risk
+- Recommendation is reviewed before US17.2 and US17.3 begin implementation | Must | 5 | Infra | v1.1
+US17.2 | E17 - Remote Access Relay Infrastructure | Outbound-only WireGuard tunnel client | As a developer, I want the router to establish an outbound-only WireGuard tunnel to the relay, so remote access never requires an open inbound port on the router. | - Tunnel connection is always initiated by the router, never accepted inbound
+- Tunnel reconnects automatically after network changes or WAN drops
+- Tunnel status (connected/connecting/failed) is exposed via the local API for the dashboard to display | Must | 8 | Infra | v1.1
+US17.3 | E17 - Remote Access Relay Infrastructure | ACL-based access scope enforcement | As a developer, I want the relay's access-control layer to technically enforce management-only vs. full-LAN access scope, so Epic E7's two access modes (US7.4 default, US7.5 advanced) are enforced at the network layer, not only in the app UI. | - Management-only scope restricts routed traffic to the local daemon's API port only
+- Full-LAN scope (only when explicitly enabled per US7.5) opens routing to the broader LAN subnet
+- Scope changes take effect without requiring the user to reconnect the tunnel | Must | 8 | Infra | v1.1
+US18.1 | E18 - Frontend Platform Foundation | Mobile app framework setup | As a developer, I want the mobile app built on a single cross-platform framework (React Native or Flutter), so we maintain one codebase for iOS and Android instead of two. | - Framework decision is documented with rationale
+- Base project scaffolded with navigation, auth flow, and API client layers in place
+- Builds succeed for both iOS and Android targets from the same codebase | Must | 8 | Infra | MVP
+US18.2 | E18 - Frontend Platform Foundation | Web dashboard framework setup | As a developer, I want the web dashboard built in React, sharing design tokens/components with the mobile app where practical, so the two experiences stay visually and behaviorally consistent. | - Base web project scaffolded
+- Component library shared or design-aligned with the mobile app
+- Dashboard is servable both locally (from the router, for LAN access) and via the cloud (for remote access), using the same underlying components | Must | 8 | Infra | MVP
+US18.3 | E18 - Frontend Platform Foundation | Unified API client layer | As a developer, I want a single API client library shared by both mobile and web apps, so local vs. cloud request routing is handled transparently and consistently rather than duplicated per platform. | - Client automatically detects local (LAN) vs. remote (cloud/relay) context and routes requests accordingly
+- Both mobile and web apps consume the same client library/contract
+- No duplicated request-handling logic exists between the two codebases | Must | 8 | Infra | MVP
+US18.4 | E18 - Frontend Platform Foundation | Exclude LuCI from the consumer product | As a product owner, I want OpenWrt's native LuCI interface excluded from the consumer product (or restricted to engineering/support access only), so end users are never exposed to raw technical configuration, even in Advanced mode. | - LuCI is not reachable from the consumer mobile app or web dashboard
+- Advanced mode remains fully within our custom UI — it never links out to or embeds LuCI
+- If LuCI is retained at all for support purposes, it requires separate credentials not exposed to end users | Must | 3 | Infra | MVP
+US19.1 | E19 - Hardware & Manufacturing | Hardware platform selection spike | As a product owner, I want a timeboxed evaluation and selection of the router SoC/platform, so all software work targets real, OpenWrt-friendly hardware from the start. | - Candidate SoCs evaluated for: mainline OpenWrt support, unlocked/controllable bootloader, Wi-Fi 6+ capability, sufficient flash for A/B partitions (RAUC), and unit cost at target volumes
+- Decision documented with second-source/fallback option
+- Development boards ordered for the engineering team before software Sprint 3 | Must | 8 | Infra | MVP
+US19.2 | E19 - Hardware & Manufacturing | Factory per-unit credential provisioning | As a manufacturer, I want each unit flashed with a unique default admin password and matching label/QR at the factory, so US14.2's unique-credentials promise is physically deliverable. | - Provisioning step defined in the factory process: unique credential generated, flashed to device, and printed on the unit label/QR in one linked operation
+- Credentials are not derivable from serial number, MAC, or model
+- Process validated on the pilot production run (US19.5) | Must | 5 | Infra | MVP
+US19.3 | E19 - Hardware & Manufacturing | Physical recovery button specification | As a hardware designer, I want the recovery button's behavior specced with the firmware team, so US13.4's physical recovery flow has actual hardware behind it. | - Button press-duration behaviors defined (e.g., short = reboot, long = recovery flow) and agreed between hardware and firmware
+- Recovery flow requirements from US13.4 are implementable on the chosen platform
+- Spec frozen before pilot production tooling | Must | 3 | Infra | MVP
+US19.4 | E19 - Hardware & Manufacturing | Regulatory certification | As a product owner, I want the device certified for our launch markets (e.g., FCC/CE/regional equivalents), so we can legally sell it — started early because certification lead time is months, not weeks. | - Target launch markets and their certification requirements listed
+- Certification lab engaged and pre-scan completed before final hardware freeze
+- Certification submitted immediately after design validation, tracked as a launch-gating milestone | Must | 8 | Infra | MVP
+US19.5 | E19 - Hardware & Manufacturing | Pilot production run & design validation | As a product owner, I want a small pilot production run validated end-to-end (hardware, factory provisioning, firmware flash, unboxing), so mass production doesn't surface first-time failures. | - Pilot units pass design validation testing (thermal, Wi-Fi performance, stability)
+- Factory provisioning (US19.2) and firmware flashing verified on pilot units
+- Pilot units used internally as the first OTA canary cohort (ties to US16.3) | Must | 8 | Infra | MVP
+US20.1 | E20 - Security Assurance & Privacy Compliance | External security audit / penetration test | As a product owner, I want an independent security firm to pen-test the router, apps, and cloud before launch, so we don't launch a security product with discoverable holes — one public CVE headline would permanently damage the product's core promise. | - External audit covers: router firmware/daemon, local API, mobile/web apps, cloud services, and the remote-access tunnel
+- All critical and high findings fixed and re-verified before launch — this story is launch-blocking
+- Audit repeated for major releases (noted in the release process) | Must | 8 | Infra | MVP
+US20.2 | E20 - Security Assurance & Privacy Compliance | Privacy compliance & child-data minimization | As a product owner, I want a privacy review of what we collect — especially children's browsing/usage data — so we comply with applicable regulations (GDPR-class and local equivalents) and collect the minimum necessary. | - Data inventory produced: what is collected, where stored (on-router vs. cloud), retention period, and who can access it
+- Children's activity data stored on-router by default; any cloud storage of it is explicit, minimal, and consented
+- Privacy policy and in-app consent language reviewed by counsel before launch | Must | 5 | Infra | MVP
+US20.3 | E20 - Security Assurance & Privacy Compliance | Vulnerability disclosure & patch SLA | As a product owner, I want a published vulnerability-disclosure process and internal patch SLAs, so researchers can report issues responsibly and we commit to fixing them fast. | - security@ contact and disclosure policy published at launch
+- Internal SLA defined (e.g., critical fixes shipped via OTA within days, not months)
+- Ties into the staged-rollout pipeline (US16.3) for emergency pushes | Must | 3 | Infra | MVP
+US21.1 | E21 - Support & Diagnostics | In-app troubleshooting self-help | As a non-technical user, I want guided in-app troubleshooting when something isn't working (e.g., 'internet is down', 'a device can't connect'), so I can fix common problems without calling support. | - Guided flows for the top support scenarios, written in plain language with one-tap fixes where possible
+- Flows work locally without internet (consistent with Epic E13)
+- Each flow ends with a clear path to human support if it doesn't resolve the issue | Should | 5 | Basic | MVP
+US21.2 | E21 - Support & Diagnostics | Consent-based remote diagnostics for support | As a support agent, I want to run remote diagnostics on a customer's router with their explicit consent, so I can resolve issues for non-technical users who can't describe technical problems. | - Diagnostics session requires explicit, per-session user consent from within the app
+- Support access is scoped to diagnostics (read/status/logs), not full admin control
+- Every support session is logged and visible to the user afterwards | Should | 8 | Infra | v1.1
+US21.3 | E21 - Support & Diagnostics | Diagnostic report export | As a user, I want to export a diagnostic report to share with support, so issues can be investigated even without a live remote session. | - One-tap generation of a diagnostic bundle (status, logs, config summary — no passwords/secrets)
+- Report shareable via standard share sheet / email | Could | 3 | Basic | v1.1
+
+=== SHEET: Tasks ===
+Task ID | Story ID | Role | Task Description
+T1 | US1.1 | Design | Design UI/UX for: Guided setup wizard (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T2 | US1.1 | Build | Implement front-end and back-end logic for: Guided setup wizard
+T3 | US1.1 | Test | Write and execute acceptance tests against the criteria for: Guided setup wizard
+T4 | US1.2 | Design | Design UI/UX for: MFA setup during onboarding (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T5 | US1.2 | Build | Implement front-end and back-end logic for: MFA setup during onboarding
+T6 | US1.2 | Test | Write and execute acceptance tests against the criteria for: MFA setup during onboarding
+T7 | US1.3 | Design | Design UI/UX for: Auto-detect existing devices (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T8 | US1.3 | Build | Implement front-end and back-end logic for: Auto-detect existing devices
+T9 | US1.3 | Test | Write and execute acceptance tests against the criteria for: Auto-detect existing devices
+T10 | US1.4 | Design | Design UI/UX for: Skip wizard for manual setup (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T11 | US1.4 | Build | Implement front-end and back-end logic for: Skip wizard for manual setup
+T12 | US1.4 | Test | Write and execute acceptance tests against the criteria for: Skip wizard for manual setup
+T13 | US2.1 | Design | Design UI/UX for: Plain-language security status (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T14 | US2.1 | Build | Implement front-end and back-end logic for: Plain-language security status
+T15 | US2.1 | Test | Write and execute acceptance tests against the criteria for: Plain-language security status
+T16 | US2.2 | Design | Design UI/UX for: One-tap fixes (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T17 | US2.2 | Build | Implement front-end and back-end logic for: One-tap fixes
+T18 | US2.2 | Test | Write and execute acceptance tests against the criteria for: One-tap fixes
+T19 | US2.3 | Design | Design UI/UX for: At-a-glance summary (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T20 | US2.3 | Build | Implement front-end and back-end logic for: At-a-glance summary
+T21 | US2.3 | Test | Write and execute acceptance tests against the criteria for: At-a-glance summary
+T22 | US2.4 | Design | Design UI/UX for: Detailed security log (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T23 | US2.4 | Build | Implement front-end and back-end logic for: Detailed security log
+T24 | US2.4 | Test | Write and execute acceptance tests against the criteria for: Detailed security log
+T25 | US3.1 | Design | Design UI/UX for: Default SMS/push MFA (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T26 | US3.1 | Build | Implement front-end and back-end logic for: Default SMS/push MFA
+T27 | US3.1 | Test | Write and execute acceptance tests against the criteria for: Default SMS/push MFA
+T28 | US3.2 | Design | Design UI/UX for: Alternative MFA methods (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T29 | US3.2 | Build | Implement front-end and back-end logic for: Alternative MFA methods
+T30 | US3.2 | Test | Write and execute acceptance tests against the criteria for: Alternative MFA methods
+T31 | US3.3 | Design | Design UI/UX for: Backup codes (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T32 | US3.3 | Build | Implement front-end and back-end logic for: Backup codes
+T33 | US3.3 | Test | Write and execute acceptance tests against the criteria for: Backup codes
+T34 | US3.4 | Design | Design UI/UX for: Require MFA per admin action (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T35 | US3.4 | Build | Implement front-end and back-end logic for: Require MFA per admin action
+T36 | US3.4 | Test | Write and execute acceptance tests against the criteria for: Require MFA per admin action
+T37 | US4.1 | Design | Design UI/UX for: Friendly device list (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T38 | US4.1 | Build | Implement front-end and back-end logic for: Friendly device list
+T39 | US4.1 | Test | Write and execute acceptance tests against the criteria for: Friendly device list
+T40 | US4.2 | Design | Design UI/UX for: One-tap pause/block device (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T41 | US4.2 | Build | Implement front-end and back-end logic for: One-tap pause/block device
+T42 | US4.2 | Test | Write and execute acceptance tests against the criteria for: One-tap pause/block device
+T43 | US4.3 | Design | Design UI/UX for: New device alert (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T44 | US4.3 | Build | Implement front-end and back-end logic for: New device alert
+T45 | US4.3 | Test | Write and execute acceptance tests against the criteria for: New device alert
+T46 | US4.4 | Design | Design UI/UX for: Technical device details (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T47 | US4.4 | Build | Implement front-end and back-end logic for: Technical device details
+T48 | US4.4 | Test | Write and execute acceptance tests against the criteria for: Technical device details
+T49 | US4.5 | Design | Design UI/UX for: Device network isolation (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T50 | US4.5 | Build | Implement front-end and back-end logic for: Device network isolation
+T51 | US4.5 | Test | Write and execute acceptance tests against the criteria for: Device network isolation
+T52 | US5.1 | Design | Design UI/UX for: Block websites & content categories (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T53 | US5.1 | Build | Implement front-end and back-end logic for: Block websites & content categories
+T54 | US5.1 | Test | Write and execute acceptance tests against the criteria for: Block websites & content categories
+T55 | US5.5 | Design | Design UI/UX for: Mobile app blocking feasibility spike (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T56 | US5.5 | Build | Implement front-end and back-end logic for: Mobile app blocking feasibility spike
+T57 | US5.5 | Test | Write and execute acceptance tests against the criteria for: Mobile app blocking feasibility spike
+T58 | US5.6 | Design | Design UI/UX for: Per-app blocking (scope set by spike) (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T59 | US5.6 | Build | Implement front-end and back-end logic for: Per-app blocking (scope set by spike)
+T60 | US5.6 | Test | Write and execute acceptance tests against the criteria for: Per-app blocking (scope set by spike)
+T61 | US5.7 | Design | Design UI/UX for: HTTPS block-page handling (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T62 | US5.7 | Build | Implement front-end and back-end logic for: HTTPS block-page handling
+T63 | US5.7 | Test | Write and execute acceptance tests against the criteria for: HTTPS block-page handling
+T64 | US5.2 | Design | Design UI/UX for: Friendly block page (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T65 | US5.2 | Build | Implement front-end and back-end logic for: Friendly block page
+T66 | US5.2 | Test | Write and execute acceptance tests against the criteria for: Friendly block page
+T67 | US5.3 | Design | Design UI/UX for: Admin unblock control (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T68 | US5.3 | Build | Implement front-end and back-end logic for: Admin unblock control
+T69 | US5.3 | Test | Write and execute acceptance tests against the criteria for: Admin unblock control
+T70 | US5.4 | Design | Design UI/UX for: Custom block lists (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T71 | US5.4 | Build | Implement front-end and back-end logic for: Custom block lists
+T72 | US5.4 | Test | Write and execute acceptance tests against the criteria for: Custom block lists
+T73 | US6.1 | Design | Design UI/UX for: Network-wide ad block toggle (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T74 | US6.1 | Build | Implement front-end and back-end logic for: Network-wide ad block toggle
+T75 | US6.1 | Test | Write and execute acceptance tests against the criteria for: Network-wide ad block toggle
+T76 | US6.2 | Design | Design UI/UX for: Custom ad-block lists (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T77 | US6.2 | Build | Implement front-end and back-end logic for: Custom ad-block lists
+T78 | US6.2 | Test | Write and execute acceptance tests against the criteria for: Custom ad-block lists
+T79 | US7.1 | Design | Design UI/UX for: Remote connect via mobile app (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T80 | US7.1 | Build | Implement front-end and back-end logic for: Remote connect via mobile app
+T81 | US7.1 | Test | Write and execute acceptance tests against the criteria for: Remote connect via mobile app
+T82 | US7.2 | Design | Design UI/UX for: Remote connect via web portal (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T83 | US7.2 | Build | Implement front-end and back-end logic for: Remote connect via web portal
+T84 | US7.2 | Test | Write and execute acceptance tests against the criteria for: Remote connect via web portal
+T85 | US7.3 | Design | Design UI/UX for: Instant remote block/control (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T86 | US7.3 | Build | Implement front-end and back-end logic for: Instant remote block/control
+T87 | US7.3 | Test | Write and execute acceptance tests against the criteria for: Instant remote block/control
+T88 | US7.4 | Design | Design UI/UX for: Scoped remote access (security boundary) — default mode (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T89 | US7.4 | Build | Implement front-end and back-end logic for: Scoped remote access (security boundary) — default mode
+T90 | US7.4 | Test | Write and execute acceptance tests against the criteria for: Scoped remote access (security boundary) — default mode
+T91 | US7.5 | Design | Design UI/UX for: Full home network remote access — advanced mode (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T92 | US7.5 | Build | Implement front-end and back-end logic for: Full home network remote access — advanced mode
+T93 | US7.5 | Test | Write and execute acceptance tests against the criteria for: Full home network remote access — advanced mode
+T94 | US7.6 | Design | Design UI/UX for: Remote session visibility & alerts (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T95 | US7.6 | Build | Implement front-end and back-end logic for: Remote session visibility & alerts
+T96 | US7.6 | Test | Write and execute acceptance tests against the criteria for: Remote session visibility & alerts
+T97 | US7.7 | Design | Design UI/UX for: Remote VPN technical details (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T98 | US7.7 | Build | Implement front-end and back-end logic for: Remote VPN technical details
+T99 | US7.7 | Test | Write and execute acceptance tests against the criteria for: Remote VPN technical details
+T100 | US8.1 | Design | Design UI/UX for: Child profiles (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T101 | US8.1 | Build | Implement front-end and back-end logic for: Child profiles
+T102 | US8.1 | Test | Write and execute acceptance tests against the criteria for: Child profiles
+T103 | US8.2 | Design | Design UI/UX for: Content filtering per profile (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T104 | US8.2 | Build | Implement front-end and back-end logic for: Content filtering per profile
+T105 | US8.2 | Test | Write and execute acceptance tests against the criteria for: Content filtering per profile
+T106 | US8.3 | Design | Design UI/UX for: Time limits & bedtime schedules (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T107 | US8.3 | Build | Implement front-end and back-end logic for: Time limits & bedtime schedules
+T108 | US8.3 | Test | Write and execute acceptance tests against the criteria for: Time limits & bedtime schedules
+T109 | US8.4 | Design | Design UI/UX for: Instant pause per profile (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T110 | US8.4 | Build | Implement front-end and back-end logic for: Instant pause per profile
+T111 | US8.4 | Test | Write and execute acceptance tests against the criteria for: Instant pause per profile
+T112 | US8.5 | Design | Design UI/UX for: Weekly usage reports (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T113 | US8.5 | Build | Implement front-end and back-end logic for: Weekly usage reports
+T114 | US8.5 | Test | Write and execute acceptance tests against the criteria for: Weekly usage reports
+T115 | US8.6 | Design | Design UI/UX for: Per-app/site rules within profile (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T116 | US8.6 | Build | Implement front-end and back-end logic for: Per-app/site rules within profile
+T117 | US8.6 | Test | Write and execute acceptance tests against the criteria for: Per-app/site rules within profile
+T118 | US9.1 | Design | Design UI/UX for: One-tap guest network (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T119 | US9.1 | Build | Implement front-end and back-end logic for: One-tap guest network
+T120 | US9.1 | Test | Write and execute acceptance tests against the criteria for: One-tap guest network
+T121 | US9.2 | Design | Design UI/UX for: Guest access expiration (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T122 | US9.2 | Build | Implement front-end and back-end logic for: Guest access expiration
+T123 | US9.2 | Test | Write and execute acceptance tests against the criteria for: Guest access expiration
+T124 | US10.1 | Design | Design UI/UX for: Push notifications for security events (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T125 | US10.1 | Build | Implement front-end and back-end logic for: Push notifications for security events
+T126 | US10.1 | Test | Write and execute acceptance tests against the criteria for: Push notifications for security events
+T127 | US10.2 | Design | Design UI/UX for: Customizable alert preferences (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T128 | US10.2 | Build | Implement front-end and back-end logic for: Customizable alert preferences
+T129 | US10.2 | Test | Write and execute acceptance tests against the criteria for: Customizable alert preferences
+T130 | US11.1 | Design | Design UI/UX for: Automatic firmware updates (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T131 | US11.1 | Build | Implement front-end and back-end logic for: Automatic firmware updates
+T132 | US11.1 | Test | Write and execute acceptance tests against the criteria for: Automatic firmware updates
+T133 | US11.2 | Design | Design UI/UX for: Manual update approval (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T134 | US11.2 | Build | Implement front-end and back-end logic for: Manual update approval
+T135 | US11.2 | Test | Write and execute acceptance tests against the criteria for: Manual update approval
+T136 | US12.1 | Design | Design UI/UX for: Advanced Mode toggle (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T137 | US12.1 | Build | Implement front-end and back-end logic for: Advanced Mode toggle
+T138 | US12.1 | Test | Write and execute acceptance tests against the criteria for: Advanced Mode toggle
+T139 | US12.2 | Design | Design UI/UX for: Network configuration controls (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T140 | US12.2 | Build | Implement front-end and back-end logic for: Network configuration controls
+T141 | US12.2 | Test | Write and execute acceptance tests against the criteria for: Network configuration controls
+T142 | US13.1 | Design | Design UI/UX for: Offline-capable MFA login (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T143 | US13.1 | Build | Implement front-end and back-end logic for: Offline-capable MFA login
+T144 | US13.1 | Test | Write and execute acceptance tests against the criteria for: Offline-capable MFA login
+T145 | US13.2 | Design | Design UI/UX for: Clear messaging when internet-dependent MFA is unavailable (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T146 | US13.2 | Build | Implement front-end and back-end logic for: Clear messaging when internet-dependent MFA is unavailable
+T147 | US13.2 | Test | Write and execute acceptance tests against the criteria for: Clear messaging when internet-dependent MFA is unavailable
+T148 | US13.3 | Design | Design UI/UX for: Local access continues without internet (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T149 | US13.3 | Build | Implement front-end and back-end logic for: Local access continues without internet
+T150 | US13.3 | Test | Write and execute acceptance tests against the criteria for: Local access continues without internet
+T151 | US13.4 | Design | Design UI/UX for: Physical local-recovery fallback (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T152 | US13.4 | Build | Implement front-end and back-end logic for: Physical local-recovery fallback
+T153 | US13.4 | Test | Write and execute acceptance tests against the criteria for: Physical local-recovery fallback
+T154 | US14.1 | Design | Design UI/UX for: Local-first setup, no account required (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T155 | US14.1 | Build | Implement front-end and back-end logic for: Local-first setup, no account required
+T156 | US14.1 | Test | Write and execute acceptance tests against the criteria for: Local-first setup, no account required
+T157 | US14.2 | Design | Design UI/UX for: Unique per-unit default credentials (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T158 | US14.2 | Build | Implement front-end and back-end logic for: Unique per-unit default credentials
+T159 | US14.2 | Test | Write and execute acceptance tests against the criteria for: Unique per-unit default credentials
+T160 | US14.3 | Design | Design UI/UX for: Optional cloud account creation (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T161 | US14.3 | Build | Implement front-end and back-end logic for: Optional cloud account creation
+T162 | US14.3 | Test | Write and execute acceptance tests against the criteria for: Optional cloud account creation
+T163 | US14.4 | Design | Design UI/UX for: Preserve local configuration when linking an account (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T164 | US14.4 | Build | Implement front-end and back-end logic for: Preserve local configuration when linking an account
+T165 | US14.4 | Test | Write and execute acceptance tests against the criteria for: Preserve local configuration when linking an account
+T166 | US14.5 | Design | Design UI/UX for: Name each router (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T167 | US14.5 | Build | Implement front-end and back-end logic for: Name each router
+T168 | US14.5 | Test | Write and execute acceptance tests against the criteria for: Name each router
+T169 | US14.6 | Design | Design UI/UX for: Multi-router dashboard (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T170 | US14.6 | Build | Implement front-end and back-end logic for: Multi-router dashboard
+T171 | US14.6 | Test | Write and execute acceptance tests against the criteria for: Multi-router dashboard
+T172 | US15.1 | Design | Design UI/UX for: Custom OpenWrt build pipeline (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T173 | US15.1 | Build | Implement front-end and back-end logic for: Custom OpenWrt build pipeline
+T174 | US15.1 | Test | Write and execute acceptance tests against the criteria for: Custom OpenWrt build pipeline
+T175 | US15.2 | Design | Design UI/UX for: On-device daemon with unified local API (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T176 | US15.2 | Build | Implement front-end and back-end logic for: On-device daemon with unified local API
+T177 | US15.2 | Test | Write and execute acceptance tests against the criteria for: On-device daemon with unified local API
+T178 | US15.3 | Design | Design UI/UX for: Local daemon degrades gracefully without internet (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T179 | US15.3 | Build | Implement front-end and back-end logic for: Local daemon degrades gracefully without internet
+T180 | US15.3 | Test | Write and execute acceptance tests against the criteria for: Local daemon degrades gracefully without internet
+T181 | US16.1 | Design | Design UI/UX for: Integrate RAUC for A/B firmware updates (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T182 | US16.1 | Build | Implement front-end and back-end logic for: Integrate RAUC for A/B firmware updates
+T183 | US16.1 | Test | Write and execute acceptance tests against the criteria for: Integrate RAUC for A/B firmware updates
+T184 | US16.2 | Design | Design UI/UX for: Cloud OTA update server (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T185 | US16.2 | Build | Implement front-end and back-end logic for: Cloud OTA update server
+T186 | US16.2 | Test | Write and execute acceptance tests against the criteria for: Cloud OTA update server
+T187 | US16.3 | Design | Design UI/UX for: Staged/canary rollout control (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T188 | US16.3 | Build | Implement front-end and back-end logic for: Staged/canary rollout control
+T189 | US16.3 | Test | Write and execute acceptance tests against the criteria for: Staged/canary rollout control
+T190 | US17.1 | Design | Design UI/UX for: Evaluate Headscale vs. custom WireGuard orchestration (spike) (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T191 | US17.1 | Build | Implement front-end and back-end logic for: Evaluate Headscale vs. custom WireGuard orchestration (spike)
+T192 | US17.1 | Test | Write and execute acceptance tests against the criteria for: Evaluate Headscale vs. custom WireGuard orchestration (spike)
+T193 | US17.2 | Design | Design UI/UX for: Outbound-only WireGuard tunnel client (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T194 | US17.2 | Build | Implement front-end and back-end logic for: Outbound-only WireGuard tunnel client
+T195 | US17.2 | Test | Write and execute acceptance tests against the criteria for: Outbound-only WireGuard tunnel client
+T196 | US17.3 | Design | Design UI/UX for: ACL-based access scope enforcement (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T197 | US17.3 | Build | Implement front-end and back-end logic for: ACL-based access scope enforcement
+T198 | US17.3 | Test | Write and execute acceptance tests against the criteria for: ACL-based access scope enforcement
+T199 | US18.1 | Design | Design UI/UX for: Mobile app framework setup (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T200 | US18.1 | Build | Implement front-end and back-end logic for: Mobile app framework setup
+T201 | US18.1 | Test | Write and execute acceptance tests against the criteria for: Mobile app framework setup
+T202 | US18.2 | Design | Design UI/UX for: Web dashboard framework setup (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T203 | US18.2 | Build | Implement front-end and back-end logic for: Web dashboard framework setup
+T204 | US18.2 | Test | Write and execute acceptance tests against the criteria for: Web dashboard framework setup
+T205 | US18.3 | Design | Design UI/UX for: Unified API client layer (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T206 | US18.3 | Build | Implement front-end and back-end logic for: Unified API client layer
+T207 | US18.3 | Test | Write and execute acceptance tests against the criteria for: Unified API client layer
+T208 | US18.4 | Design | Design UI/UX for: Exclude LuCI from the consumer product (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T209 | US18.4 | Build | Implement front-end and back-end logic for: Exclude LuCI from the consumer product
+T210 | US18.4 | Test | Write and execute acceptance tests against the criteria for: Exclude LuCI from the consumer product
+T211 | US19.1 | Design | Design UI/UX for: Hardware platform selection spike (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T212 | US19.1 | Build | Implement front-end and back-end logic for: Hardware platform selection spike
+T213 | US19.1 | Test | Write and execute acceptance tests against the criteria for: Hardware platform selection spike
+T214 | US19.2 | Design | Design UI/UX for: Factory per-unit credential provisioning (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T215 | US19.2 | Build | Implement front-end and back-end logic for: Factory per-unit credential provisioning
+T216 | US19.2 | Test | Write and execute acceptance tests against the criteria for: Factory per-unit credential provisioning
+T217 | US19.3 | Design | Design UI/UX for: Physical recovery button specification (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T218 | US19.3 | Build | Implement front-end and back-end logic for: Physical recovery button specification
+T219 | US19.3 | Test | Write and execute acceptance tests against the criteria for: Physical recovery button specification
+T220 | US19.4 | Design | Design UI/UX for: Regulatory certification (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T221 | US19.4 | Build | Implement front-end and back-end logic for: Regulatory certification
+T222 | US19.4 | Test | Write and execute acceptance tests against the criteria for: Regulatory certification
+T223 | US19.5 | Design | Design UI/UX for: Pilot production run & design validation (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T224 | US19.5 | Build | Implement front-end and back-end logic for: Pilot production run & design validation
+T225 | US19.5 | Test | Write and execute acceptance tests against the criteria for: Pilot production run & design validation
+T226 | US20.1 | Design | Design UI/UX for: External security audit / penetration test (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T227 | US20.1 | Build | Implement front-end and back-end logic for: External security audit / penetration test
+T228 | US20.1 | Test | Write and execute acceptance tests against the criteria for: External security audit / penetration test
+T229 | US20.2 | Design | Design UI/UX for: Privacy compliance & child-data minimization (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T230 | US20.2 | Build | Implement front-end and back-end logic for: Privacy compliance & child-data minimization
+T231 | US20.2 | Test | Write and execute acceptance tests against the criteria for: Privacy compliance & child-data minimization
+T232 | US20.3 | Design | Design UI/UX for: Vulnerability disclosure & patch SLA (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T233 | US20.3 | Build | Implement front-end and back-end logic for: Vulnerability disclosure & patch SLA
+T234 | US20.3 | Test | Write and execute acceptance tests against the criteria for: Vulnerability disclosure & patch SLA
+T235 | US21.1 | Design | Design UI/UX for: In-app troubleshooting self-help (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T236 | US21.1 | Build | Implement front-end and back-end logic for: In-app troubleshooting self-help
+T237 | US21.1 | Test | Write and execute acceptance tests against the criteria for: In-app troubleshooting self-help
+T238 | US21.2 | Design | Design UI/UX for: Consent-based remote diagnostics for support (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T239 | US21.2 | Build | Implement front-end and back-end logic for: Consent-based remote diagnostics for support
+T240 | US21.2 | Test | Write and execute acceptance tests against the criteria for: Consent-based remote diagnostics for support
+T241 | US21.3 | Design | Design UI/UX for: Diagnostic report export (wireframe + high-fidelity, Basic and Advanced view if applicable)
+T242 | US21.3 | Build | Implement front-end and back-end logic for: Diagnostic report export
+T243 | US21.3 | Test | Write and execute acceptance tests against the criteria for: Diagnostic report export
+
+=== SHEET: Non-Functional Requirements ===
+Category | Requirement
+Usability | Common actions (pause internet, block device, check status) completable in under 30 seconds by a non-technical user.
+Usability | No default-view screen uses networking jargon (e.g., SSID, WPA, DHCP) without a plain-language label.
+Accessibility | App and web dashboard meet WCAG 2.1 AA contrast and screen-reader support.
+Accessibility | Dark mode and high-contrast mode available in settings.
+Performance | Dashboard loads and shows current security status within 2 seconds on a standard home connection.
+Performance | Device list supports 30+ devices without noticeable lag.
+Security | All admin credentials and MFA secrets stored encrypted at rest.
+Security | All app-to-router and app-to-cloud traffic encrypted in transit (TLS 1.2+).
+Security | Default admin password is unique per unit, not a shared factory default.
+Compatibility | Native apps for iOS and Android; responsive web dashboard for desktop management.
+Compatibility | MFA authenticator support is standards-based (TOTP), not locked to one provider.
+Reliability | Core local functions (Wi-Fi, device pause, block page) continue to work if cloud connectivity is temporarily lost.
+Localization | UI text externalized for translation; supports at least the primary target market language at launch.
+Onboarding | First-run setup enforces password change and offers MFA setup before granting full dashboard access.
+Security | Remote access sessions (mobile, web) always require MFA re-authentication, even if the local network does not.
+Security | Remote management traffic is end-to-end encrypted via the VPN tunnel; no remote feature relies on an open inbound port on the router.
+Security | Remote sessions expire after a defined inactivity period and are individually revocable by the admin.
+Reliability | At least one enrolled MFA method (authenticator app or backup codes) must always be verifiable locally by the router without any internet connection — the user is never fully dependent on WAN connectivity to log in.
+Reliability | Local (LAN-based) router management continues to function fully during a WAN/internet outage; only genuinely cloud-dependent features degrade, and they do so visibly rather than silently.
+Security | Local admin identity (device credentials, TOTP, backup codes) and cloud account identity are architecturally independent — loss of one never locks the user out of the other.
+Usability | No user flow requires a factory reset as a side effect of an unrelated action (e.g., creating a cloud account); resets are always a separate, explicit, confirmed action.
+Architecture | The on-device daemon is the sole interface between OpenWrt internals (ubus/UCI) and any client application; no frontend code accesses OpenWrt internals directly.
+Architecture | All router-initiated cloud/relay connections are outbound-only; the router never accepts inbound connections from the public internet.
+Architecture | Firmware updates are delivered as signed, atomic, rollback-capable bundles (RAUC A/B) regardless of who or what triggers them, so this mechanism does not need to change when centralized/ISP management is added later.
+

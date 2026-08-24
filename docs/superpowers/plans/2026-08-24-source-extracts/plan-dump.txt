@@ -1,0 +1,126 @@
+? | PROJECT PLAN
+? | Secure Home Router for Non-Technical Users
+? | A consumer router that acts as a home security appliance — plain-language security, network-level parental controls, and one-tap management.
+? | Version 1.0  ·  20 July 2026  ·  Status: Draft for stakeholder approval
+Heading 1 | Contents
+Heading 1 | 1. Executive Summary
+? | This project delivers a commercial home router that behaves as a security appliance for non-technical households. Industry research shows the core market gap clearly: roughly 8 in 10 users never change their router's default admin password and never update its firmware — yet nearly 8 in 10 know how to access router settings. The barrier is not ability but motivation and clarity: 73% of users do not know why they would need to change anything. No mainstream router product has solved this; competitors simplified setup but not security itself.
+? | Our product answers that gap with three pillars: (1) secure by default — unique per-unit credentials, forced password change, automatic signed firmware updates; (2) plain-language security — a single dashboard status a non-expert understands, with one-tap fixes; (3) network-level parental controls that children cannot bypass by deleting an app, which is the primary weakness of today's app-based controls.
+? | The product is built on OpenWrt (custom firmware image), with a purpose-built on-device daemon and API, cross-platform mobile/web apps, RAUC A/B signed updates, and — in a post-launch release — outbound-only WireGuard remote access. The plan below phases delivery into an MVP launch followed by two feature releases, with hardware and security assurance running as parallel, launch-gating workstreams.
+Heading 1 | 2. Project Goal & Objectives
+? | Goal: launch a sellable router device that makes a home network measurably safer for a non-technical family, manageable in under 30 seconds per task, with zero networking knowledge required.
+Heading 2 | Objectives
+List Paragraph | O1 — Secure by default: A customer who does nothing beyond guided setup ends with changed credentials, encrypted Wi-Fi, and automatic updates enabled.
+List Paragraph | O2 — Legible security: The dashboard communicates network safety in plain language (green/yellow/red + one-line reason) with one-tap remediation.
+List Paragraph | O3 — Unbypassable family controls: Parental profiles (content categories, time limits, bedtime, instant pause) enforced at the network level.
+List Paragraph | O4 — Resilience: Full local management and offline-capable MFA (TOTP/backup codes) with the internet down; the user is never locked out of their own hardware.
+List Paragraph | O5 — Commercial readiness: Certified hardware, externally audited software, factory provisioning of unique credentials, and a staged OTA pipeline able to patch the entire fleet within days.
+List Paragraph | O6 — Future-proofing: Architecture leaves the door open for ISP centralized management (TR-069/TR-369 class) without rework — explicitly out of scope to build now.
+Heading 1 | 3. Scope
+Heading 2 | In scope — MVP (launch release)
+List Paragraph | Custom OpenWrt firmware, on-device daemon and unified local API; LuCI excluded from the consumer product.
+List Paragraph | Local-first guided onboarding: unique per-unit default credentials, forced credential change, router naming, MFA enrollment (SMS/push default; TOTP + backup codes verified locally for offline use).
+List Paragraph | Security dashboard with plain-language status and one-tap fixes; device list with friendly names, pause/block, new-device alerts.
+List Paragraph | Website & content-category blocking with a friendly block page (no self-serve unblock; HTTPS handling designed explicitly); parental profiles with content filters, time limits, bedtime schedules, instant pause.
+List Paragraph | Offline resilience: full LAN management without internet; physical recovery mechanism; automatic signed A/B firmware updates (RAUC) with staged/canary rollout from a cloud OTA service.
+List Paragraph | Optional cloud account (local config always preserved when linking); in-app self-help troubleshooting.
+List Paragraph | Hardware workstream: SoC selection, factory credential provisioning, recovery-button spec, regulatory certification, pilot production.
+List Paragraph | Security assurance: external penetration test (launch-blocking), child-data privacy compliance, vulnerability disclosure policy and patch SLA.
+Heading 2 | In scope — post-launch releases
+List Paragraph | v1.1: Remote access (outbound-only WireGuard via relay; management-only scope by default), remote visibility + control, session alerts/revocation, ad blocking, guest network, multi-router accounts, weekly usage reports, per-app blocking (scope set by feasibility spike), support remote diagnostics.
+List Paragraph | v1.2: Advanced Mode: technical device details, VLAN/IoT isolation, custom block lists, full-LAN remote access, port forwarding/DNS/static IP, manual update approval, custom ad-block lists, detailed security logs.
+Heading 2 | Explicitly out of scope
+List Paragraph | ISP centralized management (TR-069/TR-369, ACS integration, ISP dashboards) — future project; architecture keeps compatibility but nothing is built.
+List Paragraph | Traffic-protection consumer VPN (routing household traffic through commercial VPN exit servers) — the product's VPN is a remote-access channel, not a privacy tunnel.
+List Paragraph | Mesh/multi-node Wi-Fi systems in v1 hardware.
+Heading 1 | 4. Key Deliverables
+--- TABLE ---
+Deliverable | Description | Phase
+Custom firmware image | OpenWrt-based, minimal package set, daemon + local API, RAUC A/B update capable | Ph 0–2
+Mobile app (iOS/Android) | Single cross-platform codebase; onboarding, dashboard, devices, parental controls | Ph 1–2
+Web dashboard | React; served locally (LAN) and cloud (later, for remote) | Ph 1–2
+Cloud services | Identity/MFA, router registry, OTA server with staged rollout, push notifications | Ph 1–2
+Certified hardware | Selected SoC platform, pilot-validated, regulatory-certified, factory-provisioned | Ph 0–3
+Security audit report | External pen-test with all critical/high findings closed | Ph 3
+Launch pack | Privacy policy, disclosure policy, support flows, diagnostic tooling | Ph 3
+v1.1 remote access | Relay infrastructure + remote app/web experience | Post-launch
+Heading 1 | 5. Phased Timeline & Milestones
+? | Assumes ~2-week sprints; counts are planning estimates to re-baseline after Sprint 2 measured velocity. The hardware track runs in parallel throughout and is the likely critical path — certification and production lead times, not software, are expected to set the launch date.
+--- TABLE ---
+Phase | Sprints | Focus & exit criteria
+Phase 0 — De-risk & foundations | 1–2 | Hardware platform spike (gating); app-blocking feasibility spike; OpenWrt build pipeline; app/web scaffolding; privacy data inventory started. Exit: hardware chosen + dev boards ordered; CI builds a flashable image.
+Phase 1 — Core product loop | 3–8 | Daemon + API; local-first onboarding; MFA incl. offline; dashboard; device management; RAUC integrated. Exit: a dev-board router is unboxed, secured, and managed end-to-end with no internet.
+Phase 2 — Family & safety | 9–12 | Site/category blocking + block page (incl. HTTPS); parental profiles/time limits; offline access verified incl. recovery button; auto-updates + OTA server + staged rollout; self-help. Hardware pilot run lands here. Exit: feature-complete MVP on pilot hardware.
+Phase 3 — Harden & launch | 13–15 | No new features. External pen-test; privacy/counsel sign-off; disclosure policy; certification completes; fix & polish. Exit: zero open critical/high findings; certification granted. → MVP LAUNCH
+v1.1 — Remote & convenience | ~16–21 | Relay spike then tunnel + ACL scoping; remote access; ad block; guest; multi-router; reports; per-app blocking per spike. Focused security re-review before release.
+v1.2 — Advanced Mode | Later | Power-user features behind the Advanced toggle; sequence by post-launch demand.
+Heading 2 | Milestones
+--- TABLE ---
+ID | Milestone | Target
+M1 | Hardware platform selected; dev boards ordered | End Sprint 2
+M2 | App-blocking feasibility report accepted; product messaging locked | End Sprint 2
+M3 | End-to-end secure setup demo on dev board (no internet) | End Sprint 8
+M4 | Feature-complete MVP on pilot hardware; canary OTA cohort live | End Sprint 12
+M5 | External audit passed (no critical/high open); certification granted | End Sprint 15
+M6 | MVP commercial launch | Post Sprint 15
+M7 | v1.1 remote access release (after focused security re-review) | ~Sprint 21
+Heading 1 | 6. Team & Responsibilities
+? | Indicative core team (~8–10 FTE) plus external partners. One person may cover multiple roles early; the firmware and security roles should not be diluted.
+--- TABLE ---
+Role | Responsibility
+Product Manager / Owner | Backlog ownership, release scoping, subscription decision, stakeholder communication
+Firmware / Embedded Lead (+1 eng) | OpenWrt build, on-device daemon & API, RAUC, hardware bring-up
+Backend Engineer (×2) | Cloud identity/MFA, OTA server, push, (v1.1) relay infrastructure
+Mobile Engineer (×2) | Cross-platform app; shared API client with web
+Frontend Engineer | Web dashboard; shared components
+UX/UI Designer | Non-technical-first design system, onboarding flows, block page, usability testing
+QA Engineer | Acceptance testing vs. story criteria; offline/failure-mode testing; OTA rollback drills
+Hardware Program Manager (part-time/contract) | SoC selection, factory & provisioning process, certification, pilot run
+External security firm | Phase 3 penetration test; v1.1 focused re-review
+Legal/privacy counsel (external) | Child-data compliance, privacy policy, disclosure policy
+Heading 1 | 7. Risk Register (Top Risks)
+--- TABLE ---
+Risk | Likelihood | Impact | Mitigation
+Hardware is the critical path: certification/production lead times slip launch | High | High | Start E19 in Sprint 1; engage cert lab early; pre-scan before design freeze; second-source SoC identified at selection
+Per-app blocking proves unreliable (CDNs, cert pinning, encrypted SNI) | High | Medium | Feasibility spike (US5.5) before any commitment; marketing messages only spike-verified capability; site/category blocking is the promised feature
+Security vulnerability post-launch damages the core brand promise | Medium | Critical | External audit launch-blocking; disclosure policy + patch SLA; staged OTA enables fleet-wide fix in days; audit repeated per major release
+MVP scope creep re-inflates launch | High | High | Release column is contractual: v1.1/v1.2 items need explicit PO + review-board approval to move up; Phase 3 accepts no new features
+Ongoing cloud/relay/filter-DB costs exceed hardware-only revenue | Medium | High | Subscription-vs-hardware-only decision forced in Phase 0; architecture costs modeled before v1.1 relay build
+Child-data privacy non-compliance in target markets | Medium | High | Data inventory in Phase 0; on-router storage by default; counsel review is a launch gate
+Chipset vendor bootloader locking blocks OpenWrt | Medium | High | OpenWrt mainline support + unlocked bootloader are hard selection criteria in the hardware spike
+Small team velocity below plan | Medium | Medium | Re-baseline after Sprint 2; MoSCoW within each release allows dropping Should/Could without moving launch
+Heading 1 | 8. Dependencies, Assumptions & Constraints
+Heading 2 | External dependencies
+List Paragraph | OpenWrt project (upstream security patches; mainline support for chosen SoC).
+List Paragraph | Content-filtering category database (license or build/maintain — cost feeds the subscription decision).
+List Paragraph | SMS/push/email delivery providers for online MFA; app-store review processes (Apple/Google).
+List Paragraph | Regulatory certification bodies and factory/ODM partner schedules.
+Heading 2 | Key assumptions
+List Paragraph | 2-week sprints, team as in Section 6; story points re-estimated by the team before commitment (current totals: MVP 287 pts, v1.1 98 pts, v1.2 69 pts, incl. hardware & audit workstreams).
+List Paragraph | Single launch market at MVP; localization architecture in place but one language shipped.
+List Paragraph | Cloud account is optional at MVP; every MVP feature must work without it.
+Heading 2 | Constraints
+List Paragraph | No inbound ports ever opened on the router; all cloud/relay connectivity is outbound-initiated.
+List Paragraph | Local admin identity and cloud identity remain independent — losing one never locks out the other.
+List Paragraph | Nothing in this project may foreclose the future ISP-management integration (see the separate future-consideration document).
+Heading 1 | 9. Governance, Ceremonies & Reporting
+List Paragraph | Cadence: 2-week sprints: planning, daily stand-up, review/demo, retrospective. Backlog refinement weekly.
+List Paragraph | Phase gates: Each phase's exit criteria (Section 5) are reviewed by PO + tech lead + (Phases 2–3) hardware PM; a phase does not close with open exit criteria.
+List Paragraph | Change control: Moving a story between releases, or any new Must, requires PO approval and an impact note against the launch date. Phase 3 is feature-frozen.
+List Paragraph | Reporting: Weekly one-page status to stakeholders: burn-up vs. release scope, hardware track status, top risks delta, decisions needed.
+List Paragraph | Definition of Done: Code reviewed; acceptance criteria pass; QA verified incl. offline behavior where applicable; no jargon in Basic-mode UI copy; documentation updated.
+Heading 1 | 10. Success Criteria
+List Paragraph | A first-time, non-technical user completes secure setup unaided in under 5 minutes (usability-tested pre-launch).
+List Paragraph | Common actions (pause a device, block a site, check status) completed in under 30 seconds in usability tests.
+List Paragraph | 100% of shipped units leave the factory with unique credentials; 0 units operable on defaults after setup.
+List Paragraph | External audit closed with zero critical/high findings at launch; any post-launch critical patched fleet-wide within the published SLA.
+List Paragraph | OTA success rate ≥ 99% with automatic rollback covering failures; no fleet-wide bricking event.
+List Paragraph | Post-launch: parental-control activation rate among family households materially above the ~35–51% industry adoption benchmark — the metric that proves the core thesis.
+Heading 1 | 11. Open Decisions (Owner: Product)
+--- TABLE ---
+Decision | Deadline | Why it matters
+Business model: hardware-only vs. hardware + subscription | Phase 0 | Caps cloud architecture cost ceiling (relay, filter DB, push, lifetime patching); shapes marketing promises
+Launch market(s) | Phase 0 | Drives certification scope (US19.4), privacy jurisdiction (US20.2), and language
+Recovery button semantics: credentials-reset vs. factory-reset | Before US19.3 spec freeze | Hardware/firmware behavior must be frozen before pilot tooling
+Relay build vs. Headscale adoption | v1.1 spike (US17.1) | Speed-to-market vs. control/lock-in for remote access
+? | Companion artifacts: router-security-app-backlog.xlsx (full backlog: 21 epics, 81 stories, 243 tasks, 24 NFRs, release plan) · home-network-security-research.md (market evidence) · router-architecture-recommendation.md (technical stack) · future-consideration-isp-centralized-management.md (deferred scope).
