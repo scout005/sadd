@@ -107,6 +107,60 @@
 
   .page-crumb{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:var(--muted);cursor:pointer;margin-bottom:18px;font-family:'Nunito',sans-serif;}
 
+  /* --- Global search (shell) ---
+     Naming convention for Task 7: everything mobile-search-scoped uses the
+     `.mobile-search-*` prefix, mirroring the desktop file's unprefixed
+     `.search-*` classes 1:1 (trigger has no desktop equivalent — desktop's
+     search input lives permanently in the topbar):
+       .mobile-search-trigger      -> desktop has no equivalent (pill button that opens the overlay)
+       .mobile-search-overlay      -> desktop .search-results-panel's container equivalent (full-screen here instead of a dropdown)
+       .mobile-search-header       -> desktop .app-topbar-search (input + icon), plus a Cancel button
+       .mobile-search-results      -> scrollable results list area (desktop equivalent is .search-results-panel's content)
+       .mobile-search-group-label  -> desktop .search-group-label
+       .mobile-search-result-row   -> desktop .search-result-row
+       .mobile-search-result-icon  -> desktop .search-result-icon
+       .mobile-search-result-main  -> desktop .search-result-main (strong/span/mark children keep the same tags)
+       .mobile-search-result-chip  -> desktop .search-result-chip
+       .mobile-search-empty        -> desktop .search-empty
+     Task 7 should render result rows as:
+       <div class="mobile-search-result-row" data-idx="N">
+         <div class="mobile-search-result-icon">...</div>
+         <div class="mobile-search-result-main"><strong>...</strong><span>...</span></div>
+         <div class="mobile-search-result-chip">...</div>
+       </div>
+     grouped under <div class="mobile-search-group-label">LABEL</div>, with
+     <mark> used inside .mobile-search-result-main for the matched substring
+     (styling for <mark> is already defined below), and a
+     <div class="mobile-search-empty">…</div> for the no-results state. */
+  .mobile-search-trigger{flex-shrink:0;display:flex;align-items:center;gap:8px;margin:8px 22px 4px;padding:9px 14px;border:1.5px solid var(--border);border-radius:999px;background:#fff;color:var(--muted-2);font-size:13px;font-family:'Nunito',sans-serif;cursor:pointer;}
+  .mobile-search-trigger svg{flex-shrink:0;color:var(--muted-2);}
+  .mobile-search-trigger span{font-weight:600;}
+  .mobile-search-trigger:active{border-color:var(--teal);background:var(--teal-tint);}
+
+  /* Overlay covers everything below the statusbar (trigger row, scroll
+     content, bottom nav) but deliberately leaves the notch + statusbar
+     visible — on a real phone the status bar (clock/battery/signal) always
+     stays on screen, even when an app shows a full-screen search UI, so
+     covering it would look wrong. phone-inner is position:relative and the
+     statusbar is 46px tall, hence top:46px here. */
+  .mobile-search-overlay{position:absolute;top:46px;left:0;right:0;bottom:0;background:var(--bg);z-index:50;display:flex;flex-direction:column;}
+  .mobile-search-header{flex-shrink:0;display:flex;align-items:center;gap:10px;padding:10px 16px;background:#fff;border-bottom:1.5px solid var(--border);}
+  .mobile-search-header input{flex:1;height:38px;border-radius:999px;border:1.5px solid var(--border);background:var(--bg);padding:0 14px;font-family:'Nunito',sans-serif;font-size:13.5px;color:var(--text);min-width:0;}
+  .mobile-search-header input:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px var(--teal-light);background:#fff;}
+  .mobile-search-header button{flex-shrink:0;border:none;background:none;color:var(--teal-dark);font-weight:700;font-size:13.5px;font-family:'Nunito',sans-serif;cursor:pointer;padding:6px 2px;}
+  .mobile-search-results{flex:1;overflow-y:auto;padding:6px 0 20px;}
+  .mobile-search-group-label{font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted-2);padding:12px 20px 6px;font-family:'Nunito',sans-serif;}
+  .mobile-search-result-row{display:flex;align-items:center;gap:12px;padding:11px 20px;background:#fff;border-top:1px solid var(--bg);cursor:pointer;}
+  .mobile-search-group-label + .mobile-search-result-row{border-top:none;}
+  .mobile-search-result-row.active,.mobile-search-result-row:hover{background:var(--teal-tint);}
+  .mobile-search-result-icon{width:34px;height:34px;border-radius:10px;background:var(--teal-tint);color:var(--teal-dark);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:14px;}
+  .mobile-search-result-main{flex:1;min-width:0;}
+  .mobile-search-result-main strong{display:block;font-size:13.5px;}
+  .mobile-search-result-main span{display:block;font-size:11.5px;color:var(--muted);font-family:'Nunito',sans-serif;margin-top:1px;}
+  .mobile-search-result-main mark{background:var(--teal-light);color:var(--teal-dark);border-radius:3px;padding:0 2px;font-weight:700;}
+  .mobile-search-result-chip{margin-left:auto;font-size:9.5px;font-weight:700;color:var(--teal-dark);background:var(--teal-tint);border-radius:999px;padding:3px 8px;flex-shrink:0;white-space:nowrap;}
+  .mobile-search-empty{padding:30px 20px;text-align:center;color:var(--muted-2);font-size:12.5px;font-family:'Nunito',sans-serif;}
+
 </style>
 </head>
 <body>
@@ -115,7 +169,18 @@
   <div class="phone-inner">
     <div class="notch"></div>
     <div class="statusbar"><span>9:41</span><span>●●●●&nbsp;&nbsp;📶&nbsp;&nbsp;🔋</span></div>
+    <div class="mobile-search-trigger" id="mobileSearchTrigger">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      <span>Search</span>
+    </div>
     <div class="p-scroll" id="pScroll"><div class="p-content" id="screenContent"></div></div>
+    <div class="mobile-search-overlay" id="mobileSearchOverlay" style="display:none;">
+      <div class="mobile-search-header">
+        <input type="text" id="mobileSearchInput" placeholder="Search devices, settings…" autocomplete="off">
+        <button id="mobileSearchClose">Cancel</button>
+      </div>
+      <div class="mobile-search-results" id="mobileSearchResults"></div>
+    </div>
     <div class="bottomnav" id="bottomNav" style="display:none;">
       <div class="bn-item" data-tab="devices" data-goto="devices">
         <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M11 18h2"/></svg>
@@ -410,6 +475,27 @@
   });
 
   render();
+
+  // --- Global search shell: open/close chrome only (no filtering/index yet — see Task 7) ---
+  const mobileSearchTrigger = document.getElementById('mobileSearchTrigger');
+  const mobileSearchOverlay = document.getElementById('mobileSearchOverlay');
+  const mobileSearchInput = document.getElementById('mobileSearchInput');
+  const mobileSearchClose = document.getElementById('mobileSearchClose');
+
+  function openMobileSearch(){
+    mobileSearchOverlay.style.display = 'flex';
+    mobileSearchInput.focus();
+  }
+  function closeMobileSearch(){
+    mobileSearchOverlay.style.display = 'none';
+  }
+  mobileSearchTrigger.addEventListener('click', openMobileSearch);
+  mobileSearchClose.addEventListener('click', closeMobileSearch);
+  document.addEventListener('keydown', (e)=>{
+    if(e.key === 'Escape' && mobileSearchOverlay.style.display !== 'none'){
+      closeMobileSearch();
+    }
+  });
 
 </script>
 </body>
