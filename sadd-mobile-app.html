@@ -161,6 +161,11 @@
   .mobile-search-result-chip{margin-left:auto;font-size:9.5px;font-weight:700;color:var(--teal-dark);background:var(--teal-tint);border-radius:999px;padding:3px 8px;flex-shrink:0;white-space:nowrap;}
   .mobile-search-empty{padding:30px 20px;text-align:center;color:var(--muted-2);font-size:12.5px;font-family:'Nunito',sans-serif;}
 
+  /* pulse applied to the on-screen row/element a search result navigates to, so the
+     user's eye finds it after the overlay closes and goTo() re-renders the screen */
+  .search-highlight-pulse{animation:searchPulse 2s ease-out;}
+  @keyframes searchPulse{0%{box-shadow:0 0 0 3px var(--teal);}100%{box-shadow:0 0 0 0 transparent;}}
+
 </style>
 </head>
 <body>
@@ -422,7 +427,7 @@
 
   const mainScreens = ['devices','devicedetail','network','settings','about','notifications'];
 
-  const state = { screen: 'connect' };
+  const state = { screen: 'connect', searchResults: [], searchActiveIndex: -1 };
 
   function render(){
     document.getElementById('screenContent').innerHTML = screens[state.screen] || '';
@@ -443,6 +448,17 @@
   }
 
   document.body.addEventListener('click', (e)=>{
+
+    // search result row click — #mobileSearchResults is re-rendered via innerHTML on
+    // every keystroke (renderSearchResults), so rows are handled through this single
+    // delegated handler rather than a direct listener, which would go stale after the
+    // first re-render
+    const searchResultRow = e.target.closest('.mobile-search-result-row');
+    if(searchResultRow){
+      const idx = parseInt(searchResultRow.dataset.idx, 10);
+      activateSearchResult(state.searchResults[idx]);
+      return;
+    }
 
     const gotoEl = e.target.closest('[data-goto]');
     if(gotoEl){ goTo(gotoEl.dataset.goto); return; }
@@ -476,11 +492,144 @@
 
   render();
 
-  // --- Global search shell: open/close chrome only (no filtering/index yet — see Task 7) ---
+  // ---- Global search index (hand-authored; matchText verified verbatim against each
+  // screen's rendered HTML). Only 3 of the desktop's 7 types apply to this app's much
+  // smaller screen set: device (Devices list), network (Wi-Fi/guest config), setting
+  // (everything else — Settings, Notifications, About, and the onboarding flow).
+  // Onboarding screens deliberately NOT indexed: scanning, scanfound, btsearching,
+  // btfound and success are transient, low-static-text status screens (spinner/QR
+  // placeholder/confirmation) a user wouldn't search for after setup is done.
+  const searchIndex = [
+    {type:'device', label:'Unknown device', sub:'New · Quarantine · Devices', screen:'devices', matchText:'Unknown device', keywords:'unknown new quarantine unrecognized device'},
+    {type:'device', label:"Emma's iPhone", sub:'Online · Family · Devices', screen:'devices', matchText:"Emma's iPhone", keywords:'emma iphone phone family mobile'},
+    {type:'device', label:'Living Room TV', sub:'Online · Family · Devices', screen:'devices', matchText:'Living Room TV', keywords:'tv television smart living room'},
+    {type:'device', label:'Nest Thermostat', sub:'Online · IoT devices · Devices', screen:'devices', matchText:'Nest Thermostat', keywords:'nest thermostat temperature iot smart home'},
+
+    {type:'network', label:'Wi-Fi name', sub:'Smith Family · Network', screen:'network', matchText:'Wi-Fi name', keywords:'wifi ssid name smith family network'},
+    {type:'network', label:'Wi-Fi password', sub:'Network settings', screen:'network', matchText:'Wi-Fi password', keywords:'wifi password key passphrase network'},
+    {type:'network', label:'Guest network', sub:'Isolated Wi-Fi for visitors · Network', screen:'network', matchText:'Guest network', keywords:'guest network visitors isolated wifi'},
+
+    {type:'setting', label:'Admin password', sub:"Change your router's admin password · Settings", screen:'settings', matchText:'Admin password', keywords:'admin password change router login'},
+    {type:'setting', label:'Notifications', sub:'3 enabled · Settings', screen:'settings', matchText:'Notifications', keywords:'notifications alerts push settings'},
+    {type:'setting', label:'Help & About', sub:'App version 1.0.0 · Settings', screen:'settings', matchText:'Help & About', keywords:'help about version support settings'},
+    {type:'setting', label:'Forget this router', sub:'Settings', screen:'settings', matchText:'Forget this router', keywords:'forget remove reset router settings'},
+
+    {type:'setting', label:'New device joins', sub:'On · Notifications', screen:'notifications', matchText:'New device joins', keywords:'notification new device joins alert'},
+    {type:'setting', label:'Threats blocked', sub:'On · Notifications', screen:'notifications', matchText:'Threats blocked', keywords:'notification threats blocked security alert'},
+    {type:'setting', label:'Network goes offline', sub:'On · Notifications', screen:'notifications', matchText:'Network goes offline', keywords:'notification offline outage down alert'},
+
+    {type:'setting', label:'App version', sub:'1.0.0 · About', screen:'about', matchText:'App version', keywords:'app version about number'},
+    {type:'setting', label:'Where your Sadd router is made', sub:'Designed and assembled in the USA · About', screen:'about', matchText:'Where your Sadd router is made', keywords:'made usa manufactured assembled about'},
+    {type:'setting', label:'Our pricing promise', sub:'No core security feature behind a paywall · About', screen:'about', matchText:'Our pricing promise', keywords:'pricing promise paywall free about'},
+    {type:'setting', label:'Built on OpenWrt', sub:'Open-source router OS · About', screen:'about', matchText:'Built on OpenWrt', keywords:'openwrt open source firmware about'},
+
+    {type:'setting', label:'Scan Barcode', sub:'Connect your router', screen:'connect', matchText:'Scan Barcode', keywords:'scan barcode camera connect setup'},
+    {type:'setting', label:'Connect via Bluetooth', sub:'Connect your router', screen:'connect', matchText:'Connect via Bluetooth', keywords:'bluetooth pair connect setup'},
+    {type:'setting', label:"I'm new to this", sub:'Comfort level · Setup', screen:'comfortlevel', matchText:"I'm new to this", keywords:'beginner new comfort level onboarding setup'},
+    {type:'setting', label:'I know networking', sub:'Comfort level · Setup', screen:'comfortlevel', matchText:'I know networking', keywords:'expert experienced comfort level onboarding setup'},
+    {type:'setting', label:'Just one Wi-Fi box', sub:'Your setup · Setup', screen:'topology', matchText:'Just one Wi-Fi box', keywords:'one router single box topology setup'},
+    {type:'setting', label:'Several boxes or a mesh system', sub:'Your setup · Setup', screen:'topology', matchText:'Several boxes or a mesh system', keywords:'mesh multiple boxes topology setup'},
+    {type:'setting', label:'Name your router & set a password', sub:'Setup', screen:'admin', matchText:'Name your router & set a password', keywords:'admin password name router setup'},
+    {type:'setting', label:'Set up your Wi-Fi', sub:'Setup', screen:'wifi', matchText:'Set up your Wi-Fi', keywords:'wifi setup ssid password onboarding'},
+  ];
+
+  // ---- Global search: matching, grouping, rendering ----
+  // hoisted lookup tables for search rendering (created once, not per keystroke) —
+  // trimmed to only the types actually used in searchIndex above (device/network/setting)
+  const searchGroupLabels = {device:'Devices', network:'Networks', setting:'Settings'};
+  const searchChipFor = {device:'Open', network:'Open', setting:'Open'};
+  const searchIconFor = {device:'📱', network:'🌐', setting:'⚙️'};
+  // more specific/leaf-like selectors first, broad wrapper selectors last —
+  // matching walks this list in order and stops at the first hit, so a wrapper never
+  // wins over a more specific element nested inside it just because it comes first in
+  // DOM order. Built from this file's actual row/container classes: .li-main (device
+  // list rows), .sr-main (setting rows), .net-option (network choice rows),
+  // .method-card (onboarding choice cards), .field label (form field labels),
+  // .btn-danger-soft (destructive buttons), with .list-item/.setting-row/.field and
+  // h1.scr-title (onboarding headlines with no wrapping row) as broader fallbacks.
+  const highlightRowSelectors = ['.li-main','.sr-main','.net-option','.method-card','.field label','.btn-danger-soft','.btn-ghost','.list-item','.setting-row','.field','h1.scr-title'];
+
+  function searchMatch(query){
+    const q = query.trim().toLowerCase();
+    if(!q) return [];
+    const scored = [];
+    for(const item of searchIndex){
+      const hay = (item.label+' '+item.sub+' '+item.keywords).toLowerCase();
+      if(!hay.includes(q)) continue;
+      const score = item.label.toLowerCase().startsWith(q) ? 0 : item.label.toLowerCase().includes(q) ? 1 : 2;
+      scored.push({item, score});
+    }
+    scored.sort((a,b)=>a.score-b.score);
+    return scored.map(s=>s.item);
+  }
+
+  function groupResults(results){
+    const groups = {};
+    for(const r of results){
+      if(!groups[r.type]) groups[r.type] = [];
+      if(groups[r.type].length < 4) groups[r.type].push(r);
+    }
+    return Object.keys(groups).map(type=>({label:searchGroupLabels[type]||type, items:groups[type]}));
+  }
+
+  function highlightText(text, query){
+    const i = text.toLowerCase().indexOf(query.toLowerCase());
+    if(i === -1) return text;
+    return text.slice(0,i) + '<mark>' + text.slice(i,i+query.length) + '</mark>' + text.slice(i+query.length);
+  }
+
+  function escapeHtml(text){
+    return text.replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  }
+
+  function renderSearchResults(query){
+    const panel = document.getElementById('mobileSearchResults');
+    const results = searchMatch(query);
+    state.searchResults = results;
+    state.searchActiveIndex = -1;
+    if(!results.length){
+      panel.innerHTML = query.trim() ? '<div class="mobile-search-empty">No matches for "'+escapeHtml(query)+'"</div>' : '';
+      return;
+    }
+    const groups = groupResults(results);
+    let html = '';
+    for(const g of groups){
+      html += '<div class="mobile-search-group-label">'+g.label+'</div>';
+      for(const item of g.items){
+        // data-idx must reference the item's real position in the flat, score-sorted
+        // `results` array (what click activation indexes into) — NOT a counter over
+        // this regrouped/capped-at-4 structure, which is a different ordering.
+        const realIdx = results.indexOf(item);
+        html += '<div class="mobile-search-result-row" data-idx="'+realIdx+'"><div class="mobile-search-result-icon">'+searchIconFor[item.type]+'</div><div class="mobile-search-result-main"><strong>'+highlightText(item.label, query)+'</strong><span>'+highlightText(item.sub, query)+'</span></div><div class="mobile-search-result-chip">'+searchChipFor[item.type]+'</div></div>';
+      }
+    }
+    panel.innerHTML = html;
+  }
+
+  function activateSearchResult(item){
+    closeMobileSearch();
+    goTo(item.screen);
+    setTimeout(()=>highlightAndScroll(item.matchText), 80);
+  }
+
+  function highlightAndScroll(matchText){
+    let target = null;
+    for(const sel of highlightRowSelectors){
+      target = Array.from(document.querySelectorAll(sel)).find(el => el.textContent.includes(matchText));
+      if(target) break;
+    }
+    if(!target) return;
+    target.scrollIntoView({behavior:'smooth', block:'center'});
+    target.classList.add('search-highlight-pulse');
+    setTimeout(()=>target.classList.remove('search-highlight-pulse'), 2000);
+  }
+
+  // --- Global search shell: open/close chrome + input wiring ---
   const mobileSearchTrigger = document.getElementById('mobileSearchTrigger');
   const mobileSearchOverlay = document.getElementById('mobileSearchOverlay');
   const mobileSearchInput = document.getElementById('mobileSearchInput');
   const mobileSearchClose = document.getElementById('mobileSearchClose');
+  const mobileSearchResultsPanel = document.getElementById('mobileSearchResults');
 
   function openMobileSearch(){
     mobileSearchOverlay.style.display = 'flex';
@@ -488,6 +637,10 @@
   }
   function closeMobileSearch(){
     mobileSearchOverlay.style.display = 'none';
+    mobileSearchInput.value = '';
+    mobileSearchResultsPanel.innerHTML = '';
+    state.searchResults = [];
+    state.searchActiveIndex = -1;
   }
   mobileSearchTrigger.addEventListener('click', openMobileSearch);
   mobileSearchClose.addEventListener('click', closeMobileSearch);
@@ -495,6 +648,17 @@
     if(e.key === 'Escape' && mobileSearchOverlay.style.display !== 'none'){
       closeMobileSearch();
     }
+  });
+
+  // #mobileSearchInput is static shell markup from Task 6 — it's never replaced via
+  // innerHTML (only #mobileSearchResults is, per keystroke), so a direct listener here
+  // is safe and simpler than routing through the delegated body handler. Keyboard
+  // up/down/enter nav is intentionally skipped: this is a touch-first mobile search UI
+  // with no physical/virtual keyboard arrow affordance, so tap-to-select on
+  // .mobile-search-result-row (wired via the delegated click handler above) is the
+  // primary interaction pattern. Escape-to-close (above) still applies.
+  mobileSearchInput.addEventListener('input', (e)=>{
+    renderSearchResults(e.target.value);
   });
 
 </script>
