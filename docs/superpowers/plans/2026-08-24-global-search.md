@@ -19,7 +19,7 @@
 
 The design's whole motivating example ("user suspects a port is blocked, search finds the record") needs real log text to match against. `advlogs.html` already has a "Recent activity" `.tech-row` list; `connectionhealth.html` has a WAN-drop history list in the same pattern.
 
-- [ ] **Step 1:** In `screens['advlogs']`, insert two new `.tech-row` entries into the existing "Recent activity" list (reuse the exact same `.tech-row` markup pattern already there, e.g. `<div class="tech-row"><div class="tr-label">Inbound connection blocked on port 3074</div><div class="tr-val">Today, 6:42 PM</div></div>`), and one for a site block: `<div class="tech-row"><div class="tr-label">social-app.example.com blocked for Emma's iPad</div><div class="tr-val">Yesterday</div></div>`. Insert them right after the existing 5 `.tech-row` entries, before the "Export logs" button.
+- [ ] **Step 1:** In `screens['advlogs']`, insert two new `.tech-row` entries into the existing "Recent activity" list (reuse the exact same `.tech-row` markup pattern already there, e.g. `<div class="tech-row"><div class="tr-label">Inbound connection blocked on port 3074</div><div class="tr-val">Today, 6:42 PM</div></div>`), and one for a site block: `<div class="tech-row"><div class="tr-label">social-app-network.com blocked for Emma's iPad</div><div class="tr-val">Yesterday</div></div>`. Insert them right after the existing 5 `.tech-row` entries, before the "Export logs" button.
 - [ ] **Step 2:** Verify with a Python round-trip: load `screens`, assert the 3 new strings are present, dump counts of `.tech-row` in `advlogs` (should go from 5 to 8 total incl. the log ones — cross-check against the actual pre-edit count read from the file, don't assume).
 - [ ] **Step 3: Commit**
 
@@ -42,7 +42,7 @@ const searchIndex = [
   {type:'device', label:"Emma's iPhone", sub:'Online · Family · Devices', screen:'devices', matchText:"Emma's iPhone", keywords:'emma iphone phone family'},
   {type:'rule', label:'Xbox Series X port rule', sub:'External 3074 → 192.168.1.45:3074 · Firewall & Ports', screen:'advfirewall', matchText:'Xbox Series X', keywords:'3074 xbox port forward nat'},
   {type:'log', label:'Inbound connection blocked on port 3074', sub:'Diagnostics & Logs', screen:'advlogs', matchText:'Inbound connection blocked on port 3074', keywords:'3074 port block firewall inbound'},
-  {type:'log', label:"social-app.example.com blocked for Emma's iPad", sub:'Diagnostics & Logs', screen:'advlogs', matchText:'social-app.example.com blocked', keywords:'site block domain emma social'},
+  {type:'log', label:"social-app-network.com blocked for Emma's iPad", sub:'Diagnostics & Logs', screen:'advlogs', matchText:'social-app-network.com blocked', keywords:'site block domain emma social'},
   {type:'setting', label:'Firewall & Ports', sub:'Advanced settings', screen:'advfirewall', matchText:'Firewall & Port Forwarding', keywords:'firewall port forwarding nat upnp geo-ip'},
   {type:'network', label:'Kids VLAN', sub:'192.168.2.0/24 · Network & VLANs', screen:'advnetwork', matchText:'Kids', keywords:'vlan network kids subnet'},
   {type:'app', label:'TikTok', sub:'Blocked · Reliable · Parental Controls', screen:'parental', matchText:'TikTok', keywords:'tiktok blocked app'},
