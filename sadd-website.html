@@ -749,6 +749,11 @@ html.large-text .scr-title{font-size:1.15em;}
     const results = searchMatch(query);
     state.searchResults = results;
     state.searchActiveIndex = -1;
+    if(!query.trim()){
+      panel.style.display = 'none';
+      panel.innerHTML = '';
+      return;
+    }
     if(!results.length){
       panel.innerHTML = '<div class="search-empty">No matches for "'+escapeHtml(query)+'"</div>';
       panel.style.display = 'block';
