@@ -1,0 +1,9 @@
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends qemu-system-x86 && rm -rf /var/lib/apt/lists/*
+WORKDIR /vm
+ENTRYPOINT ["qemu-system-x86_64", \
+  "-enable-kvm", "-m", "256", "-smp", "1", \
+  "-drive", "file=/boot.img,format=raw,if=virtio", \
+  "-netdev", "user,id=net0,hostfwd=tcp::80-:80,hostfwd=tcp::22-:22", \
+  "-device", "virtio-net-pci,netdev=net0", \
+  "-nographic", "-serial", "mon:stdio"]

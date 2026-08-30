@@ -1,20 +1,40 @@
-version: "3"
+# STATUS (2026-08-30 investigation): this image is purpose-built for exactly
+# our use case (real OpenWrt kernel, KVM-accelerated, WSL-aware `veth` LAN
+# mode) but its self-discovery step (`nsenter --target 1 --mount docker
+# inspect ...`) expects a `docker` CLI binary to exist in the TRUE host
+# namespace. That's true on a bare-metal Linux Docker host, but Docker
+# Desktop's host namespace is a minimal LinuxKit VM with no such binary —
+# so this fails on Docker Desktop (Windows/Mac) as configured below.
+# See docs/superpowers/plans/2026-08-30-openwrt-integration-wave1.md Task 1
+# for the full investigation, what's confirmed working (KVM + direct QEMU
+# boot of a real OpenWrt disk both proven), and candidate fixes to try next
+# (mounting /var/run/docker.sock, or building networking around the
+# already-proven docker/Dockerfile.qemu-direct path instead).
 services:
   openwrt:
-    image: qemux/qemu
     container_name: openwrt
+    image: albrechtloh/openwrt-docker:latest
+
     environment:
-      BOOT: "https://downloads.openwrt.org/releases/23.05.5/targets/x86/64/openwrt-23.05.5-x86-64-generic-ext4-combined.img.gz"
-      DISK_SIZE: "1G"
-      RAM_SIZE: "256M"
-      CPU_CORES: "1"
+      WAN_IF: "host"
+      LAN_IF: "veth"
+      FORWARD_LUCI: "true"
+
+    ports:
+      - 8006:8006
+
+    stop_grace_period: 2m
+
     devices:
       - /dev/kvm
+    device_cgroup_rules:
+      - 'c *:* rwm'
     cap_add:
       - NET_ADMIN
-    ports:
-      - "8080:80"     # LuCI web UI
-      - "2222:22"     # SSH
+    pid: "host"
+    privileged: true
     volumes:
-      - ./openwrt-data:/storage
-    restart: unless-stopped
+      - data:/storage/
+
+volumes:
+  data:

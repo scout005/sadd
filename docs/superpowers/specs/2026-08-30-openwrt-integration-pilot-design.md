@@ -128,5 +128,26 @@ Wi-Fi Walk-Test Results — needs real radios and someone physically walking a h
 ## Open questions to resolve during implementation (not blocking design approval)
 
 - Exact `uhttpd` Lua integration package name/availability inside the container image — may require falling back to CGI-style Lua scripts instead of an in-process module.
-- Exact source of DHCP lease data available inside a minimal `openwrt/rootfs`-based image (lease file path vs. an ubus-exposed call) — confirmed hands-on once the container is running.
-- Whether `openwrt/rootfs`'s bundled kernel-facing tools (`nft`, `ip`) work as expected against Docker Desktop's underlying VM kernel, or whether some capability/module needs to be added — confirmed hands-on.
+- Exact source of DHCP lease data available inside the running OpenWrt VM (lease file path vs. an ubus-exposed call) — confirmed hands-on once the container is running.
+
+### Environment bring-up: findings from a live investigation (2026-08-30)
+
+Before writing the implementation plan, the boot environment itself was tested hands-on, since this repo already had a `docker/docker-compose.yml` stub. This replaces the original "run `openwrt/rootfs` as a plain userland container" idea below with a much better-grounded plan, and leaves one concrete blocker for Task 1 to resolve:
+
+**Confirmed working:**
+- Docker Desktop on this machine has KVM available to containers (`--device=/dev/kvm` works, verified directly).
+- The official OpenWrt 23.05.5 x86-64 combined image, once downloaded, is a genuinely valid, bootable raw disk (confirmed via `file` → "DOS/MBR boot sector", and a full real kernel boot reaching a console prompt with `br-lan` up).
+- A minimal hand-written `qemu-system-x86_64 -enable-kvm -drive file=...,format=raw ...` container (`docker/Dockerfile.qemu-direct`, committed) successfully boots this real OpenWrt kernel end-to-end. This is a proven fallback path if the options below don't pan out.
+
+**Two real bugs found and worked around:**
+1. The official OpenWrt combined `.img.gz` has benign trailing bytes after its valid gzip stream (confirmed: `gzip -dc` still produces a complete, correct, valid disk image; the trailing bytes are just data gzip's strict checker flags as a warning/exit-code-2, not actual corruption). The originally-stubbed `qemux/qemu` wrapper's own extractor treats this as a fatal error and infinite-restart-loops. Fix: pre-decompress once, bind the raw `.img` in directly (this wrapper supports that natively) — bypasses its extractor entirely.
+2. Even with a valid pre-extracted raw disk bound in, that same wrapper's own disk-boot logic reports "Boot failed: not a bootable disk" — it appears designed around installer-media workflows (like Windows/macOS ISO installs onto a fresh empty disk) rather than booting a pre-built, already-complete disk image directly. Not resolved with that wrapper; abandoned in favor of the option below.
+
+**Current best candidate, with one known blocker:** `albrechtloh/openwrt-docker` (https://github.com/AlbrechtL/openwrt-docker) is a project purpose-built for exactly this scenario — real OpenWrt kernel, KVM acceleration, and (relevant to this Windows/WSL2/Docker Desktop environment specifically) a documented `LAN_IF: "veth"` mode for exactly the "no direct physical NIC passthrough available" case. Tried directly (compose committed to `docker/docker-compose.yml`) — it correctly detects KVM and starts building its virtual networking, but its container self-discovery step (`nsenter --target 1 --mount docker inspect -f '{{.State.Pid}}' $(cat /etc/hostname)`) fails with `nsenter: failed to execute docker: No such file or directory`. This runs with `pid: "host"`, so `nsenter --target 1` enters the true host PID namespace and tries to exec a `docker` CLI binary there — which exists on a normal bare-metal Linux Docker host, but Docker Desktop's actual host namespace is a minimal purpose-built LinuxKit VM with no such binary. This is a genuine environment-specific incompatibility with Docker Desktop, not a config typo.
+
+**Candidate fixes for Task 1 to try, in order of promise:**
+1. Check whether mounting `/var/run/docker.sock` into the container changes this code path (the project may have an alternate self-discovery route when a socket is present that wasn't tried).
+2. Check the project's GitHub issues for existing Docker-Desktop-specific reports/workarounds before re-deriving one from scratch.
+3. If neither pans out: build the WAN/LAN veth networking by hand around the already-proven `docker/Dockerfile.qemu-direct` direct-QEMU path (tap/veth device creation + bridging, done explicitly rather than relying on this project's self-discovery script) — more work, but fully within our control and already halfway proven.
+
+This replaces the design's earlier assumption of a plain `openwrt/rootfs` userland container — running the *real* OpenWrt kernel under KVM (via one of the above) is both more authentic and, as it turns out, the path that's already partially working.
