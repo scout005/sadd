@@ -1,8 +1,10 @@
-# Real OpenWrt Integration Pilot — Design
+# Real OpenWrt Integration — Design & Roadmap
 
 ## Goal
 
-Prove that this prototype can be driven by a real, running OpenWrt instance instead of hardcoded demo data — starting with two screens on the desktop prototype (`sadd-website.html`): **Devices** and **Firewall & Port Forwarding**. This is a pilot: if it works end-to-end for these two, the same pattern extends to more screens later. It is not an attempt to wire up all 48+16 screens in one pass.
+Drive as much of this prototype as genuinely can be by a real, running OpenWrt instance, instead of hardcoded demo data. The full target is documented below as a roadmap of "waves," each one a self-contained slice that gets its own implementation plan when its turn comes. **Wave 1** — the first slice actually being designed and built now — covers two screens on the desktop prototype (`sadd-website.html`): **Devices** and **Firewall & Port Forwarding**. Everything below Wave 1 in the roadmap is sequenced but not yet detailed at the same level; each wave gets its own design pass (reusing this document's architecture) immediately before it's built, since exact implementation details depend on what's actually true inside the running container by that point.
+
+Not every screen in the app can be "real" in this sense — see **Full roadmap** below for the honest breakdown of which screens are genuinely OpenWrt-backable, which are pure UI-flow/marketing content with nothing to execute, and which are cloud/account-system features that would need an entirely different (non-router) backend.
 
 This is a genuinely different kind of work than the rest of this repo's session history (which has been static HTML/CSS/JS editing). It involves real infrastructure (Docker, a real OpenWrt image, real `uci`/`ubus`/`nft` commands) and carries real uncertainty about exact package availability and behavior inside a containerized OpenWrt — some implementation details below are best-effort and may need to change once we're hands-on inside a running container. That's expected and fine for a pilot.
 
@@ -73,6 +75,55 @@ If `/api/devices` or `/api/firewall/rules` is unreachable (e.g. the file is open
 - Any auth/session model beyond a single shared admin session for the pilot — proper multi-user RBAC (matching the product's family-profile model) is a later concern.
 - Persisting the container across host reboots, or treating this as a daily-driver setup — it's a dev/test environment.
 - Any screen other than `devices` and `advfirewall` becoming live — everything else keeps working exactly as it does today.
+
+## Full roadmap: every screen, categorized
+
+All 48 `sadd-website.html` screens, sorted into what "make it real" would actually mean for each. Mobile (`sadd-mobile-app.html`) screens are a subset of the same underlying concepts (devices, network, notifications, about) and follow whichever desktop wave covers the matching concept — not separately waved below.
+
+### Group 1 — genuinely OpenWrt-backable (the real work), in waves
+
+**Wave 1 (this design, building now):**
+- Devices — real DHCP leases
+- Firewall & Port Forwarding — real `uci`/`nft` rules
+
+**Wave 2 (next, once Wave 1 is proven):**
+- About — real OpenWrt version/board info (`ubus call system board`) — easy, high-confidence win
+- Diagnostics & Logs — real `logread` output instead of fake log lines
+- WAN check (onboarding step) — a real outbound connectivity test (ping/curl from the container's WAN side)
+- Connection Health — real WAN interface up/down history, tracked over time via `ubus subscribe network.interface` or logread parsing
+
+**Wave 3 (config-mutating, higher risk/complexity):**
+- Settings — real Wi-Fi name (SSID) and real admin password (`uci wireless`, `uci system` / rpcd login)
+- Guest Wi-Fi — real guest SSID + firewall zone config (no real broadcast, config-level only)
+- Network & VLANs — real `uci network` VLAN/bridge config (container-level only, not physical trunk ports)
+- Ad Blocking — real DNS blocklist (`adblock` or `https-dns-proxy` package) with real blocked-count
+- Site Blocked / Block Detail — the real block-landing-page and log entry produced by the above
+
+**Wave 4 (harder simulation, needs real generated traffic/hardware-adjacent behavior):**
+- Traffic & QoS — real `tc`/SQM config; demoing actual prioritization needs real traffic flowing, hard to make compelling in a container
+- Multi-WAN & Failover — real `mwan3` config; a believable failover demo needs two real WAN links and a way to fail one on purpose
+- Per-Device Controls — time-based/manual per-MAC block, real but fiddly
+- Parental Controls — bedtime/content-filter schedules as real time-based firewall/DNS rules, real but the most involved of this group
+- VPN Server (WireGuard) — real `wireguard-tools`, generate real peer configs
+- VPN Server (OpenVPN) — real `openvpn` package, generate real client configs
+- Connect a Laptop (VPN) — consumes whichever VPN server above is real
+- Developer & API Access — real SSH (dropbear) enable/disable toggle at minimum
+- Weekly Usage — real per-device bandwidth accounting (`nlbwmon` or nft counters)
+- Notifications (preference toggles) — real as stored config; actual delivery (email/webhook) is a separate, later concern
+
+Waves 3-4 are ordered by rough complexity, not obligation — the actual order when we get there can be re-prioritized based on what's most useful to test at the time.
+
+### Group 2 — pure UI flow / marketing content, nothing to execute
+
+Welcome, Success, Discover, Let's Get Started (comfort level), Your Setup (topology), Advanced Settings hub, Hardware & Pricing, Which Model?, Is This Right For Me?, Networking Glossary. These stay exactly as they are — static demo/marketing content is the correct, finished state for them, not a gap.
+
+### Group 3 — cloud/account-system features, not router firmware
+
+Login, Signup, MFA, Save your recovery codes, Privacy, Fleet & Business (multi-site), Support Access. A router itself has no concept of "your account" — that lives in a company's cloud. Making these real means building a separate mock account/cloud backend, an unrelated project to this OpenWrt work. Not scheduled as part of this roadmap; revisit as its own design if/when it becomes a priority.
+
+### Group 4 — physically impossible in Docker
+
+Wi-Fi Walk-Test Results — needs real radios and someone physically walking a house with a signal meter. No container can produce this data; stays static/simulated indefinitely regardless of any backend work.
 
 ## Open questions to resolve during implementation (not blocking design approval)
 
