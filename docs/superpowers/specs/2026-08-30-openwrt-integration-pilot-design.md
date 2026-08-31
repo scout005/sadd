@@ -120,11 +120,10 @@ All 48 `sadd-website.html` screens, sorted into what "make it real" would actual
 - Devices — real DHCP leases
 - Firewall & Port Forwarding — real `uci`/`nft` rules
 
-**Wave 2 (next, once Wave 1 is proven):**
-- About — real OpenWrt version/board info (`ubus call system board`) — easy, high-confidence win
-- Diagnostics & Logs — real `logread` output instead of fake log lines
-- WAN check (onboarding step) — a real outbound connectivity test (ping/curl from the container's WAN side)
-- Connection Health — real WAN interface up/down history, tracked over time via `ubus subscribe network.interface` or logread parsing
+**Wave 2 (building now — scope corrected 2026-08-31 against what Wave 1 actually confirmed about this VM):**
+- About — real OpenWrt version/board info (`ubus call system board`, already captured live in `docker/facts.md` §7 from Task 2's investigation). Narrowly scoped: the "App version"/"Built on OpenWrt" row becomes real; the rest of the screen (CVE table, pricing promise, compliance statement) is marketing/compliance copy with no OpenWrt-backable analog and stays static, same as Wave 1 only touched the port-forward section of Firewall & Ports, not its whole screen.
+- Diagnostics & Logs — the "Recent activity" list becomes real `logread` output. The "Live download/upload" Mbps cards do NOT become real in this wave — that needs real bandwidth accounting (`nlbwmon`/nft counters), which is Wave 4 territory ("Weekly Usage"), not a `logread` call; scoping it into Wave 2 would blur two different kinds of real data behind one screen.
+- ~~WAN check (onboarding step)~~ and ~~Connection Health~~ — **deferred out of Wave 2, not built.** Both assumed a real WAN-facing test, exactly like Wave 1's original Firewall testing plan did — but Wave 1 confirmed this VM has **no WAN interface at all** (Tasks 3/5/7), and unlike port-forwarding (where the underlying `uci`/`nft` mechanism could still be proven real via the LAN zone), there's no LAN-side analog for "is the internet reachable" or "WAN interface flapped" — those questions are only meaningful with a real second (WAN) interface, which is a genuine infra addition (a second tap/bridge device on the container, NAT'd or bridged so the guest can reach the real internet through it), not a small task. Worth doing whenever WAN-dependent screens become a priority, not bundled into Wave 2.
 
 **Wave 3 (config-mutating, higher risk/complexity):**
 - Settings — real Wi-Fi name (SSID) and real admin password (`uci wireless`, `uci system` / rpcd login)
