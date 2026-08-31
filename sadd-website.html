@@ -799,7 +799,7 @@ html.large-text .scr-title{font-size:1.15em;}
   function renderFirewallRuleRow(rule){
     const id = escapeHtml(rule.id);
     const name = (rule.name && String(rule.name).trim()) ? escapeHtml(rule.name) : 'Forward';
-    const proto = (rule.proto ? String(rule.proto) : 'tcp').toUpperCase();
+    const proto = escapeHtml((rule.proto ? String(rule.proto) : 'tcp').toUpperCase());
     const extPort = escapeHtml(rule.src_dport || '');
     const destIp = rule.dest_ip ? escapeHtml(rule.dest_ip) : '';
     const destPort = escapeHtml(rule.dest_port || '');
