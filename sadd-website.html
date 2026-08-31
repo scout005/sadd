@@ -960,12 +960,18 @@ html.large-text .scr-title{font-size:1.15em;}
     // below) so it must be located/removed via nextElementSibling, not rowEl.querySelector
     const existingNotice = rowEl.nextElementSibling && rowEl.nextElementSibling.classList.contains('api-fallback-notice')
       ? rowEl.nextElementSibling : null;
-    if(data && data.version){
+    // Same shape-check philosophy as renderDevicesScreen/renderFirewallScreen/
+    // renderLogsScreen's Array.isArray(data): a reached, valid response is real data
+    // and gets shown as-is — even if a specific field came back empty (e.g. a future
+    // OpenWrt version renames/drops one of these fields, see this endpoint's own
+    // header comment) — rather than gating on one field's truthiness, which would
+    // otherwise show "Can't reach router" for a router that WAS reached fine.
+    if(data && typeof data === 'object'){
       // real data replaces the static "1.0.0" placeholder — selected by id, not by
       // string/regex-matching the rendered HTML (this file has a documented history of
       // bugs from exactly that kind of fragile approach).
       const distribution = escapeHtml(data.distribution || 'OpenWrt');
-      const version = escapeHtml(data.version);
+      const version = escapeHtml(data.version || '');
       const revision = data.revision ? ' ('+escapeHtml(data.revision)+')' : '';
       const model = data.model ? ' on '+escapeHtml(data.model) : '';
       valueEl.innerHTML = distribution+' '+version+revision+model;
