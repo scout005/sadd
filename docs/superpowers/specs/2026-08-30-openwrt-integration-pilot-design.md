@@ -62,6 +62,32 @@ The container is started with `--cap-add=NET_ADMIN --cap-add=NET_RAW` (required 
 ### 5. Error handling
 If `/api/devices` or `/api/firewall/rules` is unreachable (e.g. the file is opened directly via `file://` outside the container, or the container isn't running), the screen falls back to today's existing static demo data and shows a small, non-blocking notice ("Can't reach router — showing demo data") rather than breaking or blanking the screen. This keeps the rest of the prototype's existing behavior (all other screens, the search feature, etc.) working exactly as before regardless of whether the container is up.
 
+**Known, investigated, by-design interaction with the global search feature (not a bug):**
+the search feature (`docs/superpowers/specs/2026-08-24-global-search-design.md`, built
+earlier this session, before any OpenWrt work) has `searchIndex` entries for
+`devices`/`advfirewall` whose `matchText` targets the *static demo* strings (e.g. "Emma's
+iPhone", "Xbox Series X") — the exact text those two screens rendered before this wave.
+Now that Tasks 6/8 make those two screens fetch-and-replace their content with real API
+data, and that fetch resolves (~5ms locally) faster than the search feature's fixed 80ms
+navigate-then-highlight delay, the real data has already overwritten the demo text by the
+time `highlightAndScroll` looks for it — so on those two screens specifically, searching
+for demo-data-only entries (e.g. "xbox", "emma") always navigates to the correct screen
+but never produces a highlight when the router is reachable and responding quickly.
+This was investigated hands-on (Task 9, real VM, Playwright) and confirmed to be exactly
+and only this: correct navigation every time, zero console errors, no stuck CSS class, no
+visual glitch — a cosmetic no-op, not a failure. It's also not a gap in that design: the
+search spec's own "Click-through / highlight behavior" section already states "If no
+matching element is found on the rendered screen (index/content drift), fail silently —
+just leave the user on the target screen with no highlight, rather than erroring" — this
+is exactly that documented case, just reached by a new cause (live data replacing static
+text) rather than the original one (index drift from hand-editing). Confirmed the highlight
+mechanism itself is unaffected in general (other searchIndex entries, and these same two
+screens' *static* entries like "Firewall & Port Forwarding", still highlight correctly),
+and confirmed highlighting on `devices`/`advfirewall` works correctly too when the router
+is unreachable (the static demo data the index was authored against is what actually
+renders then). No code change was made for this; it isn't planned to be "fixed" — doing so
+would mean fighting the original design's own accepted degradation, not fixing a defect.
+
 ## Testing / how we'll know it's real, not just displayed
 
 - **Devices**: attach a second, throwaway test container to the same "LAN" Docker network with a DHCP client; confirm it shows up in the real device list in the UI (hostname/IP/MAC), not just in a raw `dnsmasq` log.

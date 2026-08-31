@@ -650,6 +650,15 @@ html.large-text .scr-title{font-size:1.15em;}
   // ---- Real router API helper: short timeout, resolves to null (never throws) on any
   //      failure so callers can fall back to static demo data without a try/catch of their own ----
   async function fetchRouterApi(path, opts){
+    // A relative-path fetch() from a file:// document can never resolve to an http(s)
+    // origin — it always re-resolves as file://, which the Fetch spec always rejects
+    // (confirmed live: "Fetch API cannot load file:///.../cgi-bin/api/devices. URL
+    // scheme 'file' is not supported."). That rejection reaches our catch below fine,
+    // but the browser logs it to the console itself, at the network layer, before our
+    // JS ever runs — no try/catch can suppress that line. Skipping the doomed call
+    // entirely when we already know it's file:// avoids the console noise and is
+    // exactly as fast as the real fallback path (both resolve to null immediately).
+    if(location.protocol === 'file:') return null;
     try{
       const ctrl = new AbortController();
       const t = setTimeout(()=>ctrl.abort(), 1500);
@@ -675,6 +684,9 @@ html.large-text .scr-title{font-size:1.15em;}
   //      This variant is used only by the Firewall & Ports add/delete wiring below;
   //      fetchRouterApi itself is left untouched since nothing else needs this.
   async function fetchRouterApiWithStatus(path, opts){
+    // Same file:// guard as fetchRouterApi above, and for the same reason — see its
+    // comment for the exact confirmed browser-console message this avoids.
+    if(location.protocol === 'file:') return null;
     try{
       const ctrl = new AbortController();
       const t = setTimeout(()=>ctrl.abort(), 1500);
