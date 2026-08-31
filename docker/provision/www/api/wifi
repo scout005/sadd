@@ -1,17 +1,60 @@
 #!/usr/bin/lua
--- /api/wifi — GET only for this task (Task 1). Real UCI-backed read of the
--- baseline wireless config created by docker/provision/08-provision-wifi-api.sh
--- (see that script and docker/facts.md Section 11 for why this config has
--- to be provisioned rather than just read: this VM has no wireless
--- hardware, so nothing auto-generates /etc/config/wireless on boot).
+-- /api/wifi — GET (Task 1) + POST (Task 3). Real UCI-backed read/write of
+-- the baseline wireless config created by
+-- docker/provision/08-provision-wifi-api.sh (see that script and
+-- docker/facts.md Section 11 for why this config has to be provisioned
+-- rather than just read: this VM has no wireless hardware, so nothing
+-- auto-generates /etc/config/wireless on boot).
 --
--- Reads:
+-- GET reads:
 --   uci get wireless.default_radio0.ssid   -> the main Wi-Fi network's name
 --   uci get wireless.guest.disabled        -> '1' when the guest network is
 --                                              off, '0' (or the option
 --                                              missing entirely) when it's on
 --
 -- Response shape: {"ssid": "<string>", "guestEnabled": true|false}
+--
+-- === POST (Task 3) — real guest network toggle ===
+--
+-- POST body: {"guestEnabled": true|false} — writes
+-- wireless.guest.disabled accordingly and reports the new state.
+--
+-- Polarity re-confirmed live against this running VM before writing this
+-- handler (not just trusted from Task 1's report): manually setting
+-- `uci set wireless.guest.disabled=0; uci commit wireless` made GET
+-- /api/wifi report `guestEnabled:true`; setting it back to `1` made GET
+-- report `guestEnabled:false` again. So this endpoint sets
+-- wireless.guest.disabled to '0' when guestEnabled:true was requested, and
+-- '1' when guestEnabled:false was requested — the direct inverse mapping,
+-- matching UCI's own "disabled" convention and exactly what GET already
+-- assumes (see the guestEnabled derivation comment above).
+--
+-- Body parsing: adapted from firewall-rules' hand-rolled
+-- json_parse_flat_object (no lua-cjson on this VM — no outbound internet
+-- route to opkg-install it, same reasoning as every other endpoint in this
+-- directory). That parser returns bare (non-string) JSON tokens as raw
+-- substrings exactly as they appeared in the body — so a JSON `true`/
+-- `false` literal comes back as the Lua *string* "true"/"false", not a Lua
+-- boolean, and a JSON string like `"true"` also comes back as the Lua
+-- string "true" — those two input shapes are indistinguishable after
+-- parsing. That's fine for this endpoint's validation purposes: valid
+-- input is defined as "the parsed value is exactly the string 'true' or
+-- the string 'false'" (covering both a real JSON boolean and, harmlessly,
+-- the string equivalents), and anything else (missing key, "1"/"0", a
+-- number, "yes", empty string, etc.) is rejected as 400 — see
+-- parse_guest_enabled() below.
+--
+-- Write sequence: uci set -> readback verify -> uci commit -> wifi reload.
+-- If the readback after `uci set` doesn't match what was requested, the
+-- write is rolled back (`uci revert wireless`) and never committed, and the
+-- endpoint responds 500 rather than falsely claiming success — same
+-- verify-before-commit/revert-on-failure discipline as firewall-rules'
+-- POST/DELETE handlers. `wifi reload` after a successful commit is
+-- confirmed safe/non-hanging against this VM's phantom radio config
+-- (docker/facts.md Section 11 / the `wifi reload` note near its "all
+-- succeed" confirmation) — it's what makes the change "live" in the same
+-- sense firewall-rules' `/etc/init.d/firewall reload` matters, even though
+-- nothing is actually broadcasting on this VM's fake radio.
 --
 -- guestEnabled derivation: UCI's own convention for a wifi-iface's
 -- `disabled` option is "the network is off when this is truthy ('1')". This
@@ -96,19 +139,209 @@ local function uci_get(path)
   return out
 end
 
-local ssid = uci_get("wireless.default_radio0.ssid") or ""
-local guest_disabled = uci_get("wireless.guest.disabled")
--- If the lookup itself failed (nil — section/option missing, uci error),
--- fall back to false (matching the mockup's static "Off" default) rather
--- than guessing "enabled" for a network whose real state is unknown. If
--- the lookup succeeded, UCI's own convention applies: any value other than
--- '1' means enabled (see header comment on UCI's disabled-option
--- convention).
-local guest_enabled = (guest_disabled ~= nil) and (guest_disabled ~= "1")
+-- Wrap a value for safe use as a single shell argument (single-quoted, with
+-- embedded single quotes escaped the standard POSIX way). Adapted from
+-- firewall-rules' shell_quote(). This endpoint's only writable value is a
+-- constant '0'/'1' string it derives itself (never raw client input placed
+-- directly into a shell command), so the injection surface is minimal — but
+-- every interpolated value still goes through this, per the established
+-- convention, for consistency and defense-in-depth.
+local function shell_quote(s)
+  s = tostring(s or "")
+  s = s:gsub('[\1-\9\11-\31]', '') -- strip control chars
+  s = s:gsub('[\n\r]', ' ')
+  return "'" .. s:gsub("'", "'\\''") .. "'"
+end
 
-print("Content-Type: application/json\n")
-print(string.format(
-  '{"ssid":"%s","guestEnabled":%s}',
-  json_escape(ssid),
-  guest_enabled and "true" or "false"
-))
+local function read_request_body()
+  local len = tonumber(os.getenv("CONTENT_LENGTH") or "")
+  if len and len > 0 then
+    return io.read(len) or ""
+  end
+  -- No/invalid Content-Length: read whatever is available, defensively.
+  return io.read("*a") or ""
+end
+
+-- === Narrow, defensive flat-JSON-object parser ===
+-- Adapted verbatim from firewall-rules' json_parse_flat_object (see that
+-- file's header comment for the full rationale): understands
+-- `{"key":"string value","key2":123}` — quoted-string values (with escapes)
+-- and bare numeric/true/false/null tokens — and nothing else. This
+-- endpoint's body shape is even simpler (a single boolean field), but reuses
+-- the same parser rather than a narrower hand-rolled one, for consistency
+-- and because the shape it accepts is a strict superset of what's needed.
+local function json_parse_flat_object(s)
+  local obj = {}
+  if type(s) ~= "string" then return obj end
+  local i, len = 1, #s
+
+  local function skip_ws()
+    while i <= len and s:sub(i, i):match("%s") do i = i + 1 end
+  end
+
+  local function parse_string()
+    i = i + 1 -- opening quote
+    local buf = {}
+    local escapes = {
+      ['"'] = '"', ['\\'] = '\\', ['/'] = '/',
+      ['n'] = '\n', ['r'] = '\r', ['t'] = '\t', ['b'] = '\b', ['f'] = '\f',
+    }
+    while i <= len do
+      local c = s:sub(i, i)
+      if c == '"' then
+        i = i + 1
+        return table.concat(buf)
+      elseif c == '\\' then
+        local nc = s:sub(i + 1, i + 1)
+        if nc == 'u' then
+          i = i + 6 -- skip \uXXXX — not needed for this endpoint's fields
+        elseif escapes[nc] then
+          buf[#buf + 1] = escapes[nc]
+          i = i + 2
+        else
+          buf[#buf + 1] = nc
+          i = i + 2
+        end
+      else
+        buf[#buf + 1] = c
+        i = i + 1
+      end
+    end
+    return table.concat(buf) -- unterminated string: return what we got
+  end
+
+  skip_ws()
+  if s:sub(i, i) ~= '{' then return obj end
+  i = i + 1
+  skip_ws()
+  if s:sub(i, i) == '}' then return obj end
+
+  while i <= len do
+    skip_ws()
+    if s:sub(i, i) ~= '"' then break end
+    local key = parse_string()
+    skip_ws()
+    if s:sub(i, i) ~= ':' then break end
+    i = i + 1
+    skip_ws()
+    local val
+    if s:sub(i, i) == '"' then
+      val = parse_string()
+    else
+      local start = i
+      while i <= len and not s:sub(i, i):match('[,}%s]') do i = i + 1 end
+      val = s:sub(start, i - 1)
+    end
+    obj[key] = val
+    skip_ws()
+    if s:sub(i, i) == ',' then
+      i = i + 1
+    elseif s:sub(i, i) == '}' then
+      i = i + 1
+      break
+    else
+      break
+    end
+  end
+  return obj
+end
+
+-- Parses the POST body's `guestEnabled` field into a real Lua boolean, or
+-- returns nil for anything invalid/missing/ambiguous. See the header
+-- comment above on why the hand-rolled parser above makes a genuine JSON
+-- boolean (`true`/`false`, unquoted) and the JSON strings `"true"`/`"false"`
+-- indistinguishable after parsing (both arrive as the Lua string "true" or
+-- "false") — this function treats that as an acceptable, well-defined
+-- input contract rather than a source of ambiguity: exactly those two
+-- token spellings are accepted, and everything else (missing key, a number,
+-- "1"/"0", "yes"/"no", empty string, null, etc.) is rejected.
+local function parse_guest_enabled(body)
+  local req = json_parse_flat_object(body)
+  local v = req.guestEnabled
+  if v == "true" then return true end
+  if v == "false" then return false end
+  return nil
+end
+
+-- Emits response headers. uhttpd (running this as CGI) reads a
+-- `Status: <code> <reason>` header line, printed before the blank separator
+-- alongside Content-Type, to set the HTTP status of the response; omitting
+-- it defaults to 200, so the success path intentionally emits no Status
+-- line. Mirrors firewall-rules' send_headers() exactly.
+local function send_headers(status)
+  local reasons = {
+    [400] = "Bad Request",
+    [405] = "Method Not Allowed",
+    [500] = "Internal Server Error",
+  }
+  if status and status ~= 200 then
+    print("Status: " .. status .. " " .. (reasons[status] or "Error"))
+  end
+  print("Content-Type: application/json\n")
+end
+
+-- === Request handling ===
+
+local method = os.getenv("REQUEST_METHOD") or "GET"
+
+if method == "GET" then
+  send_headers(200)
+  local ssid = uci_get("wireless.default_radio0.ssid") or ""
+  local guest_disabled = uci_get("wireless.guest.disabled")
+  -- If the lookup itself failed (nil — section/option missing, uci error),
+  -- fall back to false (matching the mockup's static "Off" default) rather
+  -- than guessing "enabled" for a network whose real state is unknown. If
+  -- the lookup succeeded, UCI's own convention applies: any value other
+  -- than '1' means enabled (see header comment on UCI's disabled-option
+  -- convention).
+  local guest_enabled = (guest_disabled ~= nil) and (guest_disabled ~= "1")
+  print(string.format(
+    '{"ssid":"%s","guestEnabled":%s}',
+    json_escape(ssid),
+    guest_enabled and "true" or "false"
+  ))
+
+elseif method == "POST" then
+  local body = read_request_body()
+  local guest_enabled_req = parse_guest_enabled(body)
+
+  if guest_enabled_req == nil then
+    -- Invalid/missing input: reject with 400 and do NOT touch config at all
+    -- (nothing above this point has issued any `uci` write command).
+    send_headers(400)
+    print('{"ok":false,"error":"missing or invalid required field: guestEnabled (must be a JSON boolean true or false)"}')
+  else
+    -- Polarity (re-confirmed live — see header comment): disabled='0' when
+    -- guestEnabled:true was requested, disabled='1' when guestEnabled:false
+    -- was requested.
+    local want_disabled = guest_enabled_req and "0" or "1"
+
+    run("uci set wireless.guest.disabled=" .. shell_quote(want_disabled))
+
+    -- Verify the write actually took effect via readback BEFORE committing
+    -- — same discipline as firewall-rules' POST handler. uci_get() returns
+    -- nil on a failed/empty lookup, which readback_ok correctly treats as
+    -- "did not verify" (never treated as a false match).
+    local readback = uci_get("wireless.guest.disabled")
+    local readback_ok = (readback == want_disabled)
+
+    if not readback_ok then
+      run("uci revert wireless")
+      send_headers(500)
+      print('{"ok":false,"error":"failed to verify wireless.guest.disabled write; reverted"}')
+    else
+      run("uci commit wireless")
+      -- Makes the change "live" the same way firewall-rules' firewall
+      -- reload does, even though nothing is actually broadcasting on this
+      -- VM's phantom radio — confirmed safe/non-hanging (docker/facts.md
+      -- Section 11).
+      run("wifi reload")
+      send_headers(200)
+      print(string.format('{"ok":true,"guestEnabled":%s}', guest_enabled_req and "true" or "false"))
+    end
+  end
+
+else
+  send_headers(405)
+  print(string.format('{"ok":false,"error":"unsupported method: %s"}', json_escape(method)))
+end
