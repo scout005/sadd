@@ -27,7 +27,7 @@ if [ -f "${OUT_IMG}" ]; then
 fi
 
 echo "Downloading OpenWrt ${VERSION} x86-64 combined image..."
-curl -sL -o "${OUT_DIR}/openwrt.img.gz" "${URL}"
+curl -fsL -o "${OUT_DIR}/openwrt.img.gz" "${URL}"
 
 echo "Decompressing (a 'trailing garbage ignored' warning here is expected and harmless — see comment above)..."
 gzip -dc "${OUT_DIR}/openwrt.img.gz" > "${OUT_IMG}" || true
