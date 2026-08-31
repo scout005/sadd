@@ -150,13 +150,20 @@ bash docker/provision/04-provision-devices-api.sh
 #    as step 4.
 bash docker/provision/05-provision-firewall-api.sh
 
-# 6. Verify.
+# 6. Deploy the /api/system-info endpoint (real ubus-backed distro/
+#    hardware/uptime info for the About screen) and verify it responds
+#    with a JSON object. Self-contained/idempotent, same pattern as steps
+#    4 and 5.
+bash docker/provision/06-provision-system-info-api.sh
+
+# 7. Verify.
 curl -s http://localhost:8081/cgi-bin/api/ping     # -> {"ok":true}
 curl -sI http://localhost:8081/cgi-bin/api/ping    # -> Content-Type: application/json among the headers
 curl -sI http://localhost:8081/                    # -> 200 OK, serving sadd-website.html
 curl -sI http://localhost:8081/cgi-bin/luci/       # -> reachable (403 login-required, not 404)
 curl -s http://localhost:8081/cgi-bin/api/devices  # -> JSON array of current DHCP leases (empty `[]` until a real client has a lease — see "Getting a real device onto the lease list" below)
 curl -s http://localhost:8081/cgi-bin/api/firewall-rules  # -> JSON array of current port-forward rules (empty `[]` on a fresh VM)
+curl -s http://localhost:8081/cgi-bin/api/system-info  # -> JSON object of real distro/hardware/uptime info, e.g. {"distribution":"OpenWrt","version":"23.05.5","revision":"r24106-10cc5fcd00","target":"x86/64","model":"QEMU Standard PC (i440FX + PIIX, 1996)","kernel":"5.15.167","uptime":117}
 ```
 
 **Step 3 in detail — overwriting the stock landing page is intentional:**
@@ -243,6 +250,28 @@ specifically, as a sibling of `luci`, not a replacement for it.
   is quoted defensively (`shell_quote()`); the DELETE id is additionally
   restricted to `[%w_]+` and checked to actually be a `redirect` section
   before deletion.
+- `docker/provision/06-provision-system-info-api.sh` — copies (and chmods,
+  and curl-verifies) `docker/provision/www/api/system-info` onto the VM's
+  `/www/cgi-bin/api/system-info`. Same dedicated-step rationale as
+  `04-provision-devices-api.sh`.
+- `docker/provision/www/api/system-info` — the tracked source of truth for
+  the `/api/system-info` endpoint: shells out to `ubus call system board`
+  and `ubus call system info` (already present on a stock OpenWrt image —
+  no new opkg package needed) and returns a flat
+  `{distribution, version, revision, target, model, kernel, uptime}`
+  object shaped for the About screen. Both `ubus call` commands' output
+  shapes were confirmed live against this VM before writing the endpoint
+  (`docker/facts.md` Section 7 captured them first; re-confirmed via a
+  fresh SSH session during this task, values matched field-for-field).
+  Since every field this endpoint needs is a top-level-unique key in one
+  command's known, fixed output, field extraction uses plain
+  `string.match` patterns anchored on `"key":` rather than a general JSON
+  parser (unlike `firewall-rules`, which does carry a small parser — but
+  that one has to accept an *arbitrary* client-supplied POST body, a
+  genuinely different problem) — see the script's own header comment for
+  the full reasoning. Hand-builds its response JSON (with the same
+  defensive escaper as `devices`/`firewall-rules`) rather than installing
+  `lua-cjson`, for the same no-outbound-internet reason.
 
 ### Real connectivity test — what it actually means in this topology
 

@@ -1,0 +1,123 @@
+#!/usr/bin/lua
+-- /api/system-info — real ubus-backed distro/hardware/uptime info for the
+-- About screen.
+--
+-- Data source: `ubus call system board` and `ubus call system info`, run as
+-- shell commands via io.popen (there is no ubus Lua binding installed on
+-- this VM, and adding one would need opkg + this VM's no-outbound-internet
+-- workaround for no real benefit — see 01-install-api-packages.sh's header
+-- comment for that workaround; shelling out to the `ubus` CLI binary that's
+-- already present on every stock OpenWrt image is simpler and needs nothing
+-- extra). Confirmed live against this VM (docker/facts.md Section 7, and
+-- re-confirmed directly over SSH before writing this file — see the Task 1
+-- commit this file ships with) that both commands produce pretty-printed
+-- JSON with a stable, known, flat-ish shape:
+--
+--   ubus call system board:
+--   {
+--       "kernel": "5.15.167",
+--       "hostname": "OpenWrt",
+--       "system": "QEMU Virtual CPU version 2.5+",
+--       "model": "QEMU Standard PC (i440FX + PIIX, 1996)",
+--       "board_name": "qemu-standard-pc-i440fx-piix-1996",
+--       "rootfs_type": "ext4",
+--       "release": {
+--           "distribution": "OpenWrt",
+--           "version": "23.05.5",
+--           "revision": "r24106-10cc5fcd00",
+--           "target": "x86/64",
+--           "description": "OpenWrt 23.05.5 r24106-10cc5fcd00"
+--       }
+--   }
+--
+--   ubus call system info:
+--   { "localtime": 1788187394, "uptime": 47, "load": [...], "memory": {...}, ... }
+--
+-- Why pattern-matching instead of a real JSON parser (unlike this endpoint's
+-- sibling `firewall-rules`, which DOES carry a small recursive-descent flat-
+-- object parser for arbitrary client POST bodies): that parser exists
+-- because firewall-rules must accept an *arbitrary* client-supplied flat
+-- object (unknown key set/order, needs to reject malformed input politely).
+-- This endpoint instead reads output from exactly two fixed, first-party
+-- commands whose key names, nesting, and value types are already confirmed
+-- live and don't vary run to run (only the *values* change, e.g. uptime
+-- counting up) — every field this endpoint needs is a top-level-unique key
+-- (each of "kernel"/"model"/"distribution"/"version"/"revision"/"target"/
+-- "uptime" appears exactly once, in exactly one place, in its command's
+-- output), so a handful of `string.match` calls anchored on `"key":` is
+-- both sufficient and far more auditable than a generic parser. Writing a
+-- full JSON parser for two fields' worth of known, flat lookups would be
+-- solving a harder, more general problem than the one actually in front of
+-- this endpoint. Each pattern is applied defensively (nil-checked, falls
+-- back to "" / 0 — never crashes or emits invalid JSON) in case a future
+-- OpenWrt version ever renames or drops a field.
+--
+-- JSON encoding of the response: hand-built (not lua-cjson), same choice
+-- and same reasoning as `devices`/`firewall-rules` — this VM has no
+-- outbound internet route to opkg-install lua-cjson (see
+-- 01-install-api-packages.sh's header comment), and the output here is a
+-- single flat object of plain strings plus one integer, well within reach
+-- of a small defensive escaper.
+
+local function json_escape(s)
+  if s == nil then return "" end
+  s = tostring(s)
+  s = s:gsub('[\\"\n\r\t]', {
+    ['\\'] = '\\\\',
+    ['"'] = '\\"',
+    ['\n'] = '\\n',
+    ['\r'] = '\\r',
+    ['\t'] = '\\t',
+  })
+  -- strip any other stray control characters that would make the JSON invalid
+  s = s:gsub('[\1-\31]', '')
+  return s
+end
+
+local function run(cmd)
+  local p = io.popen(cmd .. " 2>/dev/null")
+  if not p then return "" end
+  local out = p:read("*a") or ""
+  p:close()
+  return out
+end
+
+-- Pull a `"key": "string value"` pair out of known-shaped ubus JSON output.
+-- Returns "" (not nil) when the key is missing, so callers never need a
+-- separate nil-check before json_escape().
+local function extract_string(text, key)
+  local value = text:match('"' .. key .. '"%s*:%s*"([^"]*)"')
+  return value or ""
+end
+
+-- Pull a `"key": 123` (bare numeric, no quotes) pair the same way.
+local function extract_number(text, key)
+  local value = text:match('"' .. key .. '"%s*:%s*(-?%d+)')
+  return tonumber(value) or 0
+end
+
+local board_json = run("ubus call system board")
+local info_json = run("ubus call system info")
+
+local info = {
+  distribution = extract_string(board_json, "distribution"),
+  version = extract_string(board_json, "version"),
+  revision = extract_string(board_json, "revision"),
+  target = extract_string(board_json, "target"),
+  model = extract_string(board_json, "model"),
+  kernel = extract_string(board_json, "kernel"),
+  uptime = extract_number(info_json, "uptime"),
+}
+
+print("Content-Type: application/json\n")
+
+print(string.format(
+  '{"distribution":"%s","version":"%s","revision":"%s","target":"%s","model":"%s","kernel":"%s","uptime":%d}',
+  json_escape(info.distribution),
+  json_escape(info.version),
+  json_escape(info.revision),
+  json_escape(info.target),
+  json_escape(info.model),
+  json_escape(info.kernel),
+  info.uptime
+))
