@@ -1,40 +1,25 @@
-# STATUS (2026-08-30 investigation): this image is purpose-built for exactly
-# our use case (real OpenWrt kernel, KVM-accelerated, WSL-aware `veth` LAN
-# mode) but its self-discovery step (`nsenter --target 1 --mount docker
-# inspect ...`) expects a `docker` CLI binary to exist in the TRUE host
-# namespace. That's true on a bare-metal Linux Docker host, but Docker
-# Desktop's host namespace is a minimal LinuxKit VM with no such binary —
-# so this fails on Docker Desktop (Windows/Mac) as configured below.
-# See docs/superpowers/plans/2026-08-30-openwrt-integration-wave1.md Task 1
-# for the full investigation, what's confirmed working (KVM + direct QEMU
-# boot of a real OpenWrt disk both proven), and candidate fixes to try next
-# (mounting /var/run/docker.sock, or building networking around the
-# already-proven docker/Dockerfile.qemu-direct path instead).
+# Real OpenWrt, booted with KVM-accelerated QEMU inside this container, with
+# a tap-device link so the guest's own LAN address (192.168.1.1, OpenWrt's
+# static default — it never runs a DHCP client on its LAN interface) is
+# directly reachable rather than hidden behind QEMU's simplistic usermode
+# NAT. See docker/README.md for the full story, exact commands, and the
+# two earlier candidate approaches that didn't pan out on Docker Desktop.
+#
+# Before first run: bash docker/fetch-boot-image.sh
 services:
   openwrt:
+    build:
+      context: .
+      dockerfile: Dockerfile.qemu-direct
     container_name: openwrt
-    image: albrechtloh/openwrt-docker:latest
-
-    environment:
-      WAN_IF: "host"
-      LAN_IF: "veth"
-      FORWARD_LUCI: "true"
-
-    ports:
-      - 8006:8006
-
-    stop_grace_period: 2m
-
     devices:
       - /dev/kvm
-    device_cgroup_rules:
-      - 'c *:* rwm'
+      - /dev/net/tun
     cap_add:
       - NET_ADMIN
-    pid: "host"
-    privileged: true
     volumes:
-      - data:/storage/
-
-volumes:
-  data:
+      - ./boot-image/boot.img:/boot.img
+    ports:
+      - "8081:80"   # LuCI / uhttpd (and, once built, /api/*)
+      - "2223:22"   # SSH (dropbear)
+    restart: unless-stopped
