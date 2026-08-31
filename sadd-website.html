@@ -281,6 +281,8 @@
   .list-item .li-icon{width:40px;height:40px;border-radius:11px;background:var(--teal-tint);color:var(--teal-dark);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
   .list-item .li-main{flex:1;min-width:0;}
   .list-item .li-main strong{display:block;font-size:13.5px;}
+  /* matches .status-card.offline's muted/dashed "can't reach router" visual language */
+  .api-fallback-notice{background:var(--bg);border:1.5px dashed var(--muted-2);border-radius:13px;padding:10px 14px;margin-bottom:9px;font-size:12px;color:var(--muted);text-align:center;}
   .status-pill{font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:999px;flex-shrink:0;}
   .status-pill.online{background:var(--success-tint);color:var(--success);}
   .status-pill.offline{background:#F1F5F9;color:var(--muted);}
@@ -645,6 +647,21 @@ html.large-text .scr-title{font-size:1.15em;}
 
   const state = { screen: 'welcome', offline: false, freshSetup: false, searchActiveIndex: -1, searchResults: [] };
 
+  // ---- Real router API helper: short timeout, resolves to null (never throws) on any
+  //      failure so callers can fall back to static demo data without a try/catch of their own ----
+  async function fetchRouterApi(path, opts){
+    try{
+      const ctrl = new AbortController();
+      const t = setTimeout(()=>ctrl.abort(), 1500);
+      const res = await fetch(path, {...opts, signal: ctrl.signal});
+      clearTimeout(t);
+      if(!res.ok) throw new Error('bad status '+res.status);
+      return await res.json();
+    }catch(e){
+      return null; // caller falls back to static demo data
+    }
+  }
+
   const dashboardFreshSetup = '<div class=\"dash-main\"><h2>Good afternoon, Jenna</h2>\n            <p class=\"dash-date\">Wednesday, August 5</p>\n            <div class=\"nav-card\" style=\"border-color:var(--teal);background:var(--teal-tint);\"><div class=\"nc-icon\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"3\" y=\"11\" width=\"18\" height=\"10\" rx=\"2\"/><path d=\"M7 11V7a5 5 0 0 1 10 0v4\"/></svg></div><div class=\"nc-main\"><strong>Want to check on things when you\'re away?</strong><span>Set up remote access — optional, takes about a minute</span></div><svg class=\"nc-chev\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"var(--muted-2)\" stroke-width=\"2\"><path d=\"m9 18 6-6-6-6\"/></svg></div>\n            <div class=\"status-card\">\n              <div class=\"s-dot\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#fff\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M20 6 9 17l-5-5\"/></svg></div>\n              <div><strong>Everything is working</strong><span>12 devices connected · Updated just now</span></div>\n            </div>\n            <div class=\"quick-actions\" style=\"max-width:420px;\">\n              <div class=\"qa-btn danger\">Pause All</div>\n              <div class=\"qa-btn\">Guest Wi-Fi</div>\n              <div class=\"qa-btn\">Restart</div>\n            </div>\n            <div class=\"card-grid mt-24\">\n              <div class=\"dcard\"><div class=\"dcard-head\"><strong>Devices</strong><svg width=\"15\" height=\"15\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"var(--muted-2)\" stroke-width=\"2\"><path d=\"m9 18 6-6-6-6\"/></svg></div><div class=\"dcard-big\">12</div><div class=\"dcard-sub\">1 device needs attention</div></div>\n              <div class=\"dcard\"><div class=\"dcard-head\"><strong>Parental Controls</strong><svg width=\"15\" height=\"15\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"var(--muted-2)\" stroke-width=\"2\"><path d=\"m9 18 6-6-6-6\"/></svg></div><div class=\"dcard-big\">3</div><div class=\"dcard-sub\">devices have bedtime rules</div></div>\n              <div class=\"dcard\"><div class=\"dcard-head\"><strong>Security</strong><svg width=\"15\" height=\"15\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"var(--muted-2)\" stroke-width=\"2\"><path d=\"m9 18 6-6-6-6\"/></svg></div><div class=\"dcard-big\">214</div><div class=\"dcard-sub\">threats blocked this month</div></div>\n              <div class=\"dcard\"><div class=\"dcard-head\"><strong>Remote Access</strong><svg width=\"15\" height=\"15\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"var(--muted-2)\" stroke-width=\"2\"><path d=\"m9 18 6-6-6-6\"/></svg></div><div class=\"dcard-big\">Off</div><div class=\"dcard-sub\">not set up yet</div></div>\n            </div></div>';
 
   const dashboardOffline = '<div class=\"dash-main\"><h2>Good afternoon, Jenna</h2>\n            <p class=\"dash-date\">Wednesday, August 5</p>\n            <div class=\"status-card offline\">\n              <div class=\"s-dot\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#fff\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 8v4M12 16h.01\"/></svg></div>\n              <div><strong>Can\u2019t reach your router</strong><span>Last seen 2 hours ago \u00b7 Check it\u2019s powered on</span></div>\n            </div>\n            <div class=\"sec-label\" style=\"margin-top:14px;\">Still available on this Wi-Fi</div>\n            <div class=\"quick-actions\" style=\"max-width:420px;margin-top:0;\">\n              <div class=\"qa-btn danger\">Pause All</div>\n              <div class=\"qa-btn\">Guest Wi-Fi</div>\n              <div class=\"qa-btn\">Restart</div>\n            </div>\n            <div class=\"sec-label\">Needs internet</div>\n            <div class=\"quick-actions\" style=\"max-width:140px;margin-top:0;\">\n              <div class=\"qa-btn dim\">Remote Access</div>\n            </div>\n            <div class=\"card-grid mt-24\">\n              <div class=\"dcard\"><div class=\"dcard-head\"><strong>Devices</strong><svg width=\"15\" height=\"15\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"var(--muted-2)\" stroke-width=\"2\"><path d=\"m9 18 6-6-6-6\"/></svg></div><div class=\"dcard-big\">12</div><div class=\"dcard-sub\">1 device needs attention</div></div>\n              <div class=\"dcard\"><div class=\"dcard-head\"><strong>Parental Controls</strong><svg width=\"15\" height=\"15\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"var(--muted-2)\" stroke-width=\"2\"><path d=\"m9 18 6-6-6-6\"/></svg></div><div class=\"dcard-big\">3</div><div class=\"dcard-sub\">devices have bedtime rules</div></div>\n              <div class=\"dcard\"><div class=\"dcard-head\"><strong>Security</strong><svg width=\"15\" height=\"15\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"var(--muted-2)\" stroke-width=\"2\"><path d=\"m9 18 6-6-6-6\"/></svg></div><div class=\"dcard-big\">214</div><div class=\"dcard-sub\">threats blocked this month</div></div>\n              <div class=\"dcard\"><div class=\"dcard-head\"><strong>Remote Access</strong><svg width=\"15\" height=\"15\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"var(--muted-2)\" stroke-width=\"2\"><path d=\"m9 18 6-6-6-6\"/></svg></div><div class=\"dcard-big\">Off</div><div class=\"dcard-sub\">unavailable while offline</div></div>\n            </div></div>';
@@ -674,6 +691,9 @@ html.large-text .scr-title{font-size:1.15em;}
         el.classList.toggle('active', el.dataset.goto === state.screen);
       });
       labelAccessibly(document.getElementById('appContent'));
+      // Devices screen: static demo markup is already showing at this point (no blank
+      // flash) — kick off the real-data fetch/replace async, on top of it.
+      if(state.screen === 'devices'){ renderDevicesScreen(); }
     }
     window.scrollTo({top:0});
   }
@@ -696,6 +716,42 @@ html.large-text .scr-title{font-size:1.15em;}
     if(screens[screen] === undefined) return;
     state.screen = screen;
     render();
+  }
+
+  // ---- Devices screen: real-data overlay on top of the static demo markup ----
+  // A generic device icon reused for every real row (the static demo's per-row icons
+  // imply a device type — phone, TV, laptop — that the real API has no analog for).
+  const genericDeviceIconSvg = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/></svg>';
+
+  function renderDeviceRow(d){
+    const name = (d.hostname && String(d.hostname).trim()) ? escapeHtml(d.hostname) : (d.ip ? escapeHtml(d.ip) : 'Unknown device');
+    const ipLine = d.ip ? '<span style="display:block;font-size:12px;color:var(--muted);margin-top:1px;">'+escapeHtml(d.ip)+'</span>' : '';
+    const online = !!d.online;
+    return '<div class="list-item"><div class="li-icon">'+genericDeviceIconSvg+'</div><div class="li-main"><strong>'+name+'</strong>'+ipLine+'</div><span class="status-pill '+(online?'online':'offline')+'">'+(online?'Online':'Offline')+'</span></div>';
+  }
+
+  async function renderDevicesScreen(){
+    const data = await fetchRouterApi('/cgi-bin/api/devices');
+    // the user may have navigated to a different screen while this fetch was in
+    // flight — never mutate DOM that no longer belongs to the devices screen
+    if(state.screen !== 'devices') return;
+    const listEl = document.querySelector('.split-desk-list');
+    if(!listEl) return;
+    if(Array.isArray(data)){
+      // real data (even an empty array) replaces the static demo rows entirely
+      const secLabel = listEl.querySelector('.sec-label');
+      if(secLabel) secLabel.textContent = 'Devices ('+data.length+')';
+      listEl.querySelectorAll('.list-item, .api-fallback-notice').forEach(el=>el.remove());
+      listEl.insertAdjacentHTML('beforeend', data.map(renderDeviceRow).join(''));
+    } else if(!listEl.querySelector('.api-fallback-notice')){
+      // unreachable/error: leave the static demo rows in place, just add the notice
+      const notice = document.createElement('div');
+      notice.className = 'api-fallback-notice';
+      notice.textContent = "Can't reach router — showing demo data";
+      const secLabel = listEl.querySelector('.sec-label');
+      if(secLabel) secLabel.insertAdjacentElement('afterend', notice);
+      else listEl.insertAdjacentElement('afterbegin', notice);
+    }
   }
 
   // ---- Global search index (hand-authored; matchText verified verbatim against each screen) ----
