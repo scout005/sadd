@@ -1,0 +1,141 @@
+#!/usr/bin/lua
+-- /api/logs — real logread-backed recent-activity log for the Diagnostics &
+-- Logs screen.
+--
+-- Data source: `logread -l 30`, run as a shell command via io.popen (same
+-- shell-out approach as `system-info`'s `ubus call` — no ubus/logread Lua
+-- binding installed on this VM, and the `logread` CLI binary is already
+-- present on every stock OpenWrt image, no opkg install needed). `-l 30`
+-- is `logread`'s own built-in tail-style line cap (confirmed live via
+-- `logread --help`: "-l <count>  Got only the last 'count' messages" —
+-- confirmed to behave identically to `logread | tail -n 30`, byte-for-byte,
+-- on this VM), so the endpoint never has to buffer or return this VM's
+-- entire, unbounded log history. 30 was chosen as a sensible cap for a
+-- "recent activity" list — enough real lines to be useful, small enough to
+-- stay a fast, boring GET.
+--
+-- Real output format (confirmed live over SSH against this VM, NOT assumed
+-- from generic syslog conventions — see the Task 3 investigation this file
+-- ships with):
+--
+--   Mon Aug 31 15:16:32 2026 authpriv.info dropbear[2185]: Exit (root) from <192.168.1.2:50572>: Disconnect received
+--   Mon Aug 31 15:16:09 2026 kern.notice kernel: [    0.000000] Linux version 5.15.167 ...
+--
+-- i.e. `<asctime-style datetime>  <facility>.<severity>  <tag>[optional [pid]]: <message>`.
+-- The datetime is C `asctime()` format (weekday, month, day, HH:MM:SS,
+-- year) — note asctime pads a single-digit day with an extra space (e.g.
+-- "Sep  5"), which the pattern below tolerates via `%s+` around the day
+-- field rather than assuming exactly one space. The tag is not always
+-- `name[pid]` — kernel lines just have `kernel:`, no bracket — so it's
+-- matched generically as "whatever non-space token precedes the first
+-- `: "` after the facility field, rather than assuming a `[pid]` is always
+-- present.
+--
+-- Field shape shipped: {timestamp, message}, exactly as the format itself
+-- naturally splits (a fixed-width datetime prefix, then everything else).
+-- `message` deliberately keeps the facility.severity + tag + text bundled
+-- together (e.g. "authpriv.info dropbear[2185]: Exit (root) from
+-- <192.168.1.2:50572>: Disconnect received") rather than further splitting
+-- those out into their own fields: unlike the datetime prefix (fixed
+-- width, fixed token count, safe to pattern-match confidently), the
+-- "tag"/message boundary is inherently ambiguous in general (a message's
+-- own text can and does contain further colons, as the dropbear example
+-- above shows) — splitting only as far as the format unambiguously
+-- supports, and leaving the rest as one message string, is the same
+-- "don't force a shape reality doesn't cleanly support" judgment call
+-- `system-info` documents for its own field extraction.
+--
+-- Ordering: `logread` (like `logread -l N`) always emits its lines
+-- oldest-first (confirmed live: `logread -l 5` and `logread | tail -n 5`
+-- produced byte-identical output, both ascending in time). The frontend's
+-- existing static `.tech-row` list on the `advlogs` screen (`sadd-website.html`)
+-- is ordered newest-first (most recent event at the top). To match that
+-- ordering — so Task 4's frontend wiring can drop these straight into the
+-- existing list without re-sorting — this endpoint reverses the capped
+-- line set before emitting it, so element 0 of the JSON array is this VM's
+-- single most recent log line.
+--
+-- Parser choice: a handful of line-anchored `string.match` patterns, not a
+-- general log parser — same reasoning as `system-info`'s `extract_string`/
+-- `extract_number` helpers (narrow patterns scoped to one specific,
+-- confirmed-live output format, not a general-purpose parser for logs in
+-- general). A malformed/unparseable line (should not happen against a real
+-- `logread`, but defensively handled anyway) falls back to an empty
+-- timestamp and the raw line as the message, rather than dropping the line
+-- or crashing.
+--
+-- JSON encoding: hand-built (not lua-cjson), same choice and reasoning as
+-- `devices`/`firewall-rules`/`system-info` — no outbound internet route on
+-- this VM to opkg-install lua-cjson (see 01-install-api-packages.sh's
+-- header comment), and the output here is a flat array of 2-field objects
+-- of plain strings, well within reach of the same defensive escaper.
+
+local LOG_LINE_CAP = 30
+
+local function json_escape(s)
+  if s == nil then return "" end
+  s = tostring(s)
+  s = s:gsub('[\\"\n\r\t]', {
+    ['\\'] = '\\\\',
+    ['"'] = '\\"',
+    ['\n'] = '\\n',
+    ['\r'] = '\\r',
+    ['\t'] = '\\t',
+  })
+  -- strip any other stray control characters that would make the JSON invalid
+  s = s:gsub('[\1-\31]', '')
+  return s
+end
+
+local function run(cmd)
+  local p = io.popen(cmd .. " 2>/dev/null")
+  if not p then return "" end
+  local out = p:read("*a") or ""
+  p:close()
+  return out
+end
+
+-- Split one real `logread` line into {timestamp, message}. The datetime
+-- prefix is a fixed asctime-style token sequence: weekday, month, day,
+-- HH:MM:SS, year. Everything after it (facility.severity, tag, and the
+-- rest of the message) is kept together as `message` — see the header
+-- comment above for why that boundary isn't split further.
+local function parse_log_line(line)
+  local timestamp, rest = line:match(
+    "^(%a%a%a%s+%a%a%a%s+%d+%s+%d%d:%d%d:%d%d%s+%d%d%d%d)%s+(.*)$"
+  )
+  if timestamp and rest then
+    return timestamp, rest
+  end
+  -- Defensive fallback: doesn't match the expected shape (shouldn't happen
+  -- against a real logread, but never crash or drop the line over it).
+  return "", line
+end
+
+local raw = run(string.format("logread -l %d", LOG_LINE_CAP))
+
+local lines = {}
+for line in raw:gmatch("[^\r\n]+") do
+  lines[#lines + 1] = line
+end
+
+-- logread emits oldest-first; reverse to newest-first to match the
+-- frontend's existing static .tech-row ordering (see header comment).
+local entries = {}
+for i = #lines, 1, -1 do
+  local timestamp, message = parse_log_line(lines[i])
+  entries[#entries + 1] = { timestamp = timestamp, message = message }
+end
+
+print("Content-Type: application/json\n")
+
+local parts = {}
+for _, e in ipairs(entries) do
+  parts[#parts + 1] = string.format(
+    '{"timestamp":"%s","message":"%s"}',
+    json_escape(e.timestamp),
+    json_escape(e.message)
+  )
+end
+
+print("[" .. table.concat(parts, ",") .. "]")

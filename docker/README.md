@@ -156,7 +156,12 @@ bash docker/provision/05-provision-firewall-api.sh
 #    4 and 5.
 bash docker/provision/06-provision-system-info-api.sh
 
-# 7. Verify.
+# 7. Deploy the /api/logs endpoint (real logread-backed recent-activity
+#    log for the Diagnostics & Logs screen) and verify it responds with a
+#    JSON array. Self-contained/idempotent, same pattern as steps 4-6.
+bash docker/provision/07-provision-logs-api.sh
+
+# 8. Verify.
 curl -s http://localhost:8081/cgi-bin/api/ping     # -> {"ok":true}
 curl -sI http://localhost:8081/cgi-bin/api/ping    # -> Content-Type: application/json among the headers
 curl -sI http://localhost:8081/                    # -> 200 OK, serving sadd-website.html
@@ -164,6 +169,7 @@ curl -sI http://localhost:8081/cgi-bin/luci/       # -> reachable (403 login-req
 curl -s http://localhost:8081/cgi-bin/api/devices  # -> JSON array of current DHCP leases (empty `[]` until a real client has a lease — see "Getting a real device onto the lease list" below)
 curl -s http://localhost:8081/cgi-bin/api/firewall-rules  # -> JSON array of current port-forward rules (empty `[]` on a fresh VM)
 curl -s http://localhost:8081/cgi-bin/api/system-info  # -> JSON object of real distro/hardware/uptime info, e.g. {"distribution":"OpenWrt","version":"23.05.5","revision":"r24106-10cc5fcd00","target":"x86/64","model":"QEMU Standard PC (i440FX + PIIX, 1996)","kernel":"5.15.167","uptime":117}
+curl -s http://localhost:8081/cgi-bin/api/logs  # -> JSON array (newest-first, capped at 30) of real logread lines, e.g. [{"timestamp":"Mon Aug 31 15:18:55 2026","message":"authpriv.info dropbear[2232]: Exit (root) from <192.168.1.2:60990>: Disconnect received"}, ...]
 ```
 
 **Step 3 in detail — overwriting the stock landing page is intentional:**
@@ -272,6 +278,35 @@ specifically, as a sibling of `luci`, not a replacement for it.
   the full reasoning. Hand-builds its response JSON (with the same
   defensive escaper as `devices`/`firewall-rules`) rather than installing
   `lua-cjson`, for the same no-outbound-internet reason.
+- `docker/provision/07-provision-logs-api.sh` — copies (and chmods, and
+  curl-verifies) `docker/provision/www/api/logs` onto the VM's
+  `/www/cgi-bin/api/logs`. Same dedicated-step rationale as
+  `04-provision-devices-api.sh`.
+- `docker/provision/www/api/logs` — the tracked source of truth for the
+  `/api/logs` endpoint: shells out to `logread -l 30` (`logread`'s own
+  built-in tail-style line cap — confirmed live via `logread --help`,
+  confirmed to behave identically to `logread | tail -n 30`) and returns a
+  JSON array of `{timestamp, message}` entries for the Diagnostics & Logs
+  screen's "Recent activity" list. The real, live-confirmed `logread`
+  output format is an asctime-style datetime prefix (weekday, month, day,
+  `HH:MM:SS`, year) followed by `<facility>.<severity> <tag>[optional
+  [pid]]: <message>`, e.g. `Mon Aug 31 15:16:32 2026 authpriv.info
+  dropbear[2185]: Exit (root) from <192.168.1.2:50572>: Disconnect
+  received` — confirmed directly over SSH during this task, not assumed
+  from generic syslog conventions. Only the fixed-width datetime prefix is
+  split out into its own field; the facility/tag/message remainder is kept
+  as one `message` string, since that boundary isn't unambiguous in
+  general (message text itself can and does contain further colons) — see
+  the script's own header comment for the full reasoning, the same
+  "don't force a shape reality doesn't support" judgment call
+  `system-info` documents for its own field extraction. `logread` always
+  emits oldest-first; this endpoint reverses its capped output to
+  newest-first to match the `advlogs` screen's existing static
+  `.tech-row` list ordering (most-recent-activity-first), so Task 4's
+  frontend wiring doesn't need to re-sort. Hand-builds its response JSON
+  (with the same defensive escaper as `devices`/`firewall-rules`/
+  `system-info`) rather than installing `lua-cjson`, for the same
+  no-outbound-internet reason.
 
 ### Real connectivity test — what it actually means in this topology
 
