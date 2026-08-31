@@ -2,7 +2,7 @@
 
 ## Goal
 
-Drive as much of this prototype as genuinely can be by a real, running OpenWrt instance, instead of hardcoded demo data. The full target is documented below as a roadmap of "waves," each one a self-contained slice that gets its own implementation plan when its turn comes. **Wave 1** — the first slice actually being designed and built now — covers two screens on the desktop prototype (`sadd-website.html`): **Devices** and **Firewall & Port Forwarding**. Everything below Wave 1 in the roadmap is sequenced but not yet detailed at the same level; each wave gets its own design pass (reusing this document's architecture) immediately before it's built, since exact implementation details depend on what's actually true inside the running container by that point.
+Drive as much of this prototype as genuinely can be by a real, running OpenWrt instance, instead of hardcoded demo data. The full target is documented below as a roadmap of "waves," each one a self-contained slice that gets its own implementation plan when its turn comes. **Wave 1** (done) covers two screens on the desktop prototype (`sadd-website.html`): **Devices** and **Firewall & Port Forwarding**. **Wave 2** (done) covers **About**'s version row and **Diagnostics & Logs**' "Recent activity" list. Everything below Wave 2 in the roadmap is sequenced but not yet detailed at the same level; each wave gets its own design pass (reusing this document's architecture) immediately before it's built, since exact implementation details depend on what's actually true inside the running container by that point.
 
 Not every screen in the app can be "real" in this sense — see **Full roadmap** below for the honest breakdown of which screens are genuinely OpenWrt-backable, which are pure UI-flow/marketing content with nothing to execute, and which are cloud/account-system features that would need an entirely different (non-router) backend.
 
@@ -94,6 +94,21 @@ is unreachable (the static demo data the index was authored against is what actu
 renders then). No code change was made for this; it isn't planned to be "fixed" — doing so
 would mean fighting the original design's own accepted degradation, not fixing a defect.
 
+**Wave 2 update (2026-08-31, confirmed during Wave 2's own final verification pass):** the
+same by-design interaction extends to `advlogs` (Diagnostics & Logs) — Task 4 wired its
+whole "Recent activity" `.tech-row` list to real `logread` data the same way, so every
+`searchIndex` entry of `type: "log"` pointing at `advlogs` (e.g. "Threat blocked:
+malicious-domain.net", "Inbound connection blocked on port 3074") now silently skips its
+highlight too, for the identical reason. `about` is different and unaffected: Task 2 only
+replaces the "App version" row's factual *value* span, and no `searchIndex` entry's
+`matchText` targets that value — every entry pointing at `about` (`"App version"`'s own
+label, "Built on OpenWrt", the CVE table rows, "Our pricing promise") targets text that
+stays static, so About's search highlighting was confirmed to keep working correctly in
+both the router-reachable and router-unreachable cases. Re-verified hands-on with
+Playwright against the real VM as part of Wave 2's Task 5: navigation still lands on the
+correct screen every time on every affected screen; zero console errors; no code change
+needed, same as Wave 1's conclusion.
+
 ## Testing / how we'll know it's real, not just displayed
 
 **Note (2026-08-31): the original plan below assumed a WAN-facing connectivity test. This VM has no WAN interface (confirmed Tasks 3/5/7), so that specific test was never achievable — corrected below.**
@@ -116,11 +131,11 @@ All 48 `sadd-website.html` screens, sorted into what "make it real" would actual
 
 ### Group 1 — genuinely OpenWrt-backable (the real work), in waves
 
-**Wave 1 (this design, building now):**
+**Wave 1 (done):**
 - Devices — real DHCP leases
 - Firewall & Port Forwarding — real `uci`/`nft` rules
 
-**Wave 2 (building now — scope corrected 2026-08-31 against what Wave 1 actually confirmed about this VM):**
+**Wave 2 (done — scope corrected 2026-08-31 against what Wave 1 actually confirmed about this VM):**
 - About — real OpenWrt version/board info (`ubus call system board`, already captured live in `docker/facts.md` §7 from Task 2's investigation). Narrowly scoped: the "App version"/"Built on OpenWrt" row becomes real; the rest of the screen (CVE table, pricing promise, compliance statement) is marketing/compliance copy with no OpenWrt-backable analog and stays static, same as Wave 1 only touched the port-forward section of Firewall & Ports, not its whole screen.
 - Diagnostics & Logs — the "Recent activity" list becomes real `logread` output. The "Live download/upload" Mbps cards do NOT become real in this wave — that needs real bandwidth accounting (`nlbwmon`/nft counters), which is Wave 4 territory ("Weekly Usage"), not a `logread` call; scoping it into Wave 2 would blur two different kinds of real data behind one screen.
 - ~~WAN check (onboarding step)~~ and ~~Connection Health~~ — **deferred out of Wave 2, not built.** Both assumed a real WAN-facing test, exactly like Wave 1's original Firewall testing plan did — but Wave 1 confirmed this VM has **no WAN interface at all** (Tasks 3/5/7), and unlike port-forwarding (where the underlying `uci`/`nft` mechanism could still be proven real via the LAN zone), there's no LAN-side analog for "is the internet reachable" or "WAN interface flapped" — those questions are only meaningful with a real second (WAN) interface, which is a genuine infra addition (a second tap/bridge device on the container, NAT'd or bridged so the guest can reach the real internet through it), not a small task. Worth doing whenever WAN-dependent screens become a priority, not bundled into Wave 2.

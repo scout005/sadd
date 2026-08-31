@@ -404,10 +404,19 @@ device.
   Acceptable only because this is an explicitly local, single-user dev/test
   tool — not something to carry into a later wave or real deployment as-is.
 - The global search feature (built earlier this session, unrelated to this
-  work) can't highlight search results on the Devices/Firewall & Ports
-  screens when the router is reachable and responding quickly — real data
-  overwrites the static demo text those two search-index entries point at
-  before the highlight fires. Navigation still lands on the correct screen
-  every time; only the cosmetic pulse is silently skipped, exactly matching
-  the search feature's own designed "fail silently on content drift"
-  behavior. Full detail in the design spec's Error Handling section.
+  work) can't highlight search results on the Devices, Firewall & Ports
+  (port-forwarding rules only), and Diagnostics & Logs screens when the
+  router is reachable and responding quickly — real data overwrites the
+  static demo text those search-index entries point at before the
+  highlight fires. Confirmed during Wave 2's verification pass to extend
+  to all of Diagnostics & Logs' "Recent activity" search entries (its
+  whole log list is real-data-backed, unlike Firewall & Ports where only
+  the port-forwarding rows are affected). The About screen is unaffected —
+  none of its indexed search entries (App version's label, "Built on
+  OpenWrt", the CVE table, pricing promise) point at the one span that
+  actually goes dynamic, since only the factual version *value* is
+  replaced, not any indexed label text. Navigation still lands on the
+  correct screen every time on every affected screen; only the cosmetic
+  pulse is silently skipped, exactly matching the search feature's own
+  designed "fail silently on content drift" behavior. Full detail in the
+  design spec's Error Handling section.
