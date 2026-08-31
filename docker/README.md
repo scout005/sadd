@@ -161,7 +161,17 @@ bash docker/provision/06-provision-system-info-api.sh
 #    JSON array. Self-contained/idempotent, same pattern as steps 4-6.
 bash docker/provision/07-provision-logs-api.sh
 
-# 8. Verify.
+# 8. Create the baseline wireless config (this VM has NO wireless config at
+#    all on a fresh boot — no wireless hardware for OpenWrt to have
+#    auto-detected; see docker/facts.md Section 11) and deploy the
+#    /api/wifi endpoint (real UCI-backed SSID + guest-network on/off state
+#    for the Settings/Guest Wi-Fi screens) and verify it responds with a
+#    JSON object. Idempotent (safe to re-run against an already-configured
+#    VM — checks for each section before creating it), unlike steps 4-7
+#    this one also creates real VM state, not just a stateless endpoint.
+bash docker/provision/08-provision-wifi-api.sh
+
+# 9. Verify.
 curl -s http://localhost:8081/cgi-bin/api/ping     # -> {"ok":true}
 curl -sI http://localhost:8081/cgi-bin/api/ping    # -> Content-Type: application/json among the headers
 curl -sI http://localhost:8081/                    # -> 200 OK, serving sadd-website.html
@@ -170,6 +180,7 @@ curl -s http://localhost:8081/cgi-bin/api/devices  # -> JSON array of current DH
 curl -s http://localhost:8081/cgi-bin/api/firewall-rules  # -> JSON array of current port-forward rules (empty `[]` on a fresh VM)
 curl -s http://localhost:8081/cgi-bin/api/system-info  # -> JSON object of real distro/hardware/uptime info, e.g. {"distribution":"OpenWrt","version":"23.05.5","revision":"r24106-10cc5fcd00","target":"x86/64","model":"QEMU Standard PC (i440FX + PIIX, 1996)","kernel":"5.15.167","uptime":117}
 curl -s http://localhost:8081/cgi-bin/api/logs  # -> JSON array (newest-first, capped at 30) of real logread lines, e.g. [{"timestamp":"Mon Aug 31 15:18:55 2026","message":"authpriv.info dropbear[2232]: Exit (root) from <192.168.1.2:60990>: Disconnect received"}, ...]
+curl -s http://localhost:8081/cgi-bin/api/wifi  # -> JSON object of real UCI wireless state, e.g. {"ssid":"Smith Family","guestEnabled":false}
 ```
 
 **Step 3 in detail — overwriting the stock landing page is intentional:**
@@ -307,6 +318,33 @@ specifically, as a sibling of `luci`, not a replacement for it.
   (with the same defensive escaper as `devices`/`firewall-rules`/
   `system-info`) rather than installing `lua-cjson`, for the same
   no-outbound-internet reason.
+- `docker/provision/08-provision-wifi-api.sh` — unlike 04-07, this step
+  does two things: (1) creates a baseline `/etc/config/wireless` on the VM
+  over SSH (this VM has none at all on a fresh boot — see
+  `docker/facts.md` Section 11 — so there's nothing to just copy/read the
+  way firewall/system-info/logs had real underlying state already);
+  (2) copies (and chmods, and curl-verifies)
+  `docker/provision/www/api/wifi` onto the VM's `/www/cgi-bin/api/wifi`.
+  Idempotent: each `uci set` section (`radio0`, `default_radio0`, `guest`)
+  is skipped if it already exists (`uci get wireless.<section>` succeeding
+  is the check), so re-running this script against an already-configured
+  VM neither fails nor duplicates sections — confirmed live by running it
+  twice in a row and diffing `uci show wireless` (identical, one of each
+  section both times).
+- `docker/provision/www/api/wifi` — the tracked source of truth for the
+  `/api/wifi` endpoint (GET only for this task — POST/write comes in a
+  later task): reads `uci get wireless.default_radio0.ssid` and `uci get
+  wireless.guest.disabled`, returning `{ssid, guestEnabled}` where
+  `guestEnabled` is `true` unless `disabled` reads exactly `'1'` (UCI's own
+  disabled-option convention — absence of the option means enabled). Both
+  section/option names match exactly what `08-provision-wifi-api.sh`
+  creates. Hand-builds its response JSON (with the same defensive escaper
+  as the other endpoints in this directory) rather than installing
+  `lua-cjson`, for the same no-outbound-internet reason. Graceful
+  degradation: if a `uci get` fails for any reason (missing config/section,
+  `uci` erroring), `ssid` falls back to `""` and `guestEnabled` falls back
+  to `false` (matching the mockup's static "Guest network: Off" default)
+  rather than crashing or emitting malformed JSON.
 
 ### Real connectivity test — what it actually means in this topology
 

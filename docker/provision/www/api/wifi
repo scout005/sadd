@@ -1,0 +1,93 @@
+#!/usr/bin/lua
+-- /api/wifi — GET only for this task (Task 1). Real UCI-backed read of the
+-- baseline wireless config created by docker/provision/08-provision-wifi-api.sh
+-- (see that script and docker/facts.md Section 11 for why this config has
+-- to be provisioned rather than just read: this VM has no wireless
+-- hardware, so nothing auto-generates /etc/config/wireless on boot).
+--
+-- Reads:
+--   uci get wireless.default_radio0.ssid   -> the main Wi-Fi network's name
+--   uci get wireless.guest.disabled        -> '1' when the guest network is
+--                                              off, '0' (or the option
+--                                              missing entirely) when it's on
+--
+-- Response shape: {"ssid": "<string>", "guestEnabled": true|false}
+--
+-- guestEnabled derivation: UCI's own convention for a wifi-iface's
+-- `disabled` option is "the network is off when this is truthy ('1')";
+-- absence of the option means NOT disabled (i.e. enabled) — same convention
+-- radio0/default_radio0 already follow elsewhere in this file's sibling
+-- config. So guestEnabled is true unless disabled reads exactly '1'.
+--
+-- Section/option names here match exactly what
+-- 08-provision-wifi-api.sh creates: wireless.default_radio0 (wifi-iface,
+-- ssid='Smith Family') and wireless.guest (wifi-iface, disabled=1 to
+-- start) — re-confirmed by reading that script back before writing this
+-- file, not assumed to line up.
+--
+-- Graceful degradation: if `uci get` fails for any reason (config file
+-- missing, section not yet created, uci itself erroring) this endpoint
+-- does NOT crash or emit invalid output — ssid falls back to "" and
+-- guestEnabled falls back to false (matching the mockup's static "Guest
+-- network: Off" default — the safe/expected state when the guest section's
+-- real status can't be determined), always producing a well-formed JSON
+-- object.
+--
+-- JSON encoding: hand-built (not lua-cjson), same reasoning as every other
+-- endpoint in this directory (docker/provision/www/api/devices's header
+-- comment has the full "why not lua-cjson" rationale — no outbound
+-- internet route on this VM to opkg-install it, and the response shape
+-- here is trivially small). json_escape() defensively escapes
+-- backslash/quote/control characters so a weird ssid value can't produce
+-- invalid JSON.
+
+local function json_escape(s)
+  if s == nil then return "" end
+  s = tostring(s)
+  s = s:gsub('[\\"\n\r\t]', {
+    ['\\'] = '\\\\',
+    ['"'] = '\\"',
+    ['\n'] = '\\n',
+    ['\r'] = '\\r',
+    ['\t'] = '\\t',
+  })
+  -- strip any other stray control characters that would make the JSON invalid
+  s = s:gsub('[\1-\31]', '')
+  return s
+end
+
+local function run(cmd)
+  local p = io.popen(cmd .. " 2>/dev/null")
+  if not p then return "" end
+  local out = p:read("*a") or ""
+  p:close()
+  return (out:gsub("%s+$", ""))
+end
+
+local function uci_get(path)
+  local out = run("uci get " .. path)
+  -- uci prints its own error text ("uci: Entry not found") to stdout in
+  -- some failure modes as well as stderr, depending on version/build — a
+  -- defensive check here treats anything containing "uci:" as a failed
+  -- lookup rather than a real value, so a missing section degrades to the
+  -- fallback below instead of leaking an error string into the response.
+  if out == "" or out:find("uci:", 1, true) then return nil end
+  return out
+end
+
+local ssid = uci_get("wireless.default_radio0.ssid") or ""
+local guest_disabled = uci_get("wireless.guest.disabled")
+-- If the lookup itself failed (nil — section/option missing, uci error),
+-- fall back to false (matching the mockup's static "Off" default) rather
+-- than guessing "enabled" for a network whose real state is unknown. If
+-- the lookup succeeded, UCI's own convention applies: any value other than
+-- '1' means enabled (see header comment on UCI's disabled-option
+-- convention).
+local guest_enabled = (guest_disabled ~= nil) and (guest_disabled ~= "1")
+
+print("Content-Type: application/json\n")
+print(string.format(
+  '{"ssid":"%s","guestEnabled":%s}',
+  json_escape(ssid),
+  guest_enabled and "true" or "false"
+))
