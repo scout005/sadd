@@ -20,7 +20,7 @@ Instead: a small API daemon lives **inside the OpenWrt image itself**, under `uh
 ## Architecture
 
 ```
-Browser (sadd-website.html, devices + advfirewall screens only)
+Browser (sadd-website.html — Wave 1: devices + advfirewall screens; Wave 2: about's version row + advlogs' Recent Activity list)
         │  same-origin fetch('/api/...')
         ▼
 uhttpd  (inside the OpenWrt container, also serves the static HTML file)
@@ -123,7 +123,7 @@ needed, same as Wave 1's conclusion.
 - Real VLAN trunking across physical switch ports — a container can only demonstrate the `uci network`/bridge/8021q config semantics, not physical trunk behavior.
 - Any auth/session model beyond a single shared admin session for the pilot — proper multi-user RBAC (matching the product's family-profile model) is a later concern.
 - Persisting the container across host reboots, or treating this as a daily-driver setup — it's a dev/test environment.
-- Any screen other than `devices` and `advfirewall` becoming live — everything else keeps working exactly as it does today.
+- Any screen section other than the four listed in "Frontend changes" above becoming live — everything else keeps working exactly as it does today.
 
 ## Full roadmap: every screen, categorized
 
