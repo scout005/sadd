@@ -1025,15 +1025,15 @@ html.large-text .scr-title{font-size:1.15em;}
     // router that WAS reached fine.
     if(data && typeof data === 'object'){
       // real data replaces the static "Smith Family"/"Off" placeholders — selected by
-      // id, not by string/regex-matching the rendered HTML. escapeHtml's output is
-      // HTML-entity-encoded, so it's assigned via innerHTML (matching renderAboutScreen's
-      // own convention) — assigning it via textContent would double-escape (e.g. a
-      // literal "&amp;" shown to the user instead of a decoded "&").
-      wifiNameEl.innerHTML = escapeHtml(data.ssid || 'Smith Family');
+      // id, not by string/regex-matching the rendered HTML. setEscapedText() (see its
+      // definition near escapeHtml) always assigns via innerHTML correctly — using a bare
+      // .textContent assignment here would double-escape (e.g. a literal "&amp;" shown to
+      // the user instead of a decoded "&").
+      setEscapedText(wifiNameEl, data.ssid || 'Smith Family');
       // guestEnabled is a fixed 'On'/'Off' string derived from a boolean, not external
-      // text, so escapeHtml isn't strictly needed here — applied anyway for consistency
+      // text, so escaping isn't strictly needed here — applied anyway for consistency
       // with the rest of this file's defensive posture.
-      guestStatusEl.innerHTML = escapeHtml(data.guestEnabled ? 'On' : 'Off');
+      setEscapedText(guestStatusEl, data.guestEnabled ? 'On' : 'Off');
       if(existingNotice) existingNotice.remove();
     } else if(!existingNotice){
       // unreachable/error: leave the static "Smith Family"/"Off" text as-is, add ONE
@@ -1133,8 +1133,23 @@ html.large-text .scr-title{font-size:1.15em;}
     return text.slice(0,i) + '<mark>' + text.slice(i,i+query.length) + '</mark>' + text.slice(i+query.length);
   }
 
+  // Returns HTML-entity-encoded text. Assign the result via .innerHTML, never
+  // .textContent — .textContent displays the escaped entities literally
+  // (e.g. a real "&" shows up on-screen as "&amp;") instead of decoding them.
+  // This exact mistake has been made and fixed twice already (About screen,
+  // Settings screen) — use setEscapedText(el, text) below instead of calling
+  // escapeHtml() directly at a DOM-assignment site, so there's no method
+  // choice left to get wrong.
   function escapeHtml(text){
     return String(text).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  }
+
+  // Safely sets el's displayed text from externally-sourced (untrusted) data.
+  // Always correct — unlike a bare `el.innerHTML = escapeHtml(text)` call,
+  // there's no .textContent-vs-.innerHTML choice for a future call site to
+  // get wrong.
+  function setEscapedText(el, text){
+    el.innerHTML = escapeHtml(text);
   }
 
   function renderSearchResults(query){
