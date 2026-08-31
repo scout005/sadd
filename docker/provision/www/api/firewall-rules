@@ -331,13 +331,31 @@ local function reload_firewall()
   run("/etc/init.d/firewall reload")
 end
 
+-- Emits the response headers (and the blank-line separator print()'s
+-- trailing "\n" plus the implicit newline already provides) for this
+-- request. uhttpd (running this as CGI) reads a `Status: <code> <reason>`
+-- header line, printed before the blank separator alongside Content-Type,
+-- to set the HTTP status of the response; omitting it defaults to 200,
+-- so the success path (status == 200) intentionally emits no Status line.
+local function send_headers(status)
+  local reasons = {
+    [400] = "Bad Request",
+    [404] = "Not Found",
+    [405] = "Method Not Allowed",
+    [500] = "Internal Server Error",
+  }
+  if status and status ~= 200 then
+    print("Status: " .. status .. " " .. (reasons[status] or "Error"))
+  end
+  print("Content-Type: application/json\n")
+end
+
 -- === Request handling ===
 
 local method = os.getenv("REQUEST_METHOD") or "GET"
 
-print("Content-Type: application/json\n")
-
 if method == "GET" then
+  send_headers(200)
   local order, fields = list_redirect_sections()
   local parts = {}
   for _, id in ipairs(order) do
@@ -371,24 +389,71 @@ elseif method == "POST" then
     if not dport_ok then err = err .. " src_dport" end
     if not ip_ok then err = err .. " dest_ip" end
     if not destport_ok then err = err .. " dest_port" end
+    send_headers(400)
     print(string.format('{"ok":false,"error":"%s"}', json_escape(err)))
   else
+    -- Create sequence: uci add -> uci rename -> a run of uci set calls ->
+    -- uci commit. Every step's actual effect is verified (not just that
+    -- the `run()` call returned) before committing — see Issue 1's header
+    -- note above `run()`'s own definition-adjacent commentary. On any
+    -- failure, uncommitted changes are rolled back with `uci revert
+    -- firewall` and nothing is committed, so a failed create never leaves
+    -- a partial/broken `redirect` section live in the committed config.
+    local id
+    local create_failed = false
+    local create_error = nil
+
     local anon = run("uci add firewall redirect"):gsub("%s+$", "")
     if anon == "" or anon:find("[^%w_]") then
-      print('{"ok":false,"error":"uci add firewall redirect failed"}')
+      create_failed = true
+      create_error = "uci add firewall redirect failed"
     else
-      local id = "fwd_" .. os.time() .. "_" .. random_hex(3)
+      id = "fwd_" .. os.time() .. "_" .. random_hex(3)
       run("uci rename firewall." .. anon .. "=" .. id)
-      run("uci set firewall." .. id .. ".name=" .. shell_quote(name))
-      run("uci set firewall." .. id .. ".src=wan") -- see header comment
-      run("uci set firewall." .. id .. ".dest=lan")
-      run("uci set firewall." .. id .. ".target=DNAT")
-      run("uci set firewall." .. id .. ".proto=" .. shell_quote(proto))
-      run("uci set firewall." .. id .. ".src_dport=" .. shell_quote(src_dport))
-      run("uci set firewall." .. id .. ".dest_ip=" .. shell_quote(req.dest_ip))
-      run("uci set firewall." .. id .. ".dest_port=" .. shell_quote(dest_port))
+      -- Verify the rename actually took: the section must now exist
+      -- under the new stable name and still be type 'redirect'. If
+      -- `uci rename` silently failed, every subsequent `uci set
+      -- firewall.<id>....` below would target a nonexistent section and
+      -- silently no-op — this check catches that before it happens.
+      if section_type(id) ~= "redirect" then
+        create_failed = true
+        create_error = "uci rename to " .. id .. " failed: section not found under new name"
+      else
+        run("uci set firewall." .. id .. ".name=" .. shell_quote(name))
+        run("uci set firewall." .. id .. ".src=wan") -- see header comment
+        run("uci set firewall." .. id .. ".dest=lan")
+        run("uci set firewall." .. id .. ".target=DNAT")
+        run("uci set firewall." .. id .. ".proto=" .. shell_quote(proto))
+        run("uci set firewall." .. id .. ".src_dport=" .. shell_quote(src_dport))
+        run("uci set firewall." .. id .. ".dest_ip=" .. shell_quote(req.dest_ip))
+        run("uci set firewall." .. id .. ".dest_port=" .. shell_quote(dest_port))
+
+        -- Final sanity check, before committing: read each field back
+        -- and confirm it actually got set as expected.
+        local function get_field(field)
+          return (run("uci get firewall." .. id .. "." .. field):gsub("%s+$", ""))
+        end
+        if get_field("src") ~= "wan"
+            or get_field("dest") ~= "lan"
+            or get_field("target") ~= "DNAT"
+            or get_field("proto") ~= proto
+            or get_field("src_dport") ~= src_dport
+            or get_field("dest_ip") ~= req.dest_ip
+            or get_field("dest_port") ~= dest_port then
+          create_failed = true
+          create_error = "uci set verification failed for firewall." .. id
+        end
+      end
+    end
+
+    if create_failed then
+      run("uci revert firewall")
+      send_headers(500)
+      print(string.format('{"ok":false,"error":"%s"}', json_escape(create_error)))
+    else
       run("uci commit firewall")
       reload_firewall()
+      send_headers(200)
       print(string.format('{"ok":true,"id":"%s","name":"%s"}', json_escape(id), json_escape(name)))
     end
   end
@@ -403,16 +468,20 @@ elseif method == "DELETE" then
   end
 
   if not id or id == "" or id:find("[^%w_]") then
+    send_headers(400)
     print('{"ok":false,"error":"missing or invalid id"}')
   elseif section_type(id) ~= "redirect" then
+    send_headers(404)
     print(string.format('{"ok":false,"error":"no such firewall-rule id: %s"}', json_escape(id)))
   else
     run("uci delete firewall." .. id)
     run("uci commit firewall")
     reload_firewall()
+    send_headers(200)
     print(string.format('{"ok":true,"id":"%s"}', json_escape(id)))
   end
 
 else
+  send_headers(405)
   print(string.format('{"ok":false,"error":"unsupported method: %s"}', json_escape(method)))
 end
