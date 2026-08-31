@@ -19,7 +19,11 @@ docker compose up -d --build
 ```
 
 Then:
-- LuCI web UI: http://localhost:8081/ (redirects to `cgi-bin/luci/`)
+- http://localhost:8081/ — before running the Provisioning steps below,
+  this is OpenWrt's stock landing page (redirects to `cgi-bin/luci/`); once
+  Provisioning step 3 has run, this serves `sadd-website.html` instead, and
+  LuCI moves to being reachable directly at `cgi-bin/luci/` (see "Why
+  `/cgi-bin/api/ping` and not `/api/ping`" below for the docroot layout).
 - SSH: `ssh root@localhost -p 2223` (no password set yet on a fresh image —
   OpenWrt prompts you to set one on first LuCI/SSH login)
 
