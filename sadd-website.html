@@ -645,7 +645,7 @@ html.large-text .scr-title{font-size:1.15em;}
   const screenMeta = {"login": "auth", "signup": "auth", "mfa": "auth", "welcome": "auth", "setup": "auth", "discover": "auth", "success": "auth", "dashboard": "app", "devices": "app", "parental": "app", "security": "app", "vpn": "app", "help": "app", "settings": "app", "advhub": "app", "advnetwork": "app", "advfirewall": "app", "guest": "app", "advqos": "app", "advwan": "app", "advlogs": "app", "advapi": "app", "advvpn": "app", "adblock": "app", "devcontrols": "app", "connectdevice": "app", "laptopvpn": "app", "advupdates": "app", "changepassword": "auth", "recoverycode": "auth", "wancheck": "auth", "privacy": "app", "about": "app", "blockdetail": "app", "glossary": "app", "comfortlevel": "auth", "advwireguard": "app", "topology": "auth", "notifications": "app", "connectionhealth": "app", "fleet": "app", "hardware": "app", "hardwarequiz": "app", "rightforme": "app", "walktest": "app", "usagereport": "app", "blockpage": "auth", "supportaccess": "app"};
   const pageTitles = {"dashboard": "Home", "devices": "Devices", "parental": "Parental Controls", "security": "Security & Ad Block", "vpn": "Remote Access", "help": "Help & Fixes", "settings": "Settings", "guest": "Guest Wi-Fi", "advhub": "Advanced Settings", "advnetwork": "Network & VLANs", "advvpn": "VPN Server (OpenVPN)", "advfirewall": "Firewall & Port Forwarding", "advqos": "Traffic & QoS", "advwan": "Multi-WAN & Failover", "advlogs": "Diagnostics & Logs", "advapi": "Developer & API Access", "adblock": "Ad Blocking", "devcontrols": "Per-Device Controls", "connectdevice": "Connect a Device", "laptopvpn": "Connect a Laptop (VPN)", "advupdates": "Firmware Updates", "advwireguard": "VPN Server (WireGuard)", "privacy": "Privacy", "about": "About", "blockdetail": "Block Detail", "glossary": "Networking Glossary", "notifications": "Notifications", "comfortlevel": "Let's Get Started", "topology": "Your Setup", "connectionhealth": "Connection Health", "fleet": "Fleet & Business", "hardware": "Hardware & Pricing", "hardwarequiz": "Which Model?", "rightforme": "Is This Right For Me?", "walktest": "Walk-Test Results", "usagereport": "Weekly Usage", "blockpage": "Site Blocked", "supportaccess": "Support Access"};
 
-  const state = { screen: 'welcome', offline: false, freshSetup: false, searchActiveIndex: -1, searchResults: [] };
+  const state = { screen: 'welcome', offline: false, freshSetup: false, searchActiveIndex: -1, searchResults: [], devicesRenderId: 0 };
 
   // ---- Real router API helper: short timeout, resolves to null (never throws) on any
   //      failure so callers can fall back to static demo data without a try/catch of their own ----
@@ -692,8 +692,11 @@ html.large-text .scr-title{font-size:1.15em;}
       });
       labelAccessibly(document.getElementById('appContent'));
       // Devices screen: static demo markup is already showing at this point (no blank
-      // flash) — kick off the real-data fetch/replace async, on top of it.
-      if(state.screen === 'devices'){ renderDevicesScreen(); }
+      // flash) — kick off the real-data fetch/replace async, on top of it. Bump the
+      // render token first so a fetch from a previous (now-replaced) devices render
+      // can recognize itself as stale once it resolves, even if we're still on the
+      // devices screen when it does.
+      if(state.screen === 'devices'){ state.devicesRenderId++; renderDevicesScreen(); }
     }
     window.scrollTo({top:0});
   }
@@ -731,10 +734,16 @@ html.large-text .scr-title{font-size:1.15em;}
   }
 
   async function renderDevicesScreen(){
+    // captured before the await: identifies THIS render, not just "the devices screen"
+    // in general — a repeat navigation to devices bumps state.devicesRenderId, so a
+    // still-in-flight fetch from an earlier, now-replaced render can tell it's stale
+    // even though state.screen is (again) 'devices' by the time it resolves.
+    const myRenderId = state.devicesRenderId;
     const data = await fetchRouterApi('/cgi-bin/api/devices');
-    // the user may have navigated to a different screen while this fetch was in
-    // flight — never mutate DOM that no longer belongs to the devices screen
-    if(state.screen !== 'devices') return;
+    // the user may have navigated away, or navigated back to devices again (a newer
+    // render superseding this one) while this fetch was in flight — never mutate DOM
+    // that no longer belongs to the current devices render
+    if(state.screen !== 'devices' || state.devicesRenderId !== myRenderId) return;
     const listEl = document.querySelector('.split-desk-list');
     if(!listEl) return;
     if(Array.isArray(data)){
@@ -797,7 +806,7 @@ html.large-text .scr-title{font-size:1.15em;}
   }
 
   function escapeHtml(text){
-    return text.replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+    return String(text).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
   }
 
   function renderSearchResults(query){
