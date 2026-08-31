@@ -166,9 +166,15 @@ bash docker/provision/07-provision-logs-api.sh
 #    auto-detected; see docker/facts.md Section 11) and deploy the
 #    /api/wifi endpoint (real UCI-backed SSID + guest-network on/off state
 #    for the Settings/Guest Wi-Fi screens) and verify it responds with a
-#    JSON object. Idempotent (safe to re-run against an already-configured
-#    VM — checks for each section before creating it), unlike steps 4-7
-#    this one also creates real VM state, not just a stateless endpoint.
+#    JSON object. Idempotent AND self-healing (safe to re-run against an
+#    already-configured VM — each section is checked for completeness via a
+#    field-by-field readback, not just existence), unlike steps 4-7 this one
+#    also creates real VM state, not just a stateless endpoint. If a section
+#    is ever found partially/incorrectly configured (e.g. left behind by a
+#    prior run that failed partway through), it's reverted (`uci revert
+#    wireless`) and recreated rather than left broken and silently skipped
+#    forever — same rollback-on-failure pattern as step 5's
+#    /api/firewall-rules endpoint.
 bash docker/provision/08-provision-wifi-api.sh
 
 # 9. Verify.
@@ -325,12 +331,25 @@ specifically, as a sibling of `luci`, not a replacement for it.
   way firewall/system-info/logs had real underlying state already);
   (2) copies (and chmods, and curl-verifies)
   `docker/provision/www/api/wifi` onto the VM's `/www/cgi-bin/api/wifi`.
-  Idempotent: each `uci set` section (`radio0`, `default_radio0`, `guest`)
-  is skipped if it already exists (`uci get wireless.<section>` succeeding
-  is the check), so re-running this script against an already-configured
-  VM neither fails nor duplicates sections — confirmed live by running it
-  twice in a row and diffing `uci show wireless` (identical, one of each
-  section both times).
+  Idempotent and self-healing: each section (`radio0`, `default_radio0`,
+  `guest`) is skipped only if it already exists AND every one of its
+  expected fields reads back correctly via `uci get
+  wireless.<section>.<option>` — a bare `uci get wireless.<section>`
+  succeeding (mere existence) is not enough, since that would also match a
+  half-configured section left behind by a prior run that died partway
+  through its own `uci set` sequence, and would then skip re-creating it
+  forever. When a section exists but fails that completeness check, its
+  uncommitted changes are reverted (`uci revert wireless`) and it's
+  recreated from scratch, verified again, and only committed once complete
+  (one retry, then a loud failure with a revert, never a silent partial
+  commit) — same verify-before-commit/revert-on-failure pattern
+  `docker/provision/www/api/firewall-rules` uses for its own POST handler.
+  Re-running this script against an already-configured VM neither fails nor
+  duplicates sections — confirmed live by running it twice in a row and
+  diffing `uci show wireless` (identical, one of each section both times) —
+  and re-running it against a VM with a deliberately-corrupted partial
+  section correctly detects the incompleteness, reverts, and re-establishes
+  the full correct config instead of leaving it stuck broken.
 - `docker/provision/www/api/wifi` — the tracked source of truth for the
   `/api/wifi` endpoint (GET only for this task — POST/write comes in a
   later task): reads `uci get wireless.default_radio0.ssid` and `uci get

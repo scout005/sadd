@@ -14,10 +14,15 @@
 -- Response shape: {"ssid": "<string>", "guestEnabled": true|false}
 --
 -- guestEnabled derivation: UCI's own convention for a wifi-iface's
--- `disabled` option is "the network is off when this is truthy ('1')";
--- absence of the option means NOT disabled (i.e. enabled) — same convention
--- radio0/default_radio0 already follow elsewhere in this file's sibling
--- config. So guestEnabled is true unless disabled reads exactly '1'.
+-- `disabled` option is "the network is off when this is truthy ('1')". This
+-- endpoint deliberately does NOT follow that convention literally for the
+-- absent/lookup-failed case: rather than treating a missing `disabled`
+-- option as "not disabled, i.e. enabled", an absent/unreadable value is
+-- treated as disabled/false — a safety choice (see the graceful-degradation
+-- note below and the inline comment above the assignment) so that a config
+-- read failure fails toward "guest network off" rather than incorrectly
+-- reporting an unconfigured/unreadable guest network as on. So guestEnabled
+-- is true only when the lookup succeeds AND disabled does not read '1'.
 --
 -- Section/option names here match exactly what
 -- 08-provision-wifi-api.sh creates: wireless.default_radio0 (wifi-iface,
@@ -67,11 +72,27 @@ end
 local function uci_get(path)
   local out = run("uci get " .. path)
   -- uci prints its own error text ("uci: Entry not found") to stdout in
-  -- some failure modes as well as stderr, depending on version/build — a
-  -- defensive check here treats anything containing "uci:" as a failed
-  -- lookup rather than a real value, so a missing section degrades to the
-  -- fallback below instead of leaking an error string into the response.
-  if out == "" or out:find("uci:", 1, true) then return nil end
+  -- some failure modes as well as stderr, depending on version/build, so a
+  -- failed lookup can't be told apart from a real value by emptiness alone.
+  -- Anchored at the START of output only (out:match("^uci:"), not a
+  -- substring search anywhere in it) so a legitimate value that merely
+  -- *contains* "uci:" somewhere inside it (e.g. an SSID like "My uci:
+  -- Router") is never false-flagged as an error — uci's own error messages
+  -- always begin with "uci:", never end with it embedded mid-value.
+  --
+  -- This doesn't fully distinguish "lookup failed" from "value is genuinely
+  -- an empty string" (that would need io.popen's exit status, which isn't
+  -- directly exposed without appending a shell marker like `; echo
+  -- EXIT:$?` and parsing it back out) — deliberately not done here: no
+  -- other endpoint in this codebase plumbs exit status through io.popen
+  -- either (see devices/system-info/firewall-rules), this endpoint's own
+  -- graceful-degradation path already treats both cases identically (empty
+  -- ssid falls back to "", a failed/empty guest.disabled read falls back to
+  -- guestEnabled=false — see below), so the extra plumbing wouldn't change
+  -- this endpoint's actual behavior, only its internal bookkeeping. If a
+  -- future endpoint needs to tell "empty" and "failed" apart, add the
+  -- EXIT:$? marker then.
+  if out == "" or out:match("^uci:") then return nil end
   return out
 end
 
