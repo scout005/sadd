@@ -21,9 +21,10 @@ docker compose up -d --build
 Then:
 - http://localhost:8081/ — before running the Provisioning steps below,
   this is OpenWrt's stock landing page (redirects to `cgi-bin/luci/`); once
-  Provisioning step 3 has run, this serves `sadd-website.html` instead, and
-  LuCI moves to being reachable directly at `cgi-bin/luci/` (see "Why
-  `/cgi-bin/api/ping` and not `/api/ping`" below for the docroot layout).
+  Provisioning step 3 has run, this serves `sadd-website.html` instead —
+  LuCI is still reachable at `cgi-bin/luci/` directly either way, it just
+  loses the auto-landing redirect from `/` (see "Why `/cgi-bin/api/ping`
+  and not `/api/ping`" below for the docroot layout).
 - SSH: `ssh root@localhost -p 2223` (no password set yet on a fresh image —
   OpenWrt prompts you to set one on first LuCI/SSH login)
 
@@ -159,7 +160,7 @@ thing lost is the auto-landing convenience redirect from `/`. The existing
 scripts from Task 3) is a sibling directory and is not touched by this
 script.
 
-Both scripts accept `OPENWRT_HOST`/`OPENWRT_PORT` env var overrides if
+All three scripts accept `OPENWRT_HOST`/`OPENWRT_PORT` env var overrides if
 you've remapped the compose ports; they default to `localhost`/`2223`,
 matching this repo's `docker-compose.yml`.
 
