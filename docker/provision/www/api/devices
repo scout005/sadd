@@ -1,0 +1,121 @@
+#!/usr/bin/lua
+-- /api/devices — real DHCP-lease-backed device list.
+--
+-- Data source: /tmp/dhcp.leases (dnsmasq's IPv4 lease file). Path and line
+-- format confirmed live in Task 5 (docker/facts.md Section 1 had flagged
+-- the line format as "assumed but not yet verified against a real
+-- populated line" — Task 5 attached a real DHCP client over the tap0 link
+-- and confirmed dnsmasq wrote exactly the assumed format; see
+-- docker/facts.md's Task 5 addendum for the real captured line):
+--
+--   <expiry-epoch> <mac> <ip> <hostname-or-*> <client-id-or-*>
+--
+-- e.g. (real line observed live):
+--   1788197175 a6:fe:23:e1:c6:ba 192.168.1.232 sadd-test-client 01:a6:fe:23:e1:c6:ba
+--
+-- A lease with no hostname is written by dnsmasq as a literal "*" in that
+-- field (not an empty string) — normalized to "" in this endpoint's output.
+--
+-- Liveness signal: /proc/net/arp, one header line then one row per
+-- neighbor ("IP address  HW type  Flags  HW address  Mask  Device"). A MAC
+-- is treated as "online" when its ARP entry has a non-zero Flags value
+-- (0x0 means an incomplete/unresolved entry) and the MAC itself isn't the
+-- all-zero placeholder. This is a plausible-not-perfect liveness signal
+-- (a device can go quiet and stay in ARP's cache for a while, or need a
+-- fresh probe if it's been idle) — good enough for this dev/test API, per
+-- the plan's own framing ("perfect liveness detection isn't the point").
+--
+-- Excluding the container's own tap-relay address (192.168.1.2 — see
+-- docker/facts.md Section 9): this address is a static IP assigned to
+-- docker/entrypoint.sh's tap0 device, never issued by dnsmasq, so it can
+-- never appear as a line in /tmp/dhcp.leases in the first place — and
+-- this endpoint only ever builds its device list by iterating lease-file
+-- lines (never by inventing entries from ARP alone), so in practice this
+-- can't happen. A defensive IP-string skip is still included below in
+-- case that assumption ever changes (e.g. a future static-lease reservation
+-- were added for that address).
+--
+-- JSON encoding: hand-built (not lua-cjson) — deliberate choice, not an
+-- oversight. This endpoint only ever emits a flat array of 5-field
+-- objects (3 strings, 1 integer, 1 boolean) built entirely from
+-- known-shaped inputs (an epoch integer, MAC/IP strings dnsmasq itself
+-- formats, and a hostname string that DHCP option 12 restricts to a
+-- fairly narrow character set in practice) — that doesn't justify side-
+-- loading another opkg package (the same host-download+scp+sha256
+-- workaround Task 3 used for `lua` itself, since this VM has no outbound
+-- internet route at all) for what's a handful of string-concat lines.
+-- json_escape() below still escapes backslash/quote/control characters
+-- defensively, so a weird hostname can't produce invalid JSON.
+
+local TAP_RELAY_IP = "192.168.1.2"
+
+local function json_escape(s)
+  if s == nil then return "" end
+  s = tostring(s)
+  s = s:gsub('[\\"\n\r\t]', {
+    ['\\'] = '\\\\',
+    ['"'] = '\\"',
+    ['\n'] = '\\n',
+    ['\r'] = '\\r',
+    ['\t'] = '\\t',
+  })
+  -- strip any other stray control characters that would make the JSON invalid
+  s = s:gsub('[\1-\31]', '')
+  return s
+end
+
+local function read_arp_online_macs()
+  local online = {}
+  local f = io.open("/proc/net/arp", "r")
+  if not f then return online end
+  f:read("*l") -- discard header row
+  for line in f:lines() do
+    -- columns: IP address, HW type, Flags, HW address, Mask, Device
+    local flags, mac = line:match("^%S+%s+%S+%s+(%S+)%s+(%S+)")
+    if flags and mac then
+      local flagsnum = tonumber(flags, 16) or 0
+      if flagsnum ~= 0 and mac ~= "00:00:00:00:00:00" then
+        online[mac:lower()] = true
+      end
+    end
+  end
+  f:close()
+  return online
+end
+
+local online_macs = read_arp_online_macs()
+
+local devices = {}
+local lf = io.open("/tmp/dhcp.leases", "r")
+if lf then
+  for line in lf:lines() do
+    local expiry, mac, ip, hostname = line:match("^(%S+)%s+(%S+)%s+(%S+)%s+(%S+)")
+    if expiry and mac and ip and ip ~= TAP_RELAY_IP then
+      if hostname == nil or hostname == "*" then hostname = "" end
+      devices[#devices + 1] = {
+        hostname = hostname,
+        ip = ip,
+        mac = mac,
+        leaseExpires = tonumber(expiry) or 0,
+        online = online_macs[mac:lower()] == true,
+      }
+    end
+  end
+  lf:close()
+end
+
+print("Content-Type: application/json\n")
+
+local parts = {}
+for _, d in ipairs(devices) do
+  parts[#parts + 1] = string.format(
+    '{"hostname":"%s","ip":"%s","mac":"%s","leaseExpires":%d,"online":%s}',
+    json_escape(d.hostname),
+    json_escape(d.ip),
+    json_escape(d.mac),
+    d.leaseExpires,
+    d.online and "true" or "false"
+  )
+end
+
+print("[" .. table.concat(parts, ",") .. "]")

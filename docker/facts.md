@@ -68,6 +68,52 @@ this against an actual populated line** before relying on fixed
 whitespace-split parsing (a missing hostname is written as a literal `*`
 in that field, not an empty string — worth defensive parsing).
 
+### 1a. Addendum (Task 5) — real lease line format, confirmed live
+
+Task 5 attached a real DHCP client and confirmed the format assumed above.
+Mechanism: `docker exec` cannot reach the guest (see the top of this doc),
+and there's no separate Docker network the guest's LAN side is bridged
+onto either — `docker/entrypoint.sh` gives the `openwrt` container itself
+a tap0 device (192.168.1.2/24) directly L2-adjacent to the guest's
+br-lan, and that tap0 only exists inside the `openwrt` container's own
+network namespace. The mechanism that worked: join that exact namespace
+with a second, throwaway container and run a DHCP client on tap0 from
+inside it:
+
+```bash
+docker run --rm --network container:openwrt --cap-add=NET_ADMIN busybox \
+  sh -c "udhcpc -i tap0 -n -q -x hostname:sadd-test-client"
+```
+
+`--network container:openwrt` attaches the new container to the running
+`openwrt` container's network namespace (not a shared bridge network —
+there isn't one), which is what makes tap0 visible to it at all; `udhcpc`
+(busybox's DHCP client, `-n` exit-on-failure, `-q` quit after obtaining
+the lease) then performs a real DORA exchange over tap0 against the
+guest's dnsmasq, using tap0's own real hardware MAC (a real, distinct MAC
+from the container's static-relay address). This produced a real,
+successful lease:
+
+```
+udhcpc: lease of 192.168.1.232 obtained from 192.168.1.1, lease time 43200
+```
+
+Confirmed afterward on the VM, `cat /tmp/dhcp.leases` returned exactly one
+real line:
+
+```
+1788197175 a6:fe:23:e1:c6:ba 192.168.1.232 sadd-test-client 01:a6:fe:23:e1:c6:ba
+```
+
+This **exactly matches** the format assumed in Section 1 above:
+`<expiry-epoch> <mac> <ip> <hostname-or-*> <client-id-or-*>` — confirmed,
+not just assumed, as of this addendum. `/proc/net/arp` on the same VM
+also picked up `192.168.1.232` (same MAC, non-zero flags) alongside the
+pre-existing `192.168.1.2` tap-relay entry, confirming the ARP-based
+liveness heuristic works against a real lease and that the two addresses
+are distinguishable (the tap-relay address has no lease-file line at all,
+so an endpoint that only iterates lease-file entries never reports it).
+
 ## 2. `ubus call dhcp ...` as an alternative to the lease file
 
 The `dhcp` ubus object **does exist**:

@@ -139,11 +139,17 @@ bash docker/provision/02-copy-www.sh
 #    VM's docroot as index.html, so the VM's own uhttpd serves it at `/`.
 bash docker/provision/03-copy-frontend.sh
 
-# 4. Verify.
-curl -s http://localhost:8081/cgi-bin/api/ping   # -> {"ok":true}
-curl -sI http://localhost:8081/cgi-bin/api/ping  # -> Content-Type: application/json among the headers
-curl -sI http://localhost:8081/                  # -> 200 OK, serving sadd-website.html
-curl -sI http://localhost:8081/cgi-bin/luci/     # -> reachable (403 login-required, not 404)
+# 4. Deploy the /api/devices endpoint (real DHCP-lease-backed device list)
+#    and verify it responds with a JSON array. Self-contained/idempotent —
+#    also re-runnable on its own against an already-provisioned VM.
+bash docker/provision/04-provision-devices-api.sh
+
+# 5. Verify.
+curl -s http://localhost:8081/cgi-bin/api/ping     # -> {"ok":true}
+curl -sI http://localhost:8081/cgi-bin/api/ping    # -> Content-Type: application/json among the headers
+curl -sI http://localhost:8081/                    # -> 200 OK, serving sadd-website.html
+curl -sI http://localhost:8081/cgi-bin/luci/       # -> reachable (403 login-required, not 404)
+curl -s http://localhost:8081/cgi-bin/api/devices  # -> JSON array of current DHCP leases (empty `[]` until a real client has a lease — see "Getting a real device onto the lease list" below)
 ```
 
 **Step 3 in detail — overwriting the stock landing page is intentional:**
@@ -189,6 +195,47 @@ specifically, as a sibling of `luci`, not a replacement for it.
   repo root's `sadd-website.html` is the tracked source of truth; this
   script just re-copies it onto the VM's (untracked, gitignored) disk
   state after a fresh boot.
+- `docker/provision/04-provision-devices-api.sh` — copies (and chmods,
+  and curl-verifies) `docker/provision/www/api/devices` onto the VM's
+  `/www/cgi-bin/api/devices`. A dedicated, self-contained step even
+  though `02-copy-www.sh` already copies everything under
+  `docker/provision/www/` generically (this file included) — see the
+  script's own header comment for why.
+- `docker/provision/www/api/devices` — the tracked source of truth for
+  the `/api/devices` endpoint: parses `/tmp/dhcp.leases` into
+  `{hostname, ip, mac, leaseExpires, online}` entries (`online` comes from
+  cross-referencing each lease's MAC against `/proc/net/arp`) and prints
+  them as a JSON array. Hand-builds its JSON (with a defensive escaper)
+  rather than installing `lua-cjson` — see the script's own header
+  comment for the reasoning. Excludes the container's own static tap-relay
+  address (`192.168.1.2`, see `docker/facts.md` Section 9) — moot in
+  practice since that address is never DHCP-issued and this endpoint only
+  ever iterates real lease-file lines, but a defensive IP-string check is
+  in there too.
+
+### Getting a real device onto the lease list
+
+A freshly-provisioned VM's `/tmp/dhcp.leases` is empty — nothing has
+asked the guest's dnsmasq for a lease yet — so `/api/devices` correctly
+returns `[]` until something does. `docker exec` does **not** reach the
+guest (see `docker/facts.md`'s intro) and there's no separate Docker
+network the guest's LAN side sits on either; what does work is attaching
+a second, throwaway container directly to the `openwrt` container's own
+network namespace (where `docker/entrypoint.sh`'s tap0 device lives) and
+running a DHCP client on tap0 from inside it:
+
+```bash
+docker run --rm --network container:openwrt --cap-add=NET_ADMIN busybox \
+  sh -c "udhcpc -i tap0 -n -q -x hostname:sadd-test-client"
+```
+
+This performs a real DORA exchange against the guest's dnsmasq using
+tap0's own real hardware MAC, confirmed live to produce a real lease
+(`udhcpc: lease of 192.168.1.232 obtained from 192.168.1.1 ...`) and a
+matching real line in `/tmp/dhcp.leases` — see `docker/facts.md` Section
+1a for the exact confirmed line and more detail. After running this,
+`curl http://localhost:8081/cgi-bin/api/devices` reflects that real
+device.
 
 ## Known limitations for this dev/test environment
 
