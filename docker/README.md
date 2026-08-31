@@ -471,7 +471,9 @@ device.
   rule intercepting real live traffic, proving the same underlying mechanism).
 - **No authentication on `/cgi-bin/api/*`**, and `docker-compose.yml` binds
   port 8081 to all interfaces, not just `localhost` — anyone reachable on
-  the local network can add/delete real firewall rules with a plain `curl`.
+  the local network can add/delete real firewall rules, or flip the real
+  guest Wi-Fi network on/off, with a plain `curl` (two independent
+  write-capable endpoints as of Wave 3: `/api/firewall-rules`, `/api/wifi`).
   Acceptable only because this is an explicitly local, single-user dev/test
   tool — not something to carry into a later wave or real deployment as-is.
 - The global search feature (built earlier this session, unrelated to this

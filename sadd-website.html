@@ -1127,6 +1127,16 @@ html.large-text .scr-title{font-size:1.15em;}
   //      4-second auto-dismiss convention as deleteFirewallRule's own notice above). On
   //      success the switch simply stays in the new state already shown — nothing left
   //      to do. ----
+  // Note: unlike every READ path in this file (renderDevicesScreen etc.), this WRITE
+  // handler does not check a state.guestRenderId-style token against a stale in-flight
+  // request. This is deliberate, not an oversight: sw/heroEl/descEl below are captured
+  // by reference before the await, and render() always does a full appContent.innerHTML
+  // replacement on navigation — so if the user navigates away and back while this POST
+  // is in flight, the eventual revert/notice only mutates the old, now-detached DOM
+  // subtree, never the freshly-rendered live guest screen. If a future edit ever
+  // re-queries these elements by id INSIDE this function instead of using the
+  // already-captured references, this safety argument stops holding and a render-id
+  // guard (matching the read-path convention) would need to be added.
   async function handleGuestWifiSwitchClick(sw){
     if(sw.dataset.pending === 'true') return; // already mid-request — ignore extra clicks
     const heroEl = sw.closest('.toggle-hero');
