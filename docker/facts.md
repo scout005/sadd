@@ -34,9 +34,12 @@ Version: OpenWrt 23.05.5 r24106-10cc5fcd00, kernel 5.15.167, target x86/64
 yet (the only device docker/entrypoint.sh's tap0 setup gives the guest a
 neighbor is `192.168.1.2` — the container's own tap-side socat relay
 address — which is a static IP, not something that went through DHCP, so
-it does not appear in the lease file; it does appear in `/proc/net/arp`,
-see the "liveness" note in Task 5's brief). Task 2 does not attach a test
-DHCP client — that's explicitly deferred to Task 5.
+it does not appear in the lease file; it does appear in `/proc/net/arp`
+though — **see Section 9 below ("Misc supporting facts") for the full
+liveness-heuristic trap this creates: a naive ARP-based "is this device
+online" check will find 192.168.1.2 and must not report it as a real
+device.** Task 2 does not attach a test DHCP client — that's explicitly
+deferred to Task 5.
 
 **Line format:** could not be confirmed from a live example on this VM
 (file is empty), but is confirmed via the running dnsmasq's own version
@@ -244,104 +247,20 @@ every section here is anonymous). This means:
   API — anonymous positional indices are not stable once other rules are
   deleted out from under them.
 
-## 5. `nft list ruleset` (full output)
+## 5. `nft list ruleset` (NAT-relevant chains — full ruleset trimmed, see note)
+
+`nft list ruleset` runs cleanly (no errors) on this VM — `firewall4`/nftables
+is active, confirming `uci`-driven firewall changes will actually take
+effect via `fw4`/nftables, not legacy iptables. The full output also
+includes the standard `input`/`forward`/`output`/`prerouting` filter chains,
+SYN-flood protection, and the full ICMPv6 allow-list — all stock fw4
+defaults with no bearing on Task 7's redirect work, omitted here to keep
+this section focused; re-run `nft list ruleset` on a live VM if you need
+to see them.
+
+The chains that matter for Task 7 (port-forwarding = NAT, not filtering):
 
 ```
-table inet fw4 {
-	chain input {
-		type filter hook input priority filter; policy drop;
-		iifname "lo" accept comment "!fw4: Accept traffic from loopback"
-		ct state established,related accept comment "!fw4: Allow inbound established and related flows"
-		tcp flags syn / fin,syn,rst,ack jump syn_flood comment "!fw4: Rate limit TCP syn packets"
-		iifname "br-lan" jump input_lan comment "!fw4: Handle lan IPv4/IPv6 input traffic"
-		jump handle_reject
-	}
-
-	chain forward {
-		type filter hook forward priority filter; policy drop;
-		ct state established,related accept comment "!fw4: Allow forwarded established and related flows"
-		iifname "br-lan" jump forward_lan comment "!fw4: Handle lan IPv4/IPv6 forward traffic"
-		jump handle_reject
-	}
-
-	chain output {
-		type filter hook output priority filter; policy accept;
-		oifname "lo" accept comment "!fw4: Accept traffic towards loopback"
-		ct state established,related accept comment "!fw4: Allow outbound established and related flows"
-		oifname "br-lan" jump output_lan comment "!fw4: Handle lan IPv4/IPv6 output traffic"
-	}
-
-	chain prerouting {
-		type filter hook prerouting priority filter; policy accept;
-		iifname "br-lan" jump helper_lan comment "!fw4: Handle lan IPv4/IPv6 helper assignment"
-	}
-
-	chain handle_reject {
-		meta l4proto tcp reject with tcp reset comment "!fw4: Reject TCP traffic"
-		reject comment "!fw4: Reject any other traffic"
-	}
-
-	chain syn_flood {
-		limit rate 25/second burst 50 packets return comment "!fw4: Accept SYN packets below rate-limit"
-		drop comment "!fw4: Drop excess packets"
-	}
-
-	chain input_lan {
-		jump accept_from_lan
-	}
-
-	chain output_lan {
-		jump accept_to_lan
-	}
-
-	chain forward_lan {
-		jump accept_to_wan comment "!fw4: Accept lan to wan forwarding"
-		jump accept_to_lan
-	}
-
-	chain helper_lan {
-	}
-
-	chain accept_from_lan {
-		iifname "br-lan" counter packets 8 bytes 472 accept comment "!fw4: accept lan IPv4/IPv6 traffic"
-	}
-
-	chain accept_to_lan {
-		oifname "br-lan" counter packets 9 bytes 896 accept comment "!fw4: accept lan IPv4/IPv6 traffic"
-	}
-
-	chain input_wan {
-		meta nfproto ipv4 udp dport 68 counter packets 0 bytes 0 accept comment "!fw4: Allow-DHCP-Renew"
-		icmp type echo-request counter packets 0 bytes 0 accept comment "!fw4: Allow-Ping"
-		meta nfproto ipv4 meta l4proto igmp counter packets 0 bytes 0 accept comment "!fw4: Allow-IGMP"
-		meta nfproto ipv6 udp dport 546 counter packets 0 bytes 0 accept comment "!fw4: Allow-DHCPv6"
-		ip6 saddr fe80::/10 icmpv6 type . icmpv6 code { mld-listener-query . no-route, mld-listener-report . no-route, mld-listener-done . no-route, mld2-listener-report . no-route } counter packets 0 bytes 0 accept comment "!fw4: Allow-MLD"
-		icmpv6 type { destination-unreachable, time-exceeded, echo-request, echo-reply, nd-router-solicit, nd-router-advert } limit rate 1000/second counter packets 0 bytes 0 accept comment "!fw4: Allow-ICMPv6-Input"
-		icmpv6 type . icmpv6 code { packet-too-big . no-route, parameter-problem . no-route, nd-neighbor-solicit . no-route, nd-neighbor-advert . no-route, parameter-problem . admin-prohibited } limit rate 1000/second counter packets 0 bytes 0 accept comment "!fw4: Allow-ICMPv6-Input"
-		jump reject_from_wan
-	}
-
-	chain output_wan {
-		jump accept_to_wan
-	}
-
-	chain forward_wan {
-		icmpv6 type { destination-unreachable, time-exceeded, echo-request, echo-reply } limit rate 1000/second counter packets 0 bytes 0 accept comment "!fw4: Allow-ICMPv6-Forward"
-		icmpv6 type . icmpv6 code { packet-too-big . no-route, parameter-problem . no-route, parameter-problem . admin-prohibited } limit rate 1000/second counter packets 0 bytes 0 accept comment "!fw4: Allow-ICMPv6-Forward"
-		meta l4proto esp counter packets 0 bytes 0 jump accept_to_lan comment "!fw4: Allow-IPSec-ESP"
-		udp dport 500 counter packets 0 bytes 0 jump accept_to_lan comment "!fw4: Allow-ISAKMP"
-		jump reject_to_wan
-	}
-
-	chain accept_to_wan {
-	}
-
-	chain reject_from_wan {
-	}
-
-	chain reject_to_wan {
-	}
-
 	chain dstnat {
 		type nat hook prerouting priority dstnat; policy accept;
 	}
@@ -353,44 +272,12 @@ table inet fw4 {
 	chain srcnat_wan {
 		meta nfproto ipv4 masquerade comment "!fw4: Masquerade IPv4 wan traffic"
 	}
-
-	chain raw_prerouting {
-		type filter hook prerouting priority raw; policy accept;
-	}
-
-	chain raw_output {
-		type filter hook output priority raw; policy accept;
-	}
-
-	chain mangle_prerouting {
-		type filter hook prerouting priority mangle; policy accept;
-	}
-
-	chain mangle_postrouting {
-		type filter hook postrouting priority mangle; policy accept;
-	}
-
-	chain mangle_input {
-		type filter hook input priority mangle; policy accept;
-	}
-
-	chain mangle_output {
-		type route hook output priority mangle; policy accept;
-	}
-
-	chain mangle_forward {
-		type filter hook forward priority mangle; policy accept;
-	}
-}
 ```
 
-`nft list ruleset` runs cleanly (no errors) — `firewall4`/nftables is
-active, confirming `uci`-driven firewall changes will actually take
-effect via `fw4`/nftables, not legacy iptables. Note the `dstnat` chain is
-present but currently empty (`policy accept;`, no rules) since there are
-no `config redirect` sections yet (see section 4) — this is exactly where
-Task 7's added redirect rules will show up once created, useful as the
-verification point Task 7 Step 4 already calls for.
+The `dstnat` chain is present but currently **empty** (`policy accept;`, no
+rules) since there are no `config redirect` sections yet (see section 4) —
+this is exactly where Task 7's added redirect rules will show up once
+created, useful as the verification point Task 7 Step 4 already calls for.
 
 ## 6. `ubus list` (full output)
 
