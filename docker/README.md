@@ -130,10 +130,30 @@ bash docker/provision/01-install-api-packages.sh
 #    comment — so it's set explicitly on the VM after every copy).
 bash docker/provision/02-copy-www.sh
 
-# 3. Verify.
+# 3. Copy the frontend prototype (repo root's sadd-website.html) onto the
+#    VM's docroot as index.html, so the VM's own uhttpd serves it at `/`.
+bash docker/provision/03-copy-frontend.sh
+
+# 4. Verify.
 curl -s http://localhost:8081/cgi-bin/api/ping   # -> {"ok":true}
 curl -sI http://localhost:8081/cgi-bin/api/ping  # -> Content-Type: application/json among the headers
+curl -sI http://localhost:8081/                  # -> 200 OK, serving sadd-website.html
+curl -sI http://localhost:8081/cgi-bin/luci/     # -> reachable (403 login-required, not 404)
 ```
+
+**Step 3 in detail — overwriting the stock landing page is intentional:**
+`uhttpd.main.home='/www'` (confirmed in `docker/facts.md`), and a stock
+OpenWrt image already ships `/www/index.html` there as a small redirect
+page to `cgi-bin/luci/`. `docker/provision/03-copy-frontend.sh` copies
+`sadd-website.html` over that same path (`/www/index.html`), so visiting
+`http://localhost:8081/` now serves the frontend prototype instead of the
+auto-redirect. This was confirmed to be an acceptable tradeoff for this
+dev/test VM: LuCI itself is untouched and still fully reachable directly
+at `/cgi-bin/luci/` (returns a real login page, not a 404) — the only
+thing lost is the auto-landing convenience redirect from `/`. The existing
+`/www/cgi-bin/` directory (LuCI's CGI dispatcher plus the `/api/*`
+scripts from Task 3) is a sibling directory and is not touched by this
+script.
 
 Both scripts accept `OPENWRT_HOST`/`OPENWRT_PORT` env var overrides if
 you've remapped the compose ports; they default to `localhost`/`2223`,
@@ -158,6 +178,12 @@ specifically, as a sibling of `luci`, not a replacement for it.
   built-in CGI support — no extra uhttpd package needed for this). The
   copy living on the VM's disk is just where it happens to currently run;
   this file is what to edit.
+- `docker/provision/03-copy-frontend.sh` — copies the repo root's
+  `sadd-website.html` onto the VM as `/www/index.html`, so the VM's own
+  uhttpd serves the frontend prototype at `http://localhost:8081/`. The
+  repo root's `sadd-website.html` is the tracked source of truth; this
+  script just re-copies it onto the VM's (untracked, gitignored) disk
+  state after a fresh boot.
 
 ## Known limitations for this dev/test environment
 
