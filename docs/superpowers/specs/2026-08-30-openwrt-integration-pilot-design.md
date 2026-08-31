@@ -40,24 +40,30 @@ The container is started with `--cap-add=NET_ADMIN --cap-add=NET_RAW` (required 
 
 ## Components
 
-### 1. Docker/OpenWrt environment
-- Base: `openwrt/rootfs` (OpenWrt's official published rootfs image), or a `Dockerfile` built from it.
-- Packages needed beyond the base rootfs: `uhttpd` + Lua CGI/module support (exact package name TBD hands-on — `uhttpd-mod-lua` if available, otherwise plain Lua CGI scripts under `uhttpd-mod-cgi`, which is more universally available), `firewall4`/`nftables` (usually present by default on modern OpenWrt), `dnsmasq` (usually present by default), `lua`, `lua-cjson` (for building/parsing JSON API responses).
-- Two attached networks (WAN-side, LAN-side) so the device has something resembling a real router's interface layout.
+**Note (2026-08-31): the subsections below describe the ORIGINAL plan as designed before implementation. Wave 1's actual build ended up different in real, load-bearing ways — see "Environment bring-up: findings from a live investigation" above for why, and use these corrected facts, not the paragraphs beneath them, as current:**
+- **Environment**: not `openwrt/rootfs` + two Docker networks. The real running setup is a single container (`docker/Dockerfile.qemu-direct`) that boots the official OpenWrt combined disk image directly under `qemu-system-x86_64` with KVM, using one tap device (`docker/entrypoint.sh`) bridged to the guest's `br-lan` — no second "WAN-side" network exists at all (this VM has no `network.wan` interface, confirmed Tasks 3/5/7).
+- **API paths**: not `/api/devices` / `/api/firewall/rules` (slash). The real, shipped paths are `/cgi-bin/api/devices` and `/cgi-bin/api/firewall-rules` (hyphen, under uhttpd's `cgi_prefix`) — see `docker/README.md`'s "Why `/cgi-bin/api/ping` and not `/api/ping`" section.
+- **Lua tooling**: `uhttpd-mod-lua` was not used (VM has no internet access at all to `opkg install` anything, confirmed Task 3) — plain CGI scripts with a side-loaded `lua` interpreter, via `docker/provision/01-install-api-packages.sh`, downloading `.ipk`s on the host and `scp`-ing them in. No `lua-cjson` either — both endpoints hand-build JSON with a defensive escaper (`docker/provision/www/api/devices`, `.../api/firewall-rules`).
+
+### 1. Docker/OpenWrt environment — see the corrected note above; this subsection is superseded.
 
 ### 2. Devices API
-- `GET /api/devices` → reads real DHCP lease data (dnsmasq's lease file and/or `ubus call dhcp ...` if the package exposes it) plus a liveness signal (e.g. ARP table / a quick ping), returns `[{hostname, ip, mac, online, leaseExpires}, ...]`.
-- Read-only for the pilot — no device-blocking/quarantine actions wired yet (that's a natural next slice, not part of this pilot).
+- `GET /cgi-bin/api/devices` → reads real DHCP lease data from `/tmp/dhcp.leases` (confirmed dnsmasq's real format, not `ubus call dhcp` — that ubus object is served by `odhcpd`, which never sees dnsmasq's IPv4 leases in this environment, confirmed `docker/facts.md` §2a) plus a liveness signal from `/proc/net/arp`, keyed by each lease's own IP (not MAC — a MAC-keyed version was shipped, found to false-positive, and fixed, `docker/facts.md` §1a). Returns `[{hostname, ip, mac, leaseExpires, online}, ...]`.
+- Read-only, exactly as planned — no device-blocking/quarantine actions.
 
 ### 3. Firewall & Port Forwarding API
-- `GET /api/firewall/rules` → reads current `uci show firewall` `redirect` (port-forward) sections, returns them as JSON.
-- `POST /api/firewall/rules` → adds a new redirect section via `uci add firewall redirect` + `uci set ...` + `uci commit firewall`, then reloads (`/etc/init.d/firewall reload` or `fw4 reload`) so the change is live immediately, not just written to config.
-- `DELETE /api/firewall/rules/:id` → removes the section, commits, reloads.
+- `GET /cgi-bin/api/firewall-rules` → reads current `uci show firewall` `redirect` sections, returns them as JSON with a stable generated id (`uci rename`d immediately after `uci add`, per `docker/facts.md` §4's warning that anonymous sections shift index on deletion).
+- `POST /cgi-bin/api/firewall-rules` → adds a new redirect section (hardcoded `src='wan'`, matching real port-forward semantics), verifies each write before committing, rolls back (`uci revert firewall`) on any partial failure, then reloads `fw4` so the change is live immediately.
+- `DELETE /cgi-bin/api/firewall-rules?id=<id>` → removes the section (query param, not a path segment — see `docker/facts.md` §10 for how uhttpd exposes this to CGI), commits, reloads.
+- **No auth of any kind** beyond what SSH/uhttpd already require to reach the VM at all — see the new Security note below.
 
 ### 4. Frontend changes
-- Only `screens['devices']` and `screens['advfirewall']` change from static HTML strings to render functions that fetch from `/api/devices` / `/api/firewall/rules` and build the row markup dynamically, reusing the exact same CSS classes (`.list-item`, `.rule-row`, etc.) the static versions already use — so this stays visually identical, just data-driven instead of hardcoded.
+- Only `screens['devices']` and `screens['advfirewall']` change from static HTML strings to render functions that fetch and build row markup dynamically, reusing the exact same CSS classes (`.list-item`, `.rule-row`, etc.) — visually identical, just data-driven. Both screens carry a `state.<screen>RenderId` guard against a stale in-flight fetch clobbering a newer navigation's render (found and fixed on the Devices screen, Task 6; carried forward to Firewall & Ports, Task 8).
 - Every other screen (all 46 remaining desktop screens, all 16 mobile screens) is untouched — still static demo data, exactly as it is today.
 - The file is served from the container's `uhttpd` alongside the API (same origin, no CORS needed). Editing the file locally and reloading in the browser pointed at the container still works the same way it does today.
+
+### 5. Security posture (added 2026-08-31 — not in the original design)
+`/cgi-bin/api/*` has no authentication of any kind, and `docker-compose.yml`'s `ports: "8081:80"` binds to all interfaces (`0.0.0.0`), not just `localhost` — so anyone who can reach the host machine on the local network can add or delete real firewall rules with a plain `curl`, no login required. This is acceptable **only** because Wave 1 is an explicitly local, single-user dev/test tool with no intended multi-user or untrusted-network exposure (see Non-goals below) — it is not something to carry forward into any later wave or real deployment without addressing.
 
 ### 5. Error handling
 If `/api/devices` or `/api/firewall/rules` is unreachable (e.g. the file is opened directly via `file://` outside the container, or the container isn't running), the screen falls back to today's existing static demo data and shows a small, non-blocking notice ("Can't reach router — showing demo data") rather than breaking or blanking the screen. This keeps the rest of the prototype's existing behavior (all other screens, the search feature, etc.) working exactly as before regardless of whether the container is up.
@@ -90,8 +96,10 @@ would mean fighting the original design's own accepted degradation, not fixing a
 
 ## Testing / how we'll know it's real, not just displayed
 
-- **Devices**: attach a second, throwaway test container to the same "LAN" Docker network with a DHCP client; confirm it shows up in the real device list in the UI (hostname/IP/MAC), not just in a raw `dnsmasq` log.
-- **Firewall**: add a port-forward rule through the UI; confirm the resulting `nft list ruleset` inside the container matches; then do an actual connectivity test — e.g. run a tiny listener on the internal target and `curl`/`nc` the forwarded port from outside the container — to prove the rule is genuinely enforced, then remove it through the UI and confirm the same connection now fails.
+**Note (2026-08-31): the original plan below assumed a WAN-facing connectivity test. This VM has no WAN interface (confirmed Tasks 3/5/7), so that specific test was never achievable — corrected below.**
+
+- **Devices**: real, as planned. A second, throwaway container attached to the `openwrt` container's own network namespace (`docker run --network container:openwrt ...`, since there's no separate bridged "LAN" Docker network — the guest's `tap0` link only exists inside that one container) runs a real DHCP client (`udhcpc`); the resulting real lease shows up in the UI (hostname/IP/MAC), confirmed against `/tmp/dhcp.leases` directly, not just the API's own claim.
+- **Firewall**: partially as planned, partially adapted. Adding/removing a rule through the UI is confirmed real against `uci show firewall` and `nft list ruleset` directly (not just the API's response). The originally-planned end-to-end packet test ("curl the forwarded port from outside the container") is **not possible** in this topology: a `src='wan'` redirect rule lands in fw4's `dstnat_wan` chain, but that chain is topologically unreachable — the top-level `dstnat` chain only ever jumps into `dstnat_lan` (confirmed by exhaustive grep of the live `nft list ruleset`, `docker/facts.md` §10). What was actually proven instead: a manually-added `src='lan'` rule (mirroring the same uci/commit/reload mechanism, different zone) genuinely intercepts real live TCP traffic — an `nft` counter increments in lockstep with a real connection attempt, and removing the rule measurably changes the failure mode (instant refusal → full timeout). This proves the underlying enforcement mechanism is genuinely live, even though the shipped `src='wan'` rules specifically can't be traffic-tested end-to-end in this environment.
 
 ## Non-goals for this pilot
 

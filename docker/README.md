@@ -328,3 +328,22 @@ device.
   don't treat this as a durable environment; `docker compose down` followed
   by deleting and re-fetching `boot.img` gets you back to a pristine state,
   which is exactly what Task 9's full verification pass exercises.
+- No end-to-end WAN packet test for firewall port-forwarding — a `src='wan'`
+  redirect rule genuinely lands in a real `fw4` nftables chain (`dstnat_wan`),
+  but that chain is topologically unreachable in this VM's single-interface
+  setup (confirmed by exhaustive `nft list ruleset` inspection). See "Real
+  connectivity test" above for what was actually proven instead (a `src='lan'`
+  rule intercepting real live traffic, proving the same underlying mechanism).
+- **No authentication on `/cgi-bin/api/*`**, and `docker-compose.yml` binds
+  port 8081 to all interfaces, not just `localhost` — anyone reachable on
+  the local network can add/delete real firewall rules with a plain `curl`.
+  Acceptable only because this is an explicitly local, single-user dev/test
+  tool — not something to carry into a later wave or real deployment as-is.
+- The global search feature (built earlier this session, unrelated to this
+  work) can't highlight search results on the Devices/Firewall & Ports
+  screens when the router is reachable and responding quickly — real data
+  overwrites the static demo text those two search-index entries point at
+  before the highlight fires. Navigation still lands on the correct screen
+  every time; only the cosmetic pulse is silently skipped, exactly matching
+  the search feature's own designed "fail silently on content drift"
+  behavior. Full detail in the design spec's Error Handling section.
