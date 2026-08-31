@@ -91,6 +91,74 @@ just self-assigns `192.168.1.1` regardless. The tap-device approach above
 is the minimum needed to give the guest's own chosen address a real,
 reachable presence in the container's network namespace.
 
+## Provisioning
+
+The VM's own disk (`boot-image/boot.img`) is a running, mutable state, not
+a durable/reviewable artifact — it's gitignored, and `docker compose down`
+followed by deleting and re-fetching `boot.img` wipes it back to a bare,
+unconfigured OpenWrt (see "Known limitations" below). Anything installed
+or written by hand over SSH needs to be re-applied after that. The
+`docker/provision/` scripts capture exactly that: what to run, in order,
+against a fresh VM to get from a bare boot to a VM with the `/api/*`
+backend ready.
+
+**Important environmental fact these scripts work around:** this VM has no
+WAN interface (see "Known limitations" below), so it has **no outbound
+internet route at all** — `opkg update`/`opkg install <name>` genuinely
+fail from inside the VM for every package, confirmed live (`opkg update`
+fails with "Network unreachable" for every feed; `opkg install <name>`
+then fails with "Unknown package" because there's no cached package list
+to resolve names against). Because of this, `docker/provision/01-install-api-packages.sh`
+runs on the **host** (which does have internet), not piped into an SSH
+session on the VM — it downloads the two small `.ipk` files the VM needs
+from the official OpenWrt feed, sha256-verifies them, copies them onto the
+VM over `scp`, and only then runs `opkg install` there, against the local
+files (which needs no network on the VM side).
+
+After `docker compose up -d --build` (and the container has reported
+`healthy`), run, from the repo root:
+
+```bash
+# 1. Install the Lua interpreter the CGI endpoint needs (see the script's
+#    own header comment for exactly why uhttpd-mod-lua wasn't used and why
+#    this can't just be `ssh ... opkg install lua`).
+bash docker/provision/01-install-api-packages.sh
+
+# 2. Copy the tracked API scripts onto the VM's CGI directory and make
+#    them executable (this repo has core.filemode=false, so git does not
+#    track the executable bit on these files — see the script's header
+#    comment — so it's set explicitly on the VM after every copy).
+bash docker/provision/02-copy-www.sh
+
+# 3. Verify.
+curl -s http://localhost:8081/cgi-bin/api/ping   # -> {"ok":true}
+curl -sI http://localhost:8081/cgi-bin/api/ping  # -> Content-Type: application/json among the headers
+```
+
+Both scripts accept `OPENWRT_HOST`/`OPENWRT_PORT` env var overrides if
+you've remapped the compose ports; they default to `localhost`/`2223`,
+matching this repo's `docker-compose.yml`.
+
+**Why `/cgi-bin/api/ping` and not `/api/ping`:** `uci show uhttpd` on this
+VM confirms `uhttpd.main.home='/www'` (the docroot) and
+`uhttpd.main.cgi_prefix='/cgi-bin'` (uhttpd's built-in CGI dispatch
+prefix under that docroot). `/www/cgi-bin/` already exists on a stock
+image — the `luci` CGI dispatcher lives there — so
+`docker/provision/www/` mirrors the *contents* of that directory
+(currently just `api/ping`) and gets copied to `/www/cgi-bin/`
+specifically, as a sibling of `luci`, not a replacement for it.
+
+**Files:**
+- `docker/provision/01-install-api-packages.sh` — side-loads a Lua
+  interpreter (`lua` + its `liblua5.1.5` dependency) onto the VM.
+- `docker/provision/02-copy-www.sh` — copies `docker/provision/www/` onto
+  the VM's `/www/cgi-bin/` and chmods any CGI scripts executable.
+- `docker/provision/www/api/ping` — the tracked source of truth for the
+  `/api/ping` endpoint (a `#!/usr/bin/lua` CGI script using uhttpd's
+  built-in CGI support — no extra uhttpd package needed for this). The
+  copy living on the VM's disk is just where it happens to currently run;
+  this file is what to edit.
+
 ## Known limitations for this dev/test environment
 
 - No physical Wi-Fi radio — this is a router with one virtual wired NIC
