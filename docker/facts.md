@@ -604,3 +604,47 @@ above (done by hand over SSH, not through the endpoint) exists purely to
 prove the underlying reload/enforcement mechanism the endpoint relies on
 is real — i.e. that if this VM ever gained a real WAN interface, the same
 `src='wan'` rules this endpoint already creates would behave identically.
+
+## 11. Wave 3 pre-investigation — no wireless config exists at all, but a manual one persists fine
+
+Confirmed live (2026-08-31, before writing the Wave 3 plan): this VM has **no
+`/etc/config/wireless` file at all** — `uci show wireless` fails with `uci:
+Entry not found`, and `ls /etc/config/wireless` reports no such file. This
+is expected: OpenWrt normally auto-generates this file by detecting real
+wireless hardware during first boot (`wifi detect`), and this QEMU x86-64
+"generic" image has no wireless PCI/USB device for it to find — consistent
+with the already-documented Non-goal ("no physical wireless hardware exists
+in a container").
+
+**This does NOT block Settings/Guest-Wi-Fi work, it just means the config
+has to be created, not just read.** Confirmed live:
+
+```
+touch /etc/config/wireless
+uci set wireless.radio0=wifi-device
+uci set wireless.radio0.type=mac80211
+uci set wireless.radio0.disabled=1
+uci set wireless.default_radio0=wifi-iface
+uci set wireless.default_radio0.device=radio0
+uci set wireless.default_radio0.network=lan
+uci set wireless.default_radio0.mode=ap
+uci set wireless.default_radio0.ssid='Smith Family'
+uci set wireless.default_radio0.encryption=psk2
+uci commit wireless
+```
+
+— all succeed, `uci show wireless` afterward reflects real, persisted
+config exactly as set. `wifi reload` against this fake radio config also
+runs cleanly (`exit 0`), just prints informational lines (`'radio0' is
+disabled`, `radio0(mac80211): Interface type not supported`) rather than
+erroring or hanging — safe to call from an API endpoint's write path,
+consistent with the existing `uci firewall`/`fw4 reload` pattern.
+
+**Implication for Wave 3's provisioning**: a baseline wireless config
+(main SSID matching the mockup's static demo value "Smith Family", plus a
+guest `wifi-iface` section) needs to be CREATED by a provisioning step
+(the `touch` + `uci set` sequence above, adapted), not just read — there's
+nothing to discover here the way `uci show firewall` already had real
+zones/rules to build on in Wave 1. This mirrors Wave 1's firewall work in
+spirit (real `uci` config, real reload, no real broadcast/traffic) but the
+starting state is empty rather than pre-populated.
