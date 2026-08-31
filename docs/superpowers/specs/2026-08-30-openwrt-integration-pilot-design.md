@@ -2,7 +2,7 @@
 
 ## Goal
 
-Drive as much of this prototype as genuinely can be by a real, running OpenWrt instance, instead of hardcoded demo data. The full target is documented below as a roadmap of "waves," each one a self-contained slice that gets its own implementation plan when its turn comes. **Wave 1** (done) covers two screens on the desktop prototype (`sadd-website.html`): **Devices** and **Firewall & Port Forwarding**. **Wave 2** (done) covers **About**'s version row and **Diagnostics & Logs**' "Recent activity" list. Everything below Wave 2 in the roadmap is sequenced but not yet detailed at the same level; each wave gets its own design pass (reusing this document's architecture) immediately before it's built, since exact implementation details depend on what's actually true inside the running container by that point.
+Drive as much of this prototype as genuinely can be by a real, running OpenWrt instance, instead of hardcoded demo data. The full target is documented below as a roadmap of "waves," each one a self-contained slice that gets its own implementation plan when its turn comes. **Wave 1** (done) covers two screens on the desktop prototype (`sadd-website.html`): **Devices** and **Firewall & Port Forwarding**. **Wave 2** (done) covers **About**'s version row and **Diagnostics & Logs**' "Recent activity" list. **Wave 3** (done) covers **Settings**' "Wi-Fi name & password"/"Guest network" row values and **Guest Wi-Fi**'s on/off toggle. Everything below Wave 3 in the roadmap is sequenced but not yet detailed at the same level; each wave gets its own design pass (reusing this document's architecture) immediately before it's built, since exact implementation details depend on what's actually true inside the running container by that point.
 
 Not every screen in the app can be "real" in this sense — see **Full roadmap** below for the honest breakdown of which screens are genuinely OpenWrt-backable, which are pure UI-flow/marketing content with nothing to execute, and which are cloud/account-system features that would need an entirely different (non-router) backend.
 
@@ -20,7 +20,7 @@ Instead: a small API daemon lives **inside the OpenWrt image itself**, under `uh
 ## Architecture
 
 ```
-Browser (sadd-website.html — Wave 1: devices + advfirewall screens; Wave 2: about's version row + advlogs' Recent Activity list)
+Browser (sadd-website.html — Wave 1: devices + advfirewall screens; Wave 2: about's version row + advlogs' Recent Activity list; Wave 3: settings' Wi-Fi/guest rows + guest's on/off toggle)
         │  same-origin fetch('/api/...')
         ▼
 uhttpd  (inside the OpenWrt container, also serves the static HTML file)
@@ -58,12 +58,12 @@ The container is started with `--cap-add=NET_ADMIN --cap-add=NET_RAW` (required 
 - **No auth of any kind** beyond what SSH/uhttpd already require to reach the VM at all — see the new Security note below.
 
 ### 4. Frontend changes
-- **Updated 2026-08-31 (Wave 2):** four screen sections now fetch real data, not two. Wave 1: `screens['devices']` (whole screen) and `screens['advfirewall']`'s port-forwarding section. Wave 2: `screens['about']`'s "App version" row only (the rest of that screen — CVE table, pricing promise, compliance statement, "Built on OpenWrt" marketing paragraph — stays static), and `screens['advlogs']`'s "Recent activity" list only (the Mbps cards and filter dropdowns stay static). All four reuse the exact same CSS classes their static versions already used (`.list-item`, `.rule-row`, `.tech-row`, or a targeted `id`-based hook for the single-field About case) — visually identical, just data-driven where real data exists. All four carry a `state.<screen>RenderId` guard against a stale in-flight fetch clobbering a newer navigation's render (found and fixed on the Devices screen, Task 6 of Wave 1; a related notice-DOM-scope variant of the same bug class was found and fixed on the About screen, Task 2 of Wave 2 — see `docker/facts.md`/commit history for both).
-- Every other screen (all 44 remaining desktop screens, all 16 mobile screens) is untouched — still static demo data, exactly as it is today.
+- **Updated 2026-08-31 (Wave 3):** six screen sections now fetch real data, not four. Wave 1: `screens['devices']` (whole screen) and `screens['advfirewall']`'s port-forwarding section. Wave 2: `screens['about']`'s "App version" row only (the rest of that screen — CVE table, pricing promise, compliance statement, "Built on OpenWrt" marketing paragraph — stays static), and `screens['advlogs']`'s "Recent activity" list only (the Mbps cards and filter dropdowns stay static). Wave 3: `screens['settings']`'s "Wi-Fi name & password" row's SSID value and "Guest network" row's On/Off value (read-only, single-field pattern like About's version row — no edit flow, since no dedicated Wi-Fi-edit sub-screen exists in the mockup), and `screens['guest']`'s on/off `.switch` plus its toggle-hero description span (a REAL write control, `POST /cgi-bin/api/wifi` → `uci set wireless.guest.disabled`, the first Wave 3 proof write-capability generalizes beyond firewall rules to a second config subsystem). All six reuse the exact same CSS classes/targeted `id`-based hooks their static versions already used — visually identical, just data-driven where real data exists. All six carry a `state.<screen>RenderId` guard against a stale in-flight fetch clobbering a newer navigation's render (found and fixed on the Devices screen, Task 6 of Wave 1; a related notice-DOM-scope variant of the same bug class was found and fixed on the About screen, Task 2 of Wave 2, and guarded against by construction on Settings/Guest in Wave 3 — see `docker/facts.md`/commit history for all three).
+- Every other screen (all 42 remaining desktop screens, all 16 mobile screens) is untouched — still static demo data, exactly as it is today.
 - The file is served from the container's `uhttpd` alongside the API (same origin, no CORS needed). Editing the file locally and reloading in the browser pointed at the container still works the same way it does today.
 
 ### 5. Security posture (added 2026-08-31 — not in the original design)
-`/cgi-bin/api/*` has no authentication of any kind, and `docker-compose.yml`'s `ports: "8081:80"` binds to all interfaces (`0.0.0.0`), not just `localhost` — so anyone who can reach the host machine on the local network can add or delete real firewall rules with a plain `curl`, no login required. This is acceptable **only** because Wave 1 is an explicitly local, single-user dev/test tool with no intended multi-user or untrusted-network exposure (see Non-goals below) — it is not something to carry forward into any later wave or real deployment without addressing.
+`/cgi-bin/api/*` has no authentication of any kind, and `docker-compose.yml`'s `ports: "8081:80"` binds to all interfaces (`0.0.0.0`), not just `localhost` — so anyone who can reach the host machine on the local network can add or delete real firewall rules, or flip the real guest Wi-Fi network on/off (Wave 3's `POST /cgi-bin/api/wifi`, the second write endpoint added after Wave 1's `firewall-rules`), with a plain `curl`, no login required. This is acceptable **only** because this pilot is an explicitly local, single-user dev/test tool with no intended multi-user or untrusted-network exposure (see Non-goals below) — it is not something to carry forward into any later wave or real deployment without addressing.
 
 ### 6. Error handling
 If `/api/devices` or `/api/firewall/rules` is unreachable (e.g. the file is opened directly via `file://` outside the container, or the container isn't running), the screen falls back to today's existing static demo data and shows a small, non-blocking notice ("Can't reach router — showing demo data") rather than breaking or blanking the screen. This keeps the rest of the prototype's existing behavior (all other screens, the search feature, etc.) working exactly as before regardless of whether the container is up.
@@ -109,12 +109,32 @@ Playwright against the real VM as part of Wave 2's Task 5: navigation still land
 correct screen every time on every affected screen; zero console errors; no code change
 needed, same as Wave 1's conclusion.
 
+**Wave 3 update (2026-09-01, confirmed during Wave 3's own final verification pass):**
+unlike Wave 1/2's affected screens, this by-design interaction does **not** extend to
+`settings` or `guest` (Settings/Guest Wi-Fi) — checked directly against the actual
+`searchIndex` entries, not assumed. Every entry pointing at `settings` ("Settings", "Wi-Fi
+name & password") and `guest` ("Guest Wi-Fi", "Smith Guest") targets static label/marketing
+text (`<strong>Wi-Fi name & password</strong>`, `<strong>Guest Wi-Fi</strong>`, the QR
+card's `<strong>Smith Guest</strong>`), never the two now-dynamic spans
+(`#settingsWifiName`, `#settingsGuestStatus`) or the toggle-hero's `#guestWifiDesc`/
+`#guestWifiSwitch` — a coincidence of how these entries happened to be authored (same as
+About), not a design guarantee. Confirmed hands-on (headless Chrome via `puppeteer-core`
+driving the real VM, since no MCP browser tool was available for this task): searching
+"wi-fi name", "smith guest", and "guest wi-fi" all navigate to the correct screen **and**
+produce the highlight pulse, exactly like any unaffected static screen — no regression of
+the search feature's own established behavior. Also confirmed with the router unreachable
+(`file://`): both screens fall back to static demo data plus one `.api-fallback-notice`
+each, zero console errors, and clicking the Guest Wi-Fi switch while unreachable safely
+round-trips through `fetchRouterApiWithStatus` and reverts rather than silently pretending
+to succeed.
+
 ## Testing / how we'll know it's real, not just displayed
 
 **Note (2026-08-31): the original plan below assumed a WAN-facing connectivity test. This VM has no WAN interface (confirmed Tasks 3/5/7), so that specific test was never achievable — corrected below.**
 
 - **Devices**: real, as planned. A second, throwaway container attached to the `openwrt` container's own network namespace (`docker run --network container:openwrt ...`, since there's no separate bridged "LAN" Docker network — the guest's `tap0` link only exists inside that one container) runs a real DHCP client (`udhcpc`); the resulting real lease shows up in the UI (hostname/IP/MAC), confirmed against `/tmp/dhcp.leases` directly, not just the API's own claim.
 - **Firewall**: partially as planned, partially adapted. Adding/removing a rule through the UI is confirmed real against `uci show firewall` and `nft list ruleset` directly (not just the API's response). The originally-planned end-to-end packet test ("curl the forwarded port from outside the container") is **not possible** in this topology: a `src='wan'` redirect rule lands in fw4's `dstnat_wan` chain, but that chain is topologically unreachable — the top-level `dstnat` chain only ever jumps into `dstnat_lan` (confirmed by exhaustive grep of the live `nft list ruleset`, `docker/facts.md` §10). What was actually proven instead: a manually-added `src='lan'` rule (mirroring the same uci/commit/reload mechanism, different zone) genuinely intercepts real live TCP traffic — an `nft` counter increments in lockstep with a real connection attempt, and removing the rule measurably changes the failure mode (instant refusal → full timeout). This proves the underlying enforcement mechanism is genuinely live, even though the shipped `src='wan'` rules specifically can't be traffic-tested end-to-end in this environment.
+- **Wifi / Guest network** (Wave 3): real, as planned, and the first proof write-capability generalizes past firewall rules to a second config subsystem. `POST /cgi-bin/api/wifi` flips `wireless.guest.disabled` in real UCI config, confirmed against `uci show wireless` directly (not just the API's own response) after both directions of the toggle, with `GET /cgi-bin/api/wifi` reflecting the same real state. The Guest Wi-Fi screen's switch shows the persisted real state across a full page reload, not just an in-memory click, and reverts cleanly (with an error notice, no false success) when the router is unreachable.
 
 ## Non-goals for this pilot
 
@@ -123,7 +143,7 @@ needed, same as Wave 1's conclusion.
 - Real VLAN trunking across physical switch ports — a container can only demonstrate the `uci network`/bridge/8021q config semantics, not physical trunk behavior.
 - Any auth/session model beyond a single shared admin session for the pilot — proper multi-user RBAC (matching the product's family-profile model) is a later concern.
 - Persisting the container across host reboots, or treating this as a daily-driver setup — it's a dev/test environment.
-- Any screen section other than the four listed in "Frontend changes" above becoming live — everything else keeps working exactly as it does today.
+- Any screen section other than the six listed in "Frontend changes" above becoming live — everything else keeps working exactly as it does today.
 
 ## Full roadmap: every screen, categorized
 
@@ -140,7 +160,7 @@ All 48 `sadd-website.html` screens, sorted into what "make it real" would actual
 - Diagnostics & Logs — the "Recent activity" list becomes real `logread` output. The "Live download/upload" Mbps cards do NOT become real in this wave — that needs real bandwidth accounting (`nlbwmon`/nft counters), which is Wave 4 territory ("Weekly Usage"), not a `logread` call; scoping it into Wave 2 would blur two different kinds of real data behind one screen.
 - ~~WAN check (onboarding step)~~ and ~~Connection Health~~ — **deferred out of Wave 2, not built.** Both assumed a real WAN-facing test, exactly like Wave 1's original Firewall testing plan did — but Wave 1 confirmed this VM has **no WAN interface at all** (Tasks 3/5/7), and unlike port-forwarding (where the underlying `uci`/`nft` mechanism could still be proven real via the LAN zone), there's no LAN-side analog for "is the internet reachable" or "WAN interface flapped" — those questions are only meaningful with a real second (WAN) interface, which is a genuine infra addition (a second tap/bridge device on the container, NAT'd or bridged so the guest can reach the real internet through it), not a small task. Worth doing whenever WAN-dependent screens become a priority, not bundled into Wave 2.
 
-**Wave 3 (building now — scope corrected 2026-08-31 against what's actually in the mockup and this VM's real constraints):**
+**Wave 3 (done — scope corrected 2026-08-31 against what's actually in the mockup and this VM's real constraints):**
 - Settings — narrowly, the "Wi-Fi name & password" row's *displayed SSID value* and the "Guest network" row's *Off/On value* become real (`uci get wireless...`), read-only — same pattern as About's version row. There is no dedicated "edit Wi-Fi name/password" sub-screen in the mockup to wire a write path into (checked: `pageTitles` has no such key); building one would be adding a new screen, which is out of scope for "wire existing screens to real data," the same boundary Wave 1/2 held.
 - Guest Wi-Fi — the on/off `.switch` becomes a real write control (`uci set wireless.guest.disabled=...` + reload), the first Wave 3 proof that write-capability generalizes beyond firewall rules. Still config-level only — no physical radio broadcasts.
 - ~~Network & VLANs~~, ~~Ad Blocking~~, ~~Site Blocked / Block Detail~~ — **deferred out of Wave 3, not built.** Network & VLANs' write side (creating new VLANs) needs real multi-interface trunking this VM's single-NIC topology can't meaningfully demonstate beyond what Wave 1's port-forwarding "prove the mechanism, not full production semantics" pattern already covers, and doing it properly is its own investigation. Ad Blocking needs a real DNS-blocklist mechanism — either the `adblock` package (large dependency tree, all of which would need the host-download-then-scp workaround from Wave 1 Task 3, likely dozens of `.ipk`s not two) or hand-rolling dnsmasq's own `address=/domain/0.0.0.0`-style config (lighter, no new packages, but its own real feature to design and verify) — either way, a properly-scoped task on its own, not a Wave 3 add-on. Site Blocked/Block Detail are tied to whichever blocking mechanism produces the log entry they display, so they wait for that. Worth their own wave once prioritized, not crammed in here.
@@ -157,7 +177,7 @@ All 48 `sadd-website.html` screens, sorted into what "make it real" would actual
 - Weekly Usage — real per-device bandwidth accounting (`nlbwmon` or nft counters)
 - Notifications (preference toggles) — real as stored config; actual delivery (email/webhook) is a separate, later concern
 
-Waves 3-4 are ordered by rough complexity, not obligation — the actual order when we get there can be re-prioritized based on what's most useful to test at the time.
+Wave 4's items are ordered by rough complexity, not obligation — the actual order when we get there can be re-prioritized based on what's most useful to test at the time.
 
 ### Group 2 — pure UI flow / marketing content, nothing to execute
 

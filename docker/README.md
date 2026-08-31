@@ -1,11 +1,15 @@
 # Real OpenWrt in Docker
 
 A real OpenWrt 23.05.5 (x86-64) instance, booted with KVM-accelerated QEMU,
-reachable from the host for LuCI, SSH, and (once later tasks build it) a
-small `/api/*` backend the frontend prototype talks to. See
+reachable from the host for LuCI, SSH, and a small `/api/*` backend the
+frontend prototype talks to (six screens/sections wired to it so far, across
+three completed waves — Devices/Firewall & Ports, About/Diagnostics & Logs,
+Settings/Guest Wi-Fi). See
 `docs/superpowers/specs/2026-08-30-openwrt-integration-pilot-design.md` for
-the full design and `docs/superpowers/plans/2026-08-30-openwrt-integration-wave1.md`
-for the implementation plan this environment supports.
+the full design/roadmap and `docs/superpowers/plans/2026-08-30-openwrt-integration-wave1.md`,
+`docs/superpowers/plans/2026-08-31-openwrt-integration-wave2.md`, and
+`docs/superpowers/plans/2026-08-31-openwrt-integration-wave3.md` for the
+implementation plans this environment supports.
 
 ## Quick start
 
@@ -351,19 +355,29 @@ specifically, as a sibling of `luci`, not a replacement for it.
   section correctly detects the incompleteness, reverts, and re-establishes
   the full correct config instead of leaving it stuck broken.
 - `docker/provision/www/api/wifi` — the tracked source of truth for the
-  `/api/wifi` endpoint (GET only for this task — POST/write comes in a
-  later task): reads `uci get wireless.default_radio0.ssid` and `uci get
-  wireless.guest.disabled`, returning `{ssid, guestEnabled}` where
-  `guestEnabled` is `true` unless `disabled` reads exactly `'1'` (UCI's own
-  disabled-option convention — absence of the option means enabled). Both
-  section/option names match exactly what `08-provision-wifi-api.sh`
-  creates. Hand-builds its response JSON (with the same defensive escaper
+  `/api/wifi` endpoint: `GET` reads `uci get wireless.default_radio0.ssid`
+  and `uci get wireless.guest.disabled`, returning `{ssid, guestEnabled}`
+  where `guestEnabled` is `true` unless `disabled` reads exactly `'1'`
+  (UCI's own disabled-option convention — absence of the option means
+  enabled). Both section/option names match exactly what
+  `08-provision-wifi-api.sh` creates. `POST` reads a JSON body
+  `{guestEnabled: true|false}` (a minimal hand-rolled parser, same rationale
+  as `firewall-rules`), sets `wireless.guest.disabled` to the inverse
+  (`'0'` when `guestEnabled:true`, `'1'` when `false`), verifies the write
+  before committing, `uci revert wireless` and a `Status: 500` on any
+  partial failure, `Status: 400` on a missing/non-boolean `guestEnabled`,
+  runs `wifi reload` (confirmed safe against this VM's phantom radio — just
+  informational "not supported" lines, not a hang) after a successful
+  commit, and responds with the new `{ssid, guestEnabled}` state — same
+  verify-before-commit/rollback discipline as `firewall-rules`' POST
+  handler. Hand-builds its response JSON (with the same defensive escaper
   as the other endpoints in this directory) rather than installing
   `lua-cjson`, for the same no-outbound-internet reason. Graceful
-  degradation: if a `uci get` fails for any reason (missing config/section,
-  `uci` erroring), `ssid` falls back to `""` and `guestEnabled` falls back
-  to `false` (matching the mockup's static "Guest network: Off" default)
-  rather than crashing or emitting malformed JSON.
+  degradation on `GET`: if a `uci get` fails for any reason (missing
+  config/section, `uci` erroring), `ssid` falls back to `""` and
+  `guestEnabled` falls back to `false` (matching the mockup's static
+  "Guest network: Off" default) rather than crashing or emitting malformed
+  JSON.
 
 ### Real connectivity test — what it actually means in this topology
 
@@ -472,8 +486,15 @@ device.
   none of its indexed search entries (App version's label, "Built on
   OpenWrt", the CVE table, pricing promise) point at the one span that
   actually goes dynamic, since only the factual version *value* is
-  replaced, not any indexed label text. Navigation still lands on the
-  correct screen every time on every affected screen; only the cosmetic
-  pulse is silently skipped, exactly matching the search feature's own
-  designed "fail silently on content drift" behavior. Full detail in the
-  design spec's Error Handling section.
+  replaced, not any indexed label text. Settings and Guest Wi-Fi (Wave 3)
+  are unaffected for the same reason, confirmed by checking the actual
+  `searchIndex` entries rather than assuming: every entry pointing at those
+  two screens ("Wi-Fi name & password", "Guest Wi-Fi", "Smith Guest")
+  targets static label/marketing text, never the two now-dynamic spans
+  (`#settingsWifiName`/`#settingsGuestStatus`) or the toggle switch/its
+  description (`#guestWifiSwitch`/`#guestWifiDesc`) — search highlighting on
+  both screens works correctly whether the router is reachable or not.
+  Navigation still lands on the correct screen every time on every affected
+  screen; only the cosmetic pulse is silently skipped, exactly matching the
+  search feature's own designed "fail silently on content drift" behavior.
+  Full detail in the design spec's Error Handling section.
