@@ -17,13 +17,32 @@
 -- field (not an empty string) — normalized to "" in this endpoint's output.
 --
 -- Liveness signal: /proc/net/arp, one header line then one row per
--- neighbor ("IP address  HW type  Flags  HW address  Mask  Device"). A MAC
--- is treated as "online" when its ARP entry has a non-zero Flags value
--- (0x0 means an incomplete/unresolved entry) and the MAC itself isn't the
+-- neighbor ("IP address  HW type  Flags  HW address  Mask  Device"). An IP
+-- is treated as "online" when ITS OWN row has a non-zero Flags value (0x0
+-- means an incomplete/unresolved entry) and the row's MAC isn't the
 -- all-zero placeholder. This is a plausible-not-perfect liveness signal
 -- (a device can go quiet and stay in ARP's cache for a while, or need a
 -- fresh probe if it's been idle) — good enough for this dev/test API, per
 -- the plan's own framing ("perfect liveness detection isn't the point").
+--
+-- IMPORTANT — keyed by IP, not MAC: this table used to be keyed by MAC,
+-- which is wrong and was confirmed live to produce false positives in
+-- this exact dev/test environment. Every real test client is attached via
+-- `docker run --network container:openwrt ... udhcpc -i tap0 ...` (see
+-- docker/README.md), so every leased device's DHCP request goes out over
+-- tap0 and therefore carries tap0's one shared hardware MAC — the SAME
+-- MAC as the container's own always-up static tap-relay address
+-- (192.168.1.2, see docker/facts.md Section 9). /proc/net/arp ends up
+-- with two rows sharing that one MAC: the relay's row (always valid/
+-- resolved, since the relay is always up) and the leased device's own row
+-- (often 0x0/incomplete, since nothing actively repings it). Keying by
+-- MAC let the relay's always-valid entry "leak" online:true onto every
+-- lease sharing that MAC — confirmed live: a test client that had already
+-- exited (`docker run --rm ...`) still showed online:true indefinitely.
+-- Keying by IP instead looks up each lease's own distinct address and
+-- uses THAT row's own flags, so a leased device's liveness is judged on
+-- its own ARP entry, not a shared-MAC neighbor's. Do not "simplify" this
+-- back to MAC-keying — it silently reintroduces the false-positive bug.
 --
 -- Excluding the container's own tap-relay address (192.168.1.2 — see
 -- docker/facts.md Section 9): this address is a static IP assigned to
@@ -64,18 +83,18 @@ local function json_escape(s)
   return s
 end
 
-local function read_arp_online_macs()
+local function read_arp_online_ips()
   local online = {}
   local f = io.open("/proc/net/arp", "r")
   if not f then return online end
   f:read("*l") -- discard header row
   for line in f:lines() do
     -- columns: IP address, HW type, Flags, HW address, Mask, Device
-    local flags, mac = line:match("^%S+%s+%S+%s+(%S+)%s+(%S+)")
-    if flags and mac then
+    local ip, flags, mac = line:match("^(%S+)%s+%S+%s+(%S+)%s+(%S+)")
+    if ip and flags and mac then
       local flagsnum = tonumber(flags, 16) or 0
       if flagsnum ~= 0 and mac ~= "00:00:00:00:00:00" then
-        online[mac:lower()] = true
+        online[ip] = true
       end
     end
   end
@@ -83,7 +102,7 @@ local function read_arp_online_macs()
   return online
 end
 
-local online_macs = read_arp_online_macs()
+local online_ips = read_arp_online_ips()
 
 local devices = {}
 local lf = io.open("/tmp/dhcp.leases", "r")
@@ -97,7 +116,7 @@ if lf then
         ip = ip,
         mac = mac,
         leaseExpires = tonumber(expiry) or 0,
-        online = online_macs[mac:lower()] == true,
+        online = online_ips[ip] == true,
       }
     end
   end

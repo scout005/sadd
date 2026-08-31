@@ -137,18 +137,60 @@ $ ubus -v list dhcp
 ```
 
 i.e. an object keyed by network device, empty because no leases exist yet.
-**This looks like a real, structured alternative to parsing the lease
-file** — likely `{"device": {"br-lan": {"leases": [...]}}}` or similar
-once a lease exists (the exact per-lease field shape could not be
-confirmed with zero leases present). Recommendation for Task 5: prefer
-`ubus call dhcp ipv4leases` if its populated shape (verify with a real
-lease first, per Task 5's own Step 2) reliably includes hostname/mac/ip/
-expiry — it avoids re-implementing dnsmasq's lease-line parsing/quoting
-edge cases (e.g. the `*` placeholder, IPv6 duid-based leases) by hand.
-If the populated shape turns out to be awkward or missing a needed field
-(e.g. no expiry timestamp), fall back to parsing `/tmp/dhcp.leases`
-directly as this doc's Section 1 describes. Either way, verify against a
-real attached client in Task 5 before committing to one approach.
+This originally looked like it might be a real, structured alternative to
+parsing the lease file, pending verification against a real lease
+(Task 5's own recommendation below, at the time unconfirmed).
+
+### 2a. Addendum (post-Task-5 fix work) — confirmed live: `ubus call dhcp ipv4leases` never reflects dnsmasq's leases on this VM
+
+The prior recommendation above was never actually followed up before the
+`/api/devices` endpoint was built — it went straight to lease-file
+parsing. This addendum closes that gap: a real client was attached
+(`docker run --rm --network container:openwrt --cap-add=NET_ADMIN busybox
+sh -c "udhcpc -i tap0 -n -q -x hostname:ubus-check-client"`), producing a
+real, confirmed line in `/tmp/dhcp.leases`:
+
+```
+1788198109 2e:c3:47:98:c7:12 192.168.1.211 ubus-check-client 01:2e:c3:47:98:c7:12
+```
+
+With that real lease genuinely present, `ubus call dhcp ipv4leases` was
+called again — **still returns the empty shape**, `{"device": {}}`,
+exactly as on the lease-free fresh VM. It never reflects dnsmasq's leases,
+confirmed live rather than assumed.
+
+**Root cause, confirmed:** `ps` shows both `odhcpd` and `dnsmasq` running.
+Only `odhcpd` registers a ubus object relevant here — `ubus list` shows
+`dnsmasq` and `dnsmasq.dns` objects, but `ubus -v list dnsmasq` exposes
+only a `metrics` method (no lease-query method at all), and
+`dnsmasq.dns` exposes nothing. The `dhcp` object (with `ipv4leases`/
+`ipv6leases`) is odhcpd's. `uci show dhcp` explains why it's always
+empty for IPv4: `dhcp.odhcpd.maindhcp='0'` — odhcpd is explicitly
+configured **not** to be the main DHCP daemon on this VM. The `dhcp.lan`
+section confirms the actual split: `dhcpv4='server'` is handled by
+dnsmasq (which owns `/tmp/dhcp.leases` and writes it directly, with no
+ubus method to query it), while `dhcpv6='server'` and `ra='server'` are
+odhcpd's job, using odhcpd's own separate lease file
+(`dhcp.odhcpd.leasefile='/tmp/hosts/odhcpd'`, confirmed not to exist yet
+on this VM since no IPv6/RA client has ever gotten a lease from it).
+`ubus call dhcp ipv4leases` therefore asks odhcpd — a daemon that, on
+this VM's config, never tracks IPv4 leases at all — so it always reports
+none, regardless of how many real DHCPv4 leases dnsmasq is actually
+serving.
+
+**Confirmed conclusion:** the prior review's hypothesis (a separate
+daemon, odhcpd, serves the `dhcp` ubus object and doesn't reflect
+dnsmasq's leases) was correct, and is now confirmed by direct observation
+rather than assumed. There is no reliable ubus path to real-time IPv4
+lease data on this VM's configuration — `/tmp/dhcp.leases` (Section 1)
+remains the only correct data source for `/api/devices`, which is what
+the shipped endpoint already does.
+
+(Original Task 5 recommendation, for context: "prefer `ubus call dhcp
+ipv4leases` if its populated shape ... reliably includes hostname/mac/ip/
+expiry ... Either way, verify against a real attached client in Task 5
+before committing to one approach" — this verification step is what 2a
+above finally performs.)
 
 ## 3. `uci show network` (full output)
 
