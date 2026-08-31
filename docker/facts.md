@@ -471,3 +471,136 @@ without touching `/proc` directly. Available methods for this object per
   and isn't a "real" LAN device to report.
 - `uci show uhttpd` confirms `cgi_prefix='/cgi-bin'` and `home='/www'`
   (docroot) — directly relevant to Task 3/4's endpoint placement.
+
+## 10. Task 7 addendum — `config redirect` zone/reachability investigation, confirmed live
+
+Re-confirmed live before writing any code: `uci show network` and
+`uci show firewall` on this VM still match Sections 3-4 above exactly —
+zero `config redirect` sections, no `network.wan` interface, but a `wan`
+*zone* still exists (`firewall.@zone[1].name='wan'`,
+`.network='wan' 'wan6'`) referencing that non-existent network. This
+section records what a real, live-added redirect actually does in this
+topology, since Sections 3-4 only established the *inputs*, not the
+generated-rule *behavior*.
+
+**A `src='wan'` redirect generates a real, correct DNAT rule that is
+permanently unreachable in this topology.** Added a throwaway
+`config redirect` by hand (`src='wan'`, `proto='tcp'`, `src_dport='9999'`,
+`dest_ip='192.168.1.232'`, `dest_port='8080'`, `target='DNAT'`), then
+`fw4 reload` and inspected both `fw4 print` (dry-run) and the live
+`nft list ruleset`. Both show the exact same result:
+
+```
+chain dstnat {
+	type nat hook prerouting priority dstnat; policy accept;
+	iifname "br-lan" jump dstnat_lan comment "!fw4: Handle lan IPv4/IPv6 dstnat traffic"
+}
+chain dstnat_lan {
+}
+chain dstnat_wan {
+	meta nfproto ipv4 tcp dport 9999 counter dnat 192.168.1.232:8080 comment "!fw4: TestWanFwd"
+}
+```
+
+The rule in `dstnat_wan` is exactly correct (right proto/port/dest match)
+— but the top-level `dstnat` chain only ever jumps into `dstnat_lan`
+(gated on `iifname "br-lan"`, the one real device that exists); there is
+no equivalent jump into `dstnat_wan` because there is no wan
+device/iifname to gate it on (no `network.wan` interface — Section 3).
+**Confirmed conclusion: a `src='wan'` redirect is real, semantically
+correct config that fw4 faithfully compiles to nftables, but zero packets
+in this VM's topology can ever reach it** — not a bug in fw4 or in
+anything built on top of it, a direct, confirmed consequence of this VM
+having no WAN-facing path at all.
+
+**A `src='lan'` redirect *is* reachable — traffic arriving via `br-lan`
+(which does exist) jumps into `dstnat_lan`, and a redirect rule placed
+there really does intercept and DNAT a live packet.** Repeated the same
+experiment with `src='lan'`, `dest_ip='192.168.1.2'` (the container's own
+tap-relay address — see Section 9 — chosen because it's the one address
+in this topology that's both a real, already-configured local address in
+the `openwrt` container's own netns *and* reachable from the guest via
+`br-lan`). Result, confirmed live in `nft list ruleset`:
+
+```
+chain dstnat_lan {
+	meta nfproto ipv4 tcp dport 9999 counter packets 0 bytes 0 dnat ip to 192.168.1.2:8080 comment "!fw4: ManualLanTest"
+}
+```
+
+Sent one real TCP SYN at `192.168.1.1:9999` from a throwaway
+`docker run --network container:openwrt` container (i.e. from the same
+one real vantage point this topology offers "outside the guest" —
+see Section 1a for the same attach mechanism). The counter above
+incremented to exactly `packets 1 bytes 60` (one SYN-sized packet) the
+moment the connection attempt was made, and **only** when the rule was
+present — with the rule removed, the identical connection attempt fails
+immediately (~0.5s, `ECONNREFUSED`-style fast failure, since nothing
+listens on port 9999 directly), whereas with the rule present the same
+attempt reliably runs the full 3s timeout instead (confirmed twice). This
+differential (fast-refuse vs full-timeout, and the counter incrementing
+exactly in step with each attempt) is a real, live, packet-level proof
+that fw4's generated `dstnat_lan` rule is genuinely intercepting and
+DNAT-rewriting a real TCP SYN — not simulated, not just "the config file
+says so."
+
+**Why the connection still doesn't fully complete (and why that's a
+separate, well-understood limitation, not a redirect-mechanism failure):**
+the "client" and the "target" in this test are unavoidably the same host
+— every `docker run --network container:openwrt ...` invocation shares
+the *exact same* network namespace as the `openwrt` container itself
+(same `tap0`, same addresses), so there is no genuinely distinct
+third network identity available in this topology to act as a separate
+"internal target" reachable from the guest:
+- The DHCP-lease route doesn't give one either: this environment's
+  `busybox` image has **no `/usr/share/udhcpc/default.script`**
+  (confirmed: `busybox udhcpc --help` shows that as the default `-s`
+  value, and `ls /usr/share/udhcpc/` reports "No such file or
+  directory") — so `udhcpc` completes a real DORA exchange and dnsmasq
+  really does write a lease (Section 1a), but nothing ever runs `ip addr
+  add` to apply that leased address to the client's own interface. A
+  leased address like `192.168.1.232`/`192.168.1.145` is therefore a real
+  server-side lease record but **not an address anything can actually
+  bind or listen on** — confirmed live (a leased address never appears in
+  `ip addr show tap0`, and nothing can `nc -l` on it).
+- So the only two real, locally-ownable addresses in this whole topology
+  are the guest itself (`192.168.1.1`) and the container netns
+  (`192.168.1.2`) — and a redirect necessarily targets one of those two,
+  making "client" and "DNAT target" the same host by construction.
+  When the guest's DNAT rewrites the destination back to
+  `192.168.1.2:8080` and forwards it back out `br-lan`, the reply
+  (SYN-ACK) is computed by the *same* netns's kernel with destination
+  `192.168.1.2` (the packet's original source) — since that address is
+  locally owned, Linux delivers the reply via local/loopback-equivalent
+  routing rather than sending it back out `tap0` through the guest a
+  second time, so it never passes back through the guest's conntrack for
+  the un-DNAT translation the original sender's TCP stack needs to
+  recognize the reply as belonging to its own connection. This is the
+  standard "hairpin NAT" problem (well documented in router/NAT
+  literature generally, unrelated to this being OpenWrt specifically) —
+  real routers normally solve it with an additional masquerade/SNAT step
+  for intra-LAN loopback traffic (OpenWrt's own `wan`-zone "reflection"
+  feature, seen as an fw4 warning during Section 4's investigation,
+  exists for exactly this reason, but only reflects `wan`-zone redirects
+  back into `lan` — it doesn't apply to a `lan`-sourced redirect at all).
+  Confirmed conclusion: this is a structural limitation of this specific
+  test topology (no third distinguishable network endpoint exists to
+  serve as a genuinely separate "internal target"), not a defect in the
+  redirect mechanism itself — the mechanism's packet-level interception
+  and rewriting is independently proven by the counter/differential-
+  timing evidence above.
+
+**Practical takeaway for Task 7:** the `/api/firewall-rules` endpoint
+hardcodes newly-created redirects to `src='wan'` (matching real port-
+forwarding semantics, and matching the POST body shape, which has no
+`src` field at all) — verification of *those* real, shipped rules is
+therefore necessarily limited to confirming the exact generated `nft`
+rule matches intended semantics (proto/port/dest, in the — currently
+unreachable in this topology — `dstnat_wan` chain), which is still a real
+proof that the full `uci add`/`set`/`rename`/`commit`/reload pipeline
+this endpoint drives produces genuinely correct firewall config, not a
+plausible-looking fake. The *separate*, `src='lan'` live-packet test
+above (done by hand over SSH, not through the endpoint) exists purely to
+prove the underlying reload/enforcement mechanism the endpoint relies on
+is real — i.e. that if this VM ever gained a real WAN interface, the same
+`src='wan'` rules this endpoint already creates would behave identically.

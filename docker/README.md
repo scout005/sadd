@@ -144,12 +144,19 @@ bash docker/provision/03-copy-frontend.sh
 #    also re-runnable on its own against an already-provisioned VM.
 bash docker/provision/04-provision-devices-api.sh
 
-# 5. Verify.
+# 5. Deploy the /api/firewall-rules endpoint (real GET/POST/DELETE against
+#    this VM's own UCI firewall config + fw4/nftables) and verify it
+#    responds with a JSON array. Self-contained/idempotent, same pattern
+#    as step 4.
+bash docker/provision/05-provision-firewall-api.sh
+
+# 6. Verify.
 curl -s http://localhost:8081/cgi-bin/api/ping     # -> {"ok":true}
 curl -sI http://localhost:8081/cgi-bin/api/ping    # -> Content-Type: application/json among the headers
 curl -sI http://localhost:8081/                    # -> 200 OK, serving sadd-website.html
 curl -sI http://localhost:8081/cgi-bin/luci/       # -> reachable (403 login-required, not 404)
 curl -s http://localhost:8081/cgi-bin/api/devices  # -> JSON array of current DHCP leases (empty `[]` until a real client has a lease — see "Getting a real device onto the lease list" below)
+curl -s http://localhost:8081/cgi-bin/api/firewall-rules  # -> JSON array of current port-forward rules (empty `[]` on a fresh VM)
 ```
 
 **Step 3 in detail — overwriting the stock landing page is intentional:**
@@ -215,6 +222,74 @@ specifically, as a sibling of `luci`, not a replacement for it.
   practice since that address is never DHCP-issued and this endpoint only
   ever iterates real lease-file lines, but a defensive IP-string check is
   in there too.
+- `docker/provision/05-provision-firewall-api.sh` — copies (and chmods,
+  and curl-verifies) `docker/provision/www/api/firewall-rules` onto the
+  VM's `/www/cgi-bin/api/firewall-rules`. Same dedicated-step rationale as
+  `04-provision-devices-api.sh`.
+- `docker/provision/www/api/firewall-rules` — the tracked source of truth
+  for the `/api/firewall-rules` endpoint: `GET` lists this VM's real
+  `config redirect` (port-forward) sections (parsed from `uci show
+  firewall`) as `[{id, name, proto, src_dport, dest_ip, dest_port}, ...]`;
+  `POST` hand-parses a small flat JSON body (`{name, proto, src_dport,
+  dest_ip, dest_port}` — no `lua-cjson`, see the script's own header
+  comment), validates it, `uci add`s a new `redirect` section, immediately
+  `uci rename`s it to a stable generated id (`fwd_<unix-time>_<6 hex
+  chars>`, per `docker/facts.md` Section 4's recommendation — anonymous
+  `@redirect[N]` indices shift when other rules are deleted), sets its
+  fields (**`src` is hardcoded to `'wan'`** — see "Real connectivity test"
+  below for why), `uci commit`s, and reloads live via `/etc/init.d/firewall
+  reload`; `DELETE` (id from `PATH_INFO` or `?id=`) removes that section by
+  its stable name the same way. Every value that reaches a shell command
+  is quoted defensively (`shell_quote()`); the DELETE id is additionally
+  restricted to `[%w_]+` and checked to actually be a `redirect` section
+  before deletion.
+
+### Real connectivity test — what it actually means in this topology
+
+The plan this endpoint was built from originally called for a literal
+"run a listener on the internal target, curl the forwarded external port
+from this repo's normal shell, confirm it connects" test. **That's not
+possible here**, and not for a superficial reason — `docker/facts.md`
+Section 10 has the full live investigation, summarized:
+
+- This VM has no `network.wan` interface (`docker/facts.md` Section 3).
+  A `config redirect` with `src='wan'` (the only sensible default for a
+  real port-forward — see the endpoint's own header comment) generates a
+  correct, real DNAT rule, confirmed live in `nft list ruleset` — but fw4
+  places it in a `dstnat_wan` chain nothing ever jumps into, since there's
+  no wan device to gate that jump on. **Zero packets can ever reach a
+  `src='wan'` rule in this VM's topology**, confirmed by direct inspection,
+  not assumed.
+- A `src='lan'` rule *is* reachable (traffic via the real `br-lan` device
+  does get routed into `dstnat_lan`), and a manually-added one was proven,
+  live, to actually intercept and DNAT a real TCP SYN packet (the
+  `nft` rule's own packet counter incremented in lockstep with real
+  connection attempts, and removing the rule measurably changed the
+  connection's failure mode from an instant refusal to a full 3-second
+  timeout). What could **not** be proven is a *complete* end-to-end
+  connection, because this topology has no third, genuinely distinct
+  network identity to act as a separate "internal target" — every
+  throwaway test container shares the exact same network namespace as the
+  `openwrt` container itself, and a DHCP-leased address from this
+  environment's `busybox` image is never actually applied to an interface
+  (no `/usr/share/udhcpc/default.script` present) so nothing can bind or
+  listen on one. The resulting client-is-also-the-target scenario hits the
+  well-known "hairpin NAT" limitation (the reply routes back locally
+  instead of back through the guest for un-DNAT) — a structural property
+  of this test topology, not a defect in the redirect mechanism itself.
+
+Given that, what this endpoint's shipped verification actually is: (1) a
+POST creates a real `redirect` section with `src='wan'`, confirmed via
+`uci show firewall` and via the exact matching rule appearing in `nft list
+ruleset`'s `dstnat_wan` chain (correct proto/port/dest, not a fabricated
+or hand-typed value) — real proof the whole `uci add`/`rename`/`set`/
+`commit`/reload pipeline produces genuinely correct firewall config; and
+(2) `docker/facts.md` Section 10 separately documents a hand-run,
+`src='lan'` live-packet test (not part of this endpoint — it always uses
+`src='wan'`) proving the underlying reload/enforcement mechanism itself is
+real, so if this VM ever gains a real WAN interface, the same `src='wan'`
+rules this endpoint already creates would behave identically with zero
+further changes.
 
 ### Getting a real device onto the lease list
 
