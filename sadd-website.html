@@ -952,6 +952,10 @@ html.large-text .scr-title{font-size:1.15em;}
     const rowEl = document.getElementById('aboutVersionRow');
     const valueEl = document.getElementById('aboutVersionValue');
     if(!rowEl || !valueEl) return;
+    // notice, if any, is inserted as rowEl's next sibling (not a descendant — see
+    // below) so it must be located/removed via nextElementSibling, not rowEl.querySelector
+    const existingNotice = rowEl.nextElementSibling && rowEl.nextElementSibling.classList.contains('api-fallback-notice')
+      ? rowEl.nextElementSibling : null;
     if(data && data.version){
       // real data replaces the static "1.0.0" placeholder — selected by id, not by
       // string/regex-matching the rendered HTML (this file has a documented history of
@@ -961,7 +965,8 @@ html.large-text .scr-title{font-size:1.15em;}
       const revision = data.revision ? ' ('+escapeHtml(data.revision)+')' : '';
       const model = data.model ? ' on '+escapeHtml(data.model) : '';
       valueEl.innerHTML = distribution+' '+version+revision+model;
-    } else if(!rowEl.querySelector('.api-fallback-notice')){
+      if(existingNotice) existingNotice.remove();
+    } else if(!existingNotice){
       // unreachable/error: leave the static "1.0.0" text as-is, add a notice near just
       // this one row (not a page-wide notice — the rest of the About screen, e.g. the
       // CVE table and pricing promise, is unaffected by this fetch).
