@@ -204,7 +204,10 @@ specifically, as a sibling of `luci`, not a replacement for it.
 - `docker/provision/www/api/devices` — the tracked source of truth for
   the `/api/devices` endpoint: parses `/tmp/dhcp.leases` into
   `{hostname, ip, mac, leaseExpires, online}` entries (`online` comes from
-  cross-referencing each lease's MAC against `/proc/net/arp`) and prints
+  cross-referencing each lease's own IP against `/proc/net/arp` — keyed by
+  IP, not MAC, since every test client sharing tap0's one hardware MAC
+  with the container's own relay address would otherwise collide with it;
+  see the script's own header comment) and prints
   them as a JSON array. Hand-builds its JSON (with a defensive escaper)
   rather than installing `lua-cjson` — see the script's own header
   comment for the reasoning. Excludes the container's own static tap-relay
