@@ -17,7 +17,23 @@
 --
 -- POST body: {"mac": "<mac>"} — creates the rule if it doesn't already
 -- exist for this MAC; if it already does, this is a no-op success (POSTing
--- the same MAC twice is idempotent, not an error or a duplicate rule).
+-- the same MAC twice IN SEQUENCE is idempotent, not an error or a duplicate
+-- rule — confirmed live).
+--
+-- Accepted risk, not fully mitigated (code review finding, same class of
+-- issue wireguard-clients' address-assignment discloses for its own create
+-- path): two genuinely CONCURRENT POSTs for the same new MAC could both see
+-- "not found" from find_priority_rule() before either has written anything,
+-- then both attempt `uci rename firewall.<anon>=<section_id>` against the
+-- SAME deterministic section_id (unlike wireguard-clients' randomized
+-- per-client id, this endpoint's id is derived from the MAC on purpose, so
+-- two racing requests for the same MAC collide on the same target name).
+-- The create path's own readback check can't catch a resulting duplicate
+-- either, since find_priority_rule() only ever returns the first match by
+-- iteration order. Mitigated (not eliminated) by a post-write duplicate-count
+-- check below, mirroring wireguard-clients' own `dup_count` pattern — a true
+-- TOCTOU window remains between the initial existence scan and that check,
+-- same as the sibling file's own documented gap.
 --
 -- No DELETE — the mockup has no remove affordance for these rows (same
 -- choice /api/vlans made for its own read-mostly list). Rules created here
@@ -182,6 +198,13 @@ if method == "GET" then
   for _, id in ipairs(order) do
     local name = fields[id].name or ""
     local mac = fields[id].src_mac
+    -- The name:match("^qospriority%-") check is load-bearing, not redundant with
+    -- list_priority_sections()'s own type=="rule" filter (code review finding, added
+    -- after it was flagged as possibly-dead-weight): the stock firewall config ships
+    -- several unrelated `rule`-type sections (Allow-DHCP-Renew, Allow-Ping, etc.), and
+    -- device-pause's own per-MAC block rules are ALSO `rule`-type sections that set
+    -- src_mac — without this name-prefix check, a paused device would incorrectly show
+    -- up here as a "priority device" too.
     if name:match("^qospriority%-") and mac then
       rows[#rows + 1] = string.format('{"mac":"%s"}', json_escape(mac))
     end
@@ -207,12 +230,21 @@ elseif method == "POST" then
       print(string.format('{"ok":true,"mac":"%s"}', json_escape(mac)))
     else
       local section_id = mac_to_section_id(mac)
+      local create_failed = false
+      local create_error = nil
+
       local anon = run("uci add firewall rule")
-      local create_failed = anon == "" or anon:find("[^%w_]")
-      if not create_failed then
+      if anon == "" or anon:find("[^%w_]") then
+        create_failed = true
+        create_error = "uci add firewall rule failed"
+      else
         run("uci rename firewall." .. anon .. "=" .. section_id)
-        create_failed = section_type(section_id) ~= "rule"
+        if section_type(section_id) ~= "rule" then
+          create_failed = true
+          create_error = "uci rename to " .. section_id .. " failed: section not found under new name"
+        end
       end
+
       if not create_failed then
         run("uci set firewall." .. section_id .. ".name=" .. shell_quote(rule_name))
         run("uci set firewall." .. section_id .. ".src=" .. shell_quote("lan"))
@@ -224,17 +256,35 @@ elseif method == "POST" then
 
       local readback_ok = false
       if not create_failed then
-        local _, readback_fields = find_priority_rule(rule_name)
+        local order, readback_all_fields = list_priority_sections()
+        local readback_fields = readback_all_fields[section_id]
         readback_ok = readback_fields
           and readback_fields.src_mac == mac
           and readback_fields.dest == "wan"
           and readback_fields.target == "MARK"
+        if not readback_ok then
+          create_error = "failed to verify the priority rule write"
+        else
+          -- Duplicate-count mitigation for the concurrent-POST race disclosed in the
+          -- header comment (code review finding, mirrors wireguard-clients' own
+          -- dup_count check): if a second request for the same MAC raced this one and
+          -- also got as far as writing a section with this rule_name, catch it here
+          -- rather than committing two rules for one device.
+          local dup_count = 0
+          for _, id2 in ipairs(order) do
+            if readback_all_fields[id2].name == rule_name then dup_count = dup_count + 1 end
+          end
+          if dup_count ~= 1 then
+            readback_ok = false
+            create_error = "a concurrent request created a duplicate rule for this MAC"
+          end
+        end
       end
 
       if not readback_ok then
         run("uci revert firewall")
         send_headers(500)
-        print('{"ok":false,"error":"failed to verify the priority rule write; reverted"}')
+        print(string.format('{"ok":false,"error":"%s; reverted"}', json_escape(create_error or "failed to verify the priority rule write")))
       else
         run("uci commit firewall")
         run("fw4 reload")
