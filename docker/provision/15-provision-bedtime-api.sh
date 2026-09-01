@@ -97,4 +97,47 @@ else
   fi
 fi
 
-echo "=== 15-provision-bedtime-api.sh done: bedtime-sweep.sh deployed, cron seeded (*/5 * * * *), crond confirmed running. (The /api/device-bedtime endpoint that creates bedtime-<mac> rules is deployed by a later task in this plan.) ==="
+echo "=== 15-provision-bedtime-api.sh: sweep half done. Now deploying the /api/device-bedtime endpoint itself. ==="
+
+# Deploys docker/provision/www/api/device-bedtime (the tracked source of
+# truth for the /api/device-bedtime endpoint) onto the VM and verifies GET
+# returns the correct "no schedule configured" shape for a MAC with no
+# bedtime rule — same idiom as 13-provision-devpause-api.sh's own
+# deploy-and-verify block for /api/device-pause (a dedicated, self-contained
+# step even though 02-copy-www.sh already copies everything under
+# docker/provision/www/ generically), since this endpoint's verification GET
+# is a real, safe read (never mutates anything).
+OPENWRT_HTTP_PORT="${OPENWRT_HTTP_PORT:-8081}"
+API_SRC_FILE="${SCRIPT_DIR}/www/api/device-bedtime"
+
+if [ ! -f "${API_SRC_FILE}" ]; then
+  echo "ERROR: ${API_SRC_FILE} not found." >&2
+  exit 1
+fi
+
+echo "Ensuring /www/cgi-bin/api exists on the VM (root@${OPENWRT_HOST}:${OPENWRT_PORT})..."
+ssh_run "mkdir -p /www/cgi-bin/api"
+
+echo "Copying ${API_SRC_FILE} -> root@${OPENWRT_HOST}:/www/cgi-bin/api/device-bedtime ..."
+# -O forces the legacy SCP protocol — this VM has no /usr/libexec/sftp-server,
+# confirmed live in 01/02/03; required, not optional, against this VM.
+# shellcheck disable=SC2086
+scp -O ${SSH_OPTS} -P "${OPENWRT_PORT}" \
+  "${API_SRC_FILE}" \
+  "${SSH_TARGET}:/www/cgi-bin/api/device-bedtime"
+
+echo "Making it executable (core.filemode=false means git doesn't track +x — see 02's comment)..."
+ssh_run "chmod +x /www/cgi-bin/api/device-bedtime && ls -la /www/cgi-bin/api/device-bedtime"
+
+echo "Verifying: GET http://${OPENWRT_HOST}:${OPENWRT_HTTP_PORT}/cgi-bin/api/device-bedtime?mac=11:22:33:44:55:66 reports no schedule configured for a MAC with no bedtime rule..."
+BODY="$(curl -s "http://${OPENWRT_HOST}:${OPENWRT_HTTP_PORT}/cgi-bin/api/device-bedtime?mac=11:22:33:44:55:66")"
+echo "Response: ${BODY}"
+
+if [ "${BODY}" = '{"enabled":false,"active":false}' ]; then
+  echo "OK: /api/device-bedtime reports no schedule configured, as expected."
+else
+  echo "ERROR: expected {\"enabled\":false,\"active\":false}, got: ${BODY}" >&2
+  exit 1
+fi
+
+echo "=== 15-provision-bedtime-api.sh done: bedtime-sweep.sh deployed, cron seeded (*/5 * * * *), crond confirmed running, /api/device-bedtime deployed and verified. ==="

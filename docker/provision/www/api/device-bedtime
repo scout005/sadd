@@ -1,0 +1,326 @@
+#!/usr/bin/lua
+-- /api/device-bedtime — GET (status) + POST (create/remove a Bedtime
+-- schedule). Real per-device recurring block for the Per-Device Controls
+-- screen's "Bedtime" toggle. The recurring enforcement itself is
+-- docker/provision/lib/bedtime-sweep.sh's job (a cron job, run every 5
+-- minutes — see docker/provision/15-provision-bedtime-api.sh); this
+-- endpoint only ever creates, reads, or removes the rule the sweep acts on.
+--
+-- GET /cgi-bin/api/device-bedtime?mac=<mac>
+--   -> {"enabled": true|false, "active": true|false}
+--   enabled: is a Bedtime schedule configured for this device at all.
+--   active: is it blocking RIGHT NOW (this device's rule's own `enabled`
+--   uci option reads "1"). Both false if no rule exists for this MAC.
+--
+-- POST /cgi-bin/api/device-bedtime  body: {"mac": "<mac>", "enabled": true|false}
+--   -> {"ok": true, "enabled": <bool>, "active": <bool>}
+--
+-- === Rule shape ===
+-- Same src=lan/dest=wan REJECT shape device-pause already established
+-- (docker/facts.md Section 14) for "block this device's outbound traffic,
+-- not just its access to the router itself" — confirmed correct again here,
+-- unchanged.
+--
+-- === Timezone honesty — same disclosure as bedtime-sweep.sh ===
+-- This VM has no configured timezone (confirmed live, docker/facts.md
+-- Section 16). "Enabled right now" reflects a fixed UTC 21:00-07:00 window,
+-- not any real-world local time. When POST creates a new rule, this
+-- endpoint computes the CURRENT hour itself (not left at some default) so
+-- the schedule takes effect immediately if it's already nighttime when the
+-- user turns Bedtime on, rather than waiting for the next 5-minute sweep
+-- tick to notice.
+--
+-- === Stable section ids ===
+-- Every created rule is immediately uci-renamed to a stable id
+-- (bedtime_<mac-no-colons>, underscore — uci section identifiers can't
+-- contain a hyphen, confirmed live in docker/facts.md Section 14; the
+-- hyphenated form is kept for the `.name` OPTION's value, which
+-- bedtime-sweep.sh's `grep "\.name='bedtime-"` scan depends on matching
+-- exactly), verified via section_type() before any field write — same
+-- discipline as device-pause/qos-priority, closing the same
+-- positional-addressing race those endpoints' own investigations
+-- (and, for wireguard-clients, a real found-and-fixed command-injection
+-- bug) established the importance of.
+--
+-- === Security note ===
+-- Like device-pause and qos-priority, this endpoint NEVER accepts a
+-- client-supplied section id — the id is always derived internally from an
+-- already-regex-validated `mac`. See docker/README.md's file note for
+-- wireguard-clients for the full command-injection finding this design
+-- deliberately avoids by construction.
+--
+-- === Known shell gotcha this Lua file does NOT hit ===
+-- bedtime-sweep.sh's header comment documents a real busybox-ash arithmetic
+-- gotcha with zero-padded `date -u +%H` output. This endpoint reads the
+-- hour via Lua's own os.date/tonumber (not a shell arithmetic expression),
+-- which has no equivalent octal-parsing pitfall — tonumber("08") in Lua
+-- correctly returns 8, confirmed live before shipping this file.
+
+local function run(cmd)
+  local p = io.popen(cmd .. " 2>/dev/null")
+  if not p then return "" end
+  local out = p:read("*a") or ""
+  p:close()
+  return (out:gsub("%s+$", ""))
+end
+
+local function shell_quote(s)
+  s = tostring(s or "")
+  s = s:gsub('[\1-\9\11-\31]', '')
+  s = s:gsub('[\n\r]', ' ')
+  return "'" .. s:gsub("'", "'\\''") .. "'"
+end
+
+local function json_escape(s)
+  if s == nil then return "" end
+  s = tostring(s)
+  s = s:gsub('[\\"\n\r\t]', {
+    ['\\'] = '\\\\', ['"'] = '\\"', ['\n'] = '\\n', ['\r'] = '\\r', ['\t'] = '\\t',
+  })
+  s = s:gsub('[\1-\31]', '')
+  return s
+end
+
+local function is_valid_mac(v)
+  if type(v) ~= "string" then return false end
+  return v:match("^%x%x:%x%x:%x%x:%x%x:%x%x:%x%x$") ~= nil
+end
+
+local function mac_to_rule_name(mac) return "bedtime-" .. mac:lower():gsub(":", "") end
+local function mac_to_section_id(mac) return "bedtime_" .. mac:lower():gsub(":", "") end
+
+-- Current UTC hour "should this device currently be blocked" per the fixed
+-- window bedtime-sweep.sh also uses. os.date("!*t") returns a UTC-based
+-- table (the "!" prefix forces UTC, matching bedtime-sweep.sh's `date -u`);
+-- .hour is already a real Lua number, no string-parsing gotcha to guard
+-- against here (see header comment).
+local function currently_in_window()
+  local hour = os.date("!*t").hour
+  return hour >= 21 or hour < 7
+end
+
+local function list_bedtime_sections()
+  local output = run("uci show firewall")
+  local order, is_rule, fields = {}, {}, {}
+  for line in output:gmatch("[^\n]+") do
+    local lhs, rhs = line:match("^(.-)=(.*)$")
+    if lhs and rhs then
+      local rest = lhs:match("^firewall%.(.+)$")
+      if rest then
+        local dot = rest:find("%.")
+        if dot then
+          local id, field = rest:sub(1, dot - 1), rest:sub(dot + 1)
+          if is_rule[id] then
+            local val = rhs:match("^'(.-)'$")
+            fields[id][field] = val or rhs
+          end
+        else
+          local id = rest
+          local typ = rhs:match("^'?(.-)'?$")
+          if typ == "rule" and not is_rule[id] then
+            is_rule[id] = true; order[#order + 1] = id; fields[id] = {}
+          end
+        end
+      end
+    end
+  end
+  return order, fields
+end
+
+local function find_bedtime_rule(rule_name)
+  local order, fields = list_bedtime_sections()
+  for _, id in ipairs(order) do
+    if fields[id].name == rule_name then return id, fields[id] end
+  end
+  return nil, nil
+end
+
+local function section_type(id) return run("uci get firewall." .. id) end
+
+local function read_request_body()
+  local len = tonumber(os.getenv("CONTENT_LENGTH") or "")
+  if len and len > 0 then return io.read(len) or "" end
+  return io.read("*a") or ""
+end
+
+local function json_parse_flat_object(s)
+  local obj = {}
+  if type(s) ~= "string" then return obj end
+  local i, len = 1, #s
+  local function skip_ws() while i <= len and s:sub(i, i):match("%s") do i = i + 1 end end
+  local function parse_string()
+    i = i + 1
+    local buf = {}
+    local escapes = { ['"']='"', ['\\']='\\', ['/']='/', ['n']='\n', ['r']='\r', ['t']='\t', ['b']='\b', ['f']='\f' }
+    while i <= len do
+      local c = s:sub(i, i)
+      if c == '"' then i = i + 1; return table.concat(buf)
+      elseif c == '\\' then
+        local nc = s:sub(i + 1, i + 1)
+        if nc == 'u' then i = i + 6
+        elseif escapes[nc] then buf[#buf+1] = escapes[nc]; i = i + 2
+        else buf[#buf+1] = nc; i = i + 2 end
+      else buf[#buf+1] = c; i = i + 1 end
+    end
+    return table.concat(buf)
+  end
+  skip_ws()
+  if s:sub(i, i) ~= '{' then return obj end
+  i = i + 1
+  skip_ws()
+  if s:sub(i, i) == '}' then return obj end
+  while i <= len do
+    skip_ws()
+    if s:sub(i, i) ~= '"' then break end
+    local key = parse_string()
+    skip_ws()
+    if s:sub(i, i) ~= ':' then break end
+    i = i + 1
+    skip_ws()
+    local val
+    if s:sub(i, i) == '"' then val = parse_string()
+    else
+      local start = i
+      while i <= len and not s:sub(i, i):match('[,}%s]') do i = i + 1 end
+      val = s:sub(start, i - 1)
+    end
+    obj[key] = val
+    skip_ws()
+    if s:sub(i, i) == ',' then i = i + 1
+    elseif s:sub(i, i) == '}' then i = i + 1; break
+    else break end
+  end
+  return obj
+end
+
+local function send_headers(status)
+  local reasons = { [400]="Bad Request", [405]="Method Not Allowed", [500]="Internal Server Error" }
+  if status and status ~= 200 then
+    print("Status: " .. status .. " " .. (reasons[status] or "Error"))
+  end
+  print("Content-Type: application/json\n")
+end
+
+local method = os.getenv("REQUEST_METHOD") or "GET"
+
+if method == "GET" then
+  local mac = nil
+  do
+    local qs = os.getenv("QUERY_STRING") or ""
+    for pair in qs:gmatch("[^&]+") do
+      local k, v = pair:match("^([^=]+)=(.*)$")
+      if k == "mac" then
+        mac = v:gsub("+", " "):gsub("%%(%x%x)", function(h) return string.char(tonumber(h, 16)) end)
+      end
+    end
+  end
+  if not is_valid_mac(mac) then
+    send_headers(400)
+    print('{"ok":false,"error":"missing or invalid required query param: mac (must be AA:BB:CC:DD:EE:FF form)"}')
+  else
+    local _, fields = find_bedtime_rule(mac_to_rule_name(mac))
+    send_headers(200)
+    if fields then
+      print(string.format('{"enabled":true,"active":%s}', fields.enabled == "1" and "true" or "false"))
+    else
+      print('{"enabled":false,"active":false}')
+    end
+  end
+
+elseif method == "POST" then
+  local body = read_request_body()
+  local req = json_parse_flat_object(body)
+  local mac = req.mac
+  local enabled_req = req.enabled
+
+  if not is_valid_mac(mac) then
+    send_headers(400)
+    print('{"ok":false,"error":"missing or invalid required field: mac (must be AA:BB:CC:DD:EE:FF form)"}')
+  elseif enabled_req ~= "true" and enabled_req ~= "false" then
+    send_headers(400)
+    print('{"ok":false,"error":"missing or invalid required field: enabled (must be a JSON boolean true or false)"}')
+  else
+    local rule_name = mac_to_rule_name(mac)
+    local want_enabled = enabled_req == "true"
+    local existing_id = find_bedtime_rule(rule_name)
+
+    if want_enabled then
+      if existing_id then
+        -- Idempotent: schedule already configured. Report its real current state.
+        local _, fields = find_bedtime_rule(rule_name)
+        send_headers(200)
+        print(string.format('{"ok":true,"enabled":true,"active":%s}', fields.enabled == "1" and "true" or "false"))
+      else
+        local section_id = mac_to_section_id(mac)
+        local active_now = currently_in_window()
+        local create_failed = false
+        local create_error = nil
+
+        local anon = run("uci add firewall rule")
+        if anon == "" or anon:find("[^%w_]") then
+          create_failed = true
+          create_error = "uci add firewall rule failed"
+        else
+          run("uci rename firewall." .. anon .. "=" .. section_id)
+          if section_type(section_id) ~= "rule" then
+            create_failed = true
+            create_error = "uci rename to " .. section_id .. " failed: section not found under new name"
+          end
+        end
+
+        if not create_failed then
+          run("uci set firewall." .. section_id .. ".name=" .. shell_quote(rule_name))
+          run("uci set firewall." .. section_id .. ".src=" .. shell_quote("lan"))
+          run("uci set firewall." .. section_id .. ".src_mac=" .. shell_quote(mac))
+          run("uci set firewall." .. section_id .. ".dest=" .. shell_quote("wan"))
+          run("uci set firewall." .. section_id .. ".target=" .. shell_quote("REJECT"))
+          run("uci set firewall." .. section_id .. ".enabled=" .. shell_quote(active_now and "1" or "0"))
+        end
+
+        local readback_ok = false
+        if not create_failed then
+          local order, all_fields = list_bedtime_sections()
+          local f = all_fields[section_id]
+          readback_ok = f and f.src_mac == mac and f.dest == "wan" and f.target == "REJECT"
+            and f.enabled == (active_now and "1" or "0")
+          if readback_ok then
+            local dup_count = 0
+            for _, id2 in ipairs(order) do
+              if all_fields[id2].name == rule_name then dup_count = dup_count + 1 end
+            end
+            if dup_count ~= 1 then
+              readback_ok = false
+              create_error = "a concurrent request created a duplicate rule for this MAC"
+            end
+          else
+            create_error = "failed to verify the Bedtime rule write"
+          end
+        end
+
+        if not readback_ok then
+          run("uci revert firewall")
+          send_headers(500)
+          print(string.format('{"ok":false,"error":"%s; reverted"}', json_escape(create_error or "failed to verify the Bedtime rule write")))
+        else
+          run("uci commit firewall")
+          run("fw4 reload")
+          send_headers(200)
+          print(string.format('{"ok":true,"enabled":true,"active":%s}', active_now and "true" or "false"))
+        end
+      end
+    else
+      -- want_enabled == false: remove the schedule if present. Idempotent no-op if absent.
+      if existing_id then
+        run("uci -q delete firewall." .. shell_quote(existing_id))
+        run("uci commit firewall")
+        run("fw4 reload")
+      end
+      send_headers(200)
+      print('{"ok":true,"enabled":false,"active":false}')
+    end
+  end
+
+else
+  send_headers(405)
+  print(string.format('{"ok":false,"error":"unsupported method: %s"}', json_escape(tostring(method))))
+end
