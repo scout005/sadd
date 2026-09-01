@@ -1,11 +1,11 @@
 #!/usr/bin/lua
--- /api/adblock — real dnsmasq-blocklist-backed status for the Ad Blocking
--- screen. Reads the baseline config created by
--- docker/provision/09-provision-adblock-api.sh (see that script and
--- docker/facts.md Section 12 for the confirmed live investigation this
--- endpoint is built on).
+-- /api/adblock — GET (Task 1) + POST (Task 3). Real dnsmasq-blocklist-backed
+-- status/toggle for the Ad Blocking screen. Reads/writes the baseline
+-- config created by docker/provision/09-provision-adblock-api.sh (see that
+-- script and docker/facts.md Section 12 for the confirmed live
+-- investigation this endpoint is built on).
 --
--- Response shape: {"enabled": true|false, "blockedThisWeek": <int>}
+-- GET response shape: {"enabled": true|false, "blockedThisWeek": <int>}
 --
 -- === enabled ===
 -- `uci get dhcp.@dnsmasq[0].confdir` currently equals the exact path the
@@ -70,6 +70,59 @@
 -- (io.popen returning nil, or the command producing no matching output,
 -- both degrade to "nothing counted" rather than crashing or emitting
 -- malformed JSON) — same discipline as `wifi`'s GET handler.
+--
+-- === POST (Task 3) — real enable/disable toggle ===
+--
+-- POST body: {"enabled": true|false} — writes dhcp.@dnsmasq[0].confdir
+-- accordingly and reports the new state.
+--
+-- Both directions confirmed live against this running VM before writing
+-- this handler (not just assumed symmetric):
+--   enabled:true  -> `uci set dhcp.@dnsmasq[0].confdir=/etc/dnsmasq.blocklist.d`
+--                     (also re-asserts logqueries=1, in case it was ever
+--                     hand-cleared — cheap insurance, this option has no
+--                     effect on whether blocking itself works, only on
+--                     whether blockedThisWeek can count anything).
+--   enabled:false -> `uci delete dhcp.@dnsmasq[0].confdir` — confirmed live
+--                     over SSH that this genuinely stops blocking, not just
+--                     that `uci get` afterward returns "Entry not found":
+--                     after delete+commit+`/etc/init.d/dnsmasq restart`, a
+--                     real `nslookup doubleclick.net 127.0.0.1` returns
+--                     REFUSED — indistinguishable from a real `nslookup
+--                     example.com 127.0.0.1` control lookup against a
+--                     never-blocklisted domain on this WAN-less VM (see
+--                     docker/facts.md: every lookup here is REFUSED
+--                     upstream regardless, since there's no WAN — REFUSED is
+--                     exactly what a *not-blocked* lookup looks like in this
+--                     environment, not an error). `uci set confdir=...`
+--                     afterward, re-tested, brought the 0.0.0.0 result right
+--                     back. This is NOT a case of "unset must obviously mean
+--                     off" being assumed — it was verified end-to-end.
+--
+-- Body parsing: same hand-rolled json_parse_flat_object + literal-string
+-- validation approach as `wifi`'s parse_guest_enabled() (adapted verbatim,
+-- see that file's header comment for the full rationale) — no lua-cjson on
+-- this VM (no outbound internet route to opkg-install it). The parser
+-- returns a bare JSON `true`/`false` token as the Lua *string* "true"/
+-- "false" (not a real Lua boolean), and a JSON string `"true"` parses
+-- identically — those two input shapes are indistinguishable after parsing,
+-- which is fine here: valid input is defined as "the parsed value is
+-- exactly the string 'true' or the string 'false'", anything else (missing
+-- key, "1"/"0", a number, "yes", empty string, null, etc.) is rejected as
+-- 400.
+--
+-- Write sequence: uci set/delete -> readback verify -> uci commit ->
+-- dnsmasq restart. If the readback doesn't match what was requested, the
+-- write is rolled back (`uci revert dhcp`) and never committed, and the
+-- endpoint responds 500 rather than falsely claiming success — same
+-- verify-before-commit/revert-on-failure discipline as `wifi`/
+-- `firewall-rules`' POST handlers. `/etc/init.d/dnsmasq restart` after a
+-- successful commit is what makes the change live (matches
+-- 09-provision-adblock-api.sh's own baseline-creation sequence).
+--
+-- Invalid/missing input is rejected with 400 and touches no config at all
+-- (no `uci` write command runs before the validation check). Unsupported
+-- methods (anything but GET/POST) get 405.
 
 local EXPECTED_CONFDIR = "/etc/dnsmasq.blocklist.d"
 local BLOCKED_DOMAINS = { "doubleclick.net", "adservice.google.com", "tracker.example.com" }
@@ -113,9 +166,208 @@ local function count_blocked_this_week()
   return count
 end
 
-print("Content-Type: application/json\n")
-print(string.format(
-  '{"enabled":%s,"blockedThisWeek":%d}',
-  is_enabled() and "true" or "false",
-  count_blocked_this_week()
-))
+-- Wrap a value for safe use as a single shell argument. Adapted verbatim
+-- from `wifi`/`firewall-rules`' shell_quote(). This endpoint's only
+-- writable value is a constant path string it derives itself (never raw
+-- client input placed directly into a shell command), but every
+-- interpolated value still goes through this per the established
+-- convention, for consistency and defense-in-depth.
+local function shell_quote(s)
+  s = tostring(s or "")
+  s = s:gsub('[\1-\9\11-\31]', '') -- strip control chars
+  s = s:gsub('[\n\r]', ' ')
+  return "'" .. s:gsub("'", "'\\''") .. "'"
+end
+
+local function read_request_body()
+  local len = tonumber(os.getenv("CONTENT_LENGTH") or "")
+  if len and len > 0 then
+    return io.read(len) or ""
+  end
+  -- No/invalid Content-Length: read whatever is available, defensively.
+  return io.read("*a") or ""
+end
+
+-- === Narrow, defensive flat-JSON-object parser ===
+-- Adapted verbatim from `wifi`/`firewall-rules`' json_parse_flat_object
+-- (see `wifi`'s header comment for the full rationale): understands
+-- `{"key":"string value","key2":123}` — quoted-string values (with escapes)
+-- and bare numeric/true/false/null tokens — and nothing else.
+local function json_parse_flat_object(s)
+  local obj = {}
+  if type(s) ~= "string" then return obj end
+  local i, len = 1, #s
+
+  local function skip_ws()
+    while i <= len and s:sub(i, i):match("%s") do i = i + 1 end
+  end
+
+  local function parse_string()
+    i = i + 1 -- opening quote
+    local buf = {}
+    local escapes = {
+      ['"'] = '"', ['\\'] = '\\', ['/'] = '/',
+      ['n'] = '\n', ['r'] = '\r', ['t'] = '\t', ['b'] = '\b', ['f'] = '\f',
+    }
+    while i <= len do
+      local c = s:sub(i, i)
+      if c == '"' then
+        i = i + 1
+        return table.concat(buf)
+      elseif c == '\\' then
+        local nc = s:sub(i + 1, i + 1)
+        if nc == 'u' then
+          i = i + 6 -- skip \uXXXX — not needed for this endpoint's fields
+        elseif escapes[nc] then
+          buf[#buf + 1] = escapes[nc]
+          i = i + 2
+        else
+          buf[#buf + 1] = nc
+          i = i + 2
+        end
+      else
+        buf[#buf + 1] = c
+        i = i + 1
+      end
+    end
+    return table.concat(buf) -- unterminated string: return what we got
+  end
+
+  skip_ws()
+  if s:sub(i, i) ~= '{' then return obj end
+  i = i + 1
+  skip_ws()
+  if s:sub(i, i) == '}' then return obj end
+
+  while i <= len do
+    skip_ws()
+    if s:sub(i, i) ~= '"' then break end
+    local key = parse_string()
+    skip_ws()
+    if s:sub(i, i) ~= ':' then break end
+    i = i + 1
+    skip_ws()
+    local val
+    if s:sub(i, i) == '"' then
+      val = parse_string()
+    else
+      local start = i
+      while i <= len and not s:sub(i, i):match('[,}%s]') do i = i + 1 end
+      val = s:sub(start, i - 1)
+    end
+    obj[key] = val
+    skip_ws()
+    if s:sub(i, i) == ',' then
+      i = i + 1
+    elseif s:sub(i, i) == '}' then
+      i = i + 1
+      break
+    else
+      break
+    end
+  end
+  return obj
+end
+
+-- Parses the POST body's `enabled` field into a real Lua boolean, or
+-- returns nil for anything invalid/missing/ambiguous. Same "accept exactly
+-- the strings 'true'/'false'" contract as `wifi`'s parse_guest_enabled() —
+-- see this file's header comment on why a genuine JSON boolean and the
+-- JSON strings "true"/"false" are indistinguishable after parsing here, and
+-- why that's an acceptable, well-defined input contract.
+local function parse_enabled(body)
+  local req = json_parse_flat_object(body)
+  local v = req.enabled
+  if v == "true" then return true end
+  if v == "false" then return false end
+  return nil
+end
+
+-- Emits response headers. uhttpd (running this as CGI) reads a
+-- `Status: <code> <reason>` header line, printed before the blank separator
+-- alongside Content-Type, to set the HTTP status of the response; omitting
+-- it defaults to 200, so the success path intentionally emits no Status
+-- line. Mirrors `wifi`/`firewall-rules`' send_headers() exactly.
+local function send_headers(status)
+  local reasons = {
+    [400] = "Bad Request",
+    [405] = "Method Not Allowed",
+    [500] = "Internal Server Error",
+  }
+  if status and status ~= 200 then
+    print("Status: " .. status .. " " .. (reasons[status] or "Error"))
+  end
+  print("Content-Type: application/json\n")
+end
+
+-- === Request handling ===
+
+local method = os.getenv("REQUEST_METHOD") or "GET"
+
+if method == "GET" then
+  send_headers(200)
+  print(string.format(
+    '{"enabled":%s,"blockedThisWeek":%d}',
+    is_enabled() and "true" or "false",
+    count_blocked_this_week()
+  ))
+
+elseif method == "POST" then
+  local body = read_request_body()
+  local enabled_req = parse_enabled(body)
+
+  if enabled_req == nil then
+    -- Invalid/missing input: reject with 400 and do NOT touch config at all
+    -- (nothing above this point has issued any `uci` write command).
+    send_headers(400)
+    print('{"ok":false,"error":"missing or invalid required field: enabled (must be a JSON boolean true or false)"}')
+  else
+    if enabled_req then
+      run("uci set dhcp.@dnsmasq[0].confdir=" .. shell_quote(EXPECTED_CONFDIR))
+      -- Re-assert logqueries=1 every time enabling, in case it was ever
+      -- hand-cleared over SSH — cheap insurance, doesn't affect whether
+      -- blocking itself works, only whether blockedThisWeek can count
+      -- anything (see header comment).
+      run("uci set dhcp.@dnsmasq[0].logqueries=1")
+    else
+      -- Confirmed live (see header comment): deleting confdir genuinely
+      -- stops blocking, not just removes the uci option.
+      run("uci delete dhcp.@dnsmasq[0].confdir")
+    end
+
+    -- Verify the write actually took effect via readback BEFORE committing
+    -- — same discipline as `wifi`/`firewall-rules`' POST handlers.
+    -- uci_get() returns nil on a failed/empty/absent lookup, which is
+    -- exactly the expected readback for the disable path.
+    local readback = uci_get("dhcp.@dnsmasq[0].confdir")
+    local readback_ok
+    if enabled_req then
+      readback_ok = (readback == EXPECTED_CONFDIR)
+    else
+      readback_ok = (readback == nil)
+    end
+
+    if not readback_ok then
+      run("uci revert dhcp")
+      send_headers(500)
+      print('{"ok":false,"error":"failed to verify dhcp.@dnsmasq[0].confdir write; reverted"}')
+    else
+      run("uci commit dhcp")
+      -- Makes the change live — same sequence 09-provision-adblock-api.sh
+      -- uses for the baseline config, and confirmed live for the disable
+      -- direction too (see header comment).
+      run("/etc/init.d/dnsmasq restart")
+      send_headers(200)
+      print(string.format('{"ok":true,"enabled":%s}', enabled_req and "true" or "false"))
+    end
+  end
+
+else
+  -- REQUEST_METHOD is server-set, but defensively strip anything that could
+  -- break the JSON string literal (this endpoint has no json_escape() of
+  -- its own, unlike wifi/firewall-rules, since every other field it ever
+  -- emits is a fixed literal) rather than assume it's always a clean token.
+  local safe_method = tostring(method):gsub('[\\"%c]', '')
+  send_headers(405)
+  print(string.format('{"ok":false,"error":"unsupported method: %s"}', safe_method))
+end
