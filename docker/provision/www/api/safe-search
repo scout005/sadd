@@ -183,16 +183,21 @@ elseif method == "POST" then
       local f = io.open(CONF_PATH, "w")
       local write_ok = false
       if f then
-        f:write(EXPECTED_CONTENT)
+        local ok = f:write(EXPECTED_CONTENT)
         f:close()
-        write_ok = true
+        write_ok = ok and true or false
       end
       if not write_ok then
         send_headers(500)
         print('{"ok":false,"error":"failed to write safesearch.conf"}')
       else
-        run("/etc/init.d/dnsmasq restart")
+        -- Verify the write actually took effect via readback BEFORE
+        -- restarting dnsmasq — same discipline as adblock's POST handler:
+        -- restart only happens once the on-disk content is confirmed to
+        -- match what was just written, so a partial/failed write never gets
+        -- applied to a running dnsmasq.
         if read_file(CONF_PATH) == EXPECTED_CONTENT then
+          run("/etc/init.d/dnsmasq restart")
           send_headers(200)
           print('{"ok":true,"enabled":true}')
         else
@@ -201,6 +206,9 @@ elseif method == "POST" then
         end
       end
     else
+      -- os.remove (unlink) is atomic on this filesystem — there's no
+      -- partial-removal state to guard against — so the post-hoc readback
+      -- below is already a complete correctness check for this path.
       os.remove(CONF_PATH)
       run("/etc/init.d/dnsmasq restart")
       if read_file(CONF_PATH) == nil then
