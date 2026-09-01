@@ -973,17 +973,14 @@ html.large-text .scr-title{font-size:1.15em;}
     const rowEl = document.getElementById('aboutVersionRow');
     const valueEl = document.getElementById('aboutVersionValue');
     if(!rowEl || !valueEl) return;
-    // notice, if any, is inserted as rowEl's next sibling (not a descendant — see
-    // below) so it must be located/removed via nextElementSibling, not rowEl.querySelector
-    const existingNotice = rowEl.nextElementSibling && rowEl.nextElementSibling.classList.contains('api-fallback-notice')
-      ? rowEl.nextElementSibling : null;
     // Same shape-check philosophy as renderDevicesScreen/renderFirewallScreen/
     // renderLogsScreen's Array.isArray(data): a reached, valid response is real data
     // and gets shown as-is — even if a specific field came back empty (e.g. a future
     // OpenWrt version renames/drops one of these fields, see this endpoint's own
     // header comment) — rather than gating on one field's truthiness, which would
     // otherwise show "Can't reach router" for a router that WAS reached fine.
-    if(data && typeof data === 'object'){
+    const hasData = data && typeof data === 'object';
+    if(hasData){
       // real data replaces the static "1.0.0" placeholder — selected by id, not by
       // string/regex-matching the rendered HTML (this file has a documented history of
       // bugs from exactly that kind of fragile approach).
@@ -992,16 +989,10 @@ html.large-text .scr-title{font-size:1.15em;}
       const revision = data.revision ? ' ('+escapeHtml(data.revision)+')' : '';
       const model = data.model ? ' on '+escapeHtml(data.model) : '';
       valueEl.innerHTML = distribution+' '+version+revision+model;
-      if(existingNotice) existingNotice.remove();
-    } else if(!existingNotice){
-      // unreachable/error: leave the static "1.0.0" text as-is, add a notice near just
-      // this one row (not a page-wide notice — the rest of the About screen, e.g. the
-      // CVE table and pricing promise, is unaffected by this fetch).
-      const notice = document.createElement('div');
-      notice.className = 'api-fallback-notice';
-      notice.textContent = "Can't reach router — showing default version";
-      rowEl.insertAdjacentElement('afterend', notice);
     }
+    // notice near just this one row (not page-wide — the rest of the About screen,
+    // e.g. the CVE table and pricing promise, is unaffected by this fetch).
+    syncFallbackNotice(rowEl, hasData, "Can't reach router — showing default version");
   }
 
   // ---- Settings screen: real-data overlay on top of the static "Wi-Fi name &
@@ -1024,19 +1015,13 @@ html.large-text .scr-title{font-size:1.15em;}
     const wifiNameEl = document.getElementById('settingsWifiName');
     const guestStatusEl = document.getElementById('settingsGuestStatus');
     if(!rowEl || !wifiNameEl || !guestStatusEl) return;
-    // notice, if any, is inserted as rowEl's next sibling (between the Wi-Fi row and
-    // the Guest network row — not a descendant of either) so it must be located/removed
-    // via nextElementSibling, not rowEl.querySelector — same insertion/duplicate-check
-    // scope discipline as renderAboutScreen (a mismatched scope here was a real bug
-    // found and fixed once already this wave).
-    const existingNotice = rowEl.nextElementSibling && rowEl.nextElementSibling.classList.contains('api-fallback-notice')
-      ? rowEl.nextElementSibling : null;
     // Same shape-check philosophy as renderAboutScreen/renderDevicesScreen/
     // renderFirewallScreen/renderLogsScreen: a reached, valid response is real data and
     // gets shown as-is — even if a specific field came back empty — rather than gating
     // on one field's truthiness, which would otherwise show "Can't reach router" for a
     // router that WAS reached fine.
-    if(data && typeof data === 'object'){
+    const hasData = data && typeof data === 'object';
+    if(hasData){
       // real data replaces the static "Smith Family"/"Off" placeholders — selected by
       // id, not by string/regex-matching the rendered HTML. setEscapedText() (see its
       // definition near escapeHtml) always assigns via innerHTML correctly — using a bare
@@ -1047,15 +1032,10 @@ html.large-text .scr-title{font-size:1.15em;}
       // text, so escaping isn't strictly needed here — applied anyway for consistency
       // with the rest of this file's defensive posture.
       setEscapedText(guestStatusEl, data.guestEnabled ? 'On' : 'Off');
-      if(existingNotice) existingNotice.remove();
-    } else if(!existingNotice){
-      // unreachable/error: leave the static "Smith Family"/"Off" text as-is, add ONE
-      // notice covering both rows (not two separate notices), placed between them.
-      const notice = document.createElement('div');
-      notice.className = 'api-fallback-notice';
-      notice.textContent = "Can't reach router — showing default settings";
-      rowEl.insertAdjacentElement('afterend', notice);
     }
+    // ONE notice covering both rows (not two separate notices), placed between them
+    // (rowEl's next sibling is the Guest network row).
+    syncFallbackNotice(rowEl, hasData, "Can't reach router — showing default settings");
   }
 
   // Applies on/off visual state to the Guest Wi-Fi switch AND its toggle-hero
@@ -1091,30 +1071,18 @@ html.large-text .scr-title{font-size:1.15em;}
     const sw = document.getElementById('guestWifiSwitch');
     const descEl = document.getElementById('guestWifiDesc');
     if(!heroEl || !sw) return;
-    // notice, if any, is inserted as heroEl's next sibling (not a descendant of it) so
-    // it must be located/removed via nextElementSibling, not heroEl.querySelector — same
-    // insertion/duplicate-check scope discipline as renderSettingsScreen/
-    // renderAboutScreen (a mismatched scope here was a real bug found and fixed once
-    // already this wave).
-    const existingNotice = heroEl.nextElementSibling && heroEl.nextElementSibling.classList.contains('api-fallback-notice')
-      ? heroEl.nextElementSibling : null;
-    if(data && typeof data === 'object'){
+    const hasData = data && typeof data === 'object';
+    if(hasData){
       // real data replaces the static hardcoded "on" state — selected by id, not by
       // string/regex-matching the rendered HTML.
       setGuestSwitchVisual(sw, descEl, !!data.guestEnabled);
-      if(existingNotice) existingNotice.remove();
-    } else if(!existingNotice){
-      // unreachable/error: leave the static "on" state as-is, add a notice beneath the
-      // toggle. The switch is deliberately left enabled (unlike Firewall & Ports'
-      // add-form, which disables on fetch failure) — a click still safely round-trips
-      // through fetchRouterApiWithStatus, which fails the exact same way and reverts
-      // cleanly (see handleGuestWifiSwitchClick), so there's no false-success risk in
-      // leaving it clickable here.
-      const notice = document.createElement('div');
-      notice.className = 'api-fallback-notice';
-      notice.textContent = "Can't reach router — showing default guest network state";
-      heroEl.insertAdjacentElement('afterend', notice);
     }
+    // The switch is deliberately left enabled even on failure (unlike Firewall &
+    // Ports' add-form, which disables on fetch failure) — a click still safely
+    // round-trips through fetchRouterApiWithStatus, which fails the exact same way
+    // and reverts cleanly (see handleGuestWifiSwitchClick), so there's no
+    // false-success risk in leaving it clickable here.
+    syncFallbackNotice(heroEl, hasData, "Can't reach router — showing default guest network state");
   }
 
   // ---- Guest Wi-Fi switch click: REAL write, POST /cgi-bin/api/wifi {guestEnabled}.
@@ -1163,13 +1131,7 @@ html.large-text .scr-title{font-size:1.15em;}
       const msg = (result && result.data && result.data.error) ? result.data.error
         : (result === null ? "Can't reach router — guest Wi-Fi not changed." : ('Request failed (status '+result.status+') — guest Wi-Fi not changed.'));
       if(heroEl){
-        const existingNotice = heroEl.nextElementSibling && heroEl.nextElementSibling.classList.contains('api-fallback-notice')
-          ? heroEl.nextElementSibling : null;
-        if(existingNotice) existingNotice.remove();
-        const notice = document.createElement('div');
-        notice.className = 'api-fallback-notice';
-        setEscapedText(notice, msg);
-        heroEl.insertAdjacentElement('afterend', notice);
+        const notice = syncFallbackNotice(heroEl, false, msg);
         setTimeout(()=>notice.remove(), 4000);
       }
     }
@@ -1247,29 +1209,16 @@ html.large-text .scr-title{font-size:1.15em;}
     const heroEl = document.getElementById('adblockToggleHero');
     const sw = document.getElementById('adblockSwitch');
     if(!statEl || !heroEl || !sw) return;
-    // notice, if any, is inserted as heroEl's next sibling (not a descendant of it) so
-    // it must be located/removed via nextElementSibling, not heroEl.querySelector — same
-    // insertion/duplicate-check scope discipline as renderGuestScreen/
-    // renderSettingsScreen/renderAboutScreen (a mismatched scope here was a real bug
-    // found and fixed twice already, across Waves 2-3 — not a third time here).
-    const existingNotice = heroEl.nextElementSibling && heroEl.nextElementSibling.classList.contains('api-fallback-notice')
-      ? heroEl.nextElementSibling : null;
-    if(data && typeof data === 'object'){
+    const hasData = data && typeof data === 'object';
+    if(hasData){
       // real data replaces the static "On · 1,204 ads blocked this week" text and the
       // hardcoded "on" switch state — selected by id, not by string/regex-matching the
       // rendered HTML.
       setEscapedText(statEl, (data.enabled ? 'On' : 'Off') + ' · ' + data.blockedThisWeek + ' ads blocked this week');
       sw.classList.toggle('on', !!data.enabled);
       sw.setAttribute('aria-checked', data.enabled ? 'true' : 'false');
-      if(existingNotice) existingNotice.remove();
-    } else if(!existingNotice){
-      // unreachable/error: leave the static stat text + switch state as-is, add ONE
-      // notice beneath the toggle.
-      const notice = document.createElement('div');
-      notice.className = 'api-fallback-notice';
-      notice.textContent = "Can't reach router — showing default ad blocking state";
-      heroEl.insertAdjacentElement('afterend', notice);
     }
+    syncFallbackNotice(heroEl, hasData, "Can't reach router — showing default ad blocking state");
   }
 
   // ---- Global search index (hand-authored; matchText verified verbatim against each screen) ----
@@ -1331,6 +1280,34 @@ html.large-text .scr-title{font-size:1.15em;}
   // get wrong.
   function setEscapedText(el, text){
     el.innerHTML = escapeHtml(text);
+  }
+
+  // Manages the .api-fallback-notice that sits as anchorEl's NEXT SIBLING (not a
+  // descendant) — the shape used by every single-row/hero-style screen (About,
+  // Settings, Guest Wi-Fi, Ad Blocking), as opposed to the list-rendering screens
+  // (Devices, Firewall & Ports, Diagnostics & Logs), which manage their notice as a
+  // descendant of a list container instead and don't use this helper.
+  //   hasData true  → removes any existing notice, returns null.
+  //   hasData false → removes any existing notice, creates a fresh one with the
+  //                   given message, inserts it, and returns it (so a caller like
+  //                   handleGuestWifiSwitchClick can attach its own auto-dismiss
+  //                   timer to the returned element).
+  // Centralizing this makes "insertion scope == detection scope" true BY
+  // CONSTRUCTION, instead of relying on every call site to hand-match a
+  // nextElementSibling check against a separate insertAdjacentElement('afterend', ...)
+  // call — a mismatch between those two was a real bug (About screen, Wave 2/3);
+  // by the time a fourth near-identical call site (Ad Blocking) was about to repeat
+  // the same hand-written pair a fourth time, this was extracted instead.
+  function syncFallbackNotice(anchorEl, hasData, message){
+    const existing = anchorEl.nextElementSibling && anchorEl.nextElementSibling.classList.contains('api-fallback-notice')
+      ? anchorEl.nextElementSibling : null;
+    if(existing) existing.remove();
+    if(hasData) return null;
+    const notice = document.createElement('div');
+    notice.className = 'api-fallback-notice';
+    setEscapedText(notice, message);
+    anchorEl.insertAdjacentElement('afterend', notice);
+    return notice;
   }
 
   function renderSearchResults(query){
