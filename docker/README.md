@@ -255,7 +255,25 @@ bash docker/provision/11-provision-wireguard-api.sh
 #     rotates the VM's real SSH host keys.
 bash docker/provision/12-provision-ssh-key-api.sh
 
-# 13. Verify.
+# 13. Deploy the per-device pause auto-expiry sweep: copies
+#     docker/provision/www/lib/devpause-sweep.sh onto the VM as
+#     /usr/bin/devpause-sweep.sh, seeds /etc/crontabs/root with an
+#     every-minute cron entry for it (idempotent — grep -qF guards against
+#     duplicating the line on re-run), enables and starts cron, then
+#     verifies crond is genuinely running via `pgrep crond` rather than
+#     trusting the init script's own exit code (docker/facts.md Section 13:
+#     `/etc/init.d/cron start` silently no-ops if /etc/crontabs/ is empty
+#     when it runs — seeding the crontab first, before calling start, is
+#     what avoids that trap here). This is the baseline-state half of the
+#     Per-Device Controls feature: real pause CREATION is
+#     /cgi-bin/api/device-pause's job (a later task, not yet built) — this
+#     step only provisions the sweep that finds any `devpause-<mac>` uci
+#     firewall rule whose custom `paused_until` (epoch-seconds) option has
+#     passed, and deletes it, so it's safe to run well ahead of that
+#     endpoint existing.
+bash docker/provision/13-provision-devpause-api.sh
+
+# 14. Verify.
 curl -s http://localhost:8081/cgi-bin/api/ping     # -> {"ok":true}
 curl -sI http://localhost:8081/cgi-bin/api/ping    # -> Content-Type: application/json among the headers
 curl -sI http://localhost:8081/                    # -> 200 OK, serving sadd-website.html
@@ -714,6 +732,53 @@ specifically, as a sibling of `luci`, not a replacement for it.
   "invalidates the old one immediately", which is accurate). Uses the same
   canonical table-based `json_escape()` as every other endpoint in this
   directory.
+- `docker/provision/13-provision-devpause-api.sh` — unlike 04-07/12's
+  "stateless endpoint" shape and 08-11's "create baseline uci config"
+  shape, this step provisions a standalone cron job, not a `/cgi-bin/api/*`
+  HTTP endpoint (there is no `/api/device-pause` yet — that's a later task).
+  `scp -O`'s `docker/provision/www/lib/devpause-sweep.sh` onto the VM as
+  `/usr/bin/devpause-sweep.sh` and chmods it executable, then seeds
+  `/etc/crontabs/root` with `* * * * * /usr/bin/devpause-sweep.sh`
+  (idempotent — `grep -qF` before appending, confirmed live by running the
+  script twice in a row and diffing `/etc/crontabs/root`: one line both
+  times), then `/etc/init.d/cron enable && /etc/init.d/cron start`.
+  Critically, it does NOT trust that start's own exit code as proof cron is
+  actually running: `docker/facts.md` Section 13 confirms live, by reading
+  `/etc/init.d/cron` directly, that `start_service()` does
+  `[ -z "$(ls /etc/crontabs/)" ] && return 1` — on a fresh VM with an empty
+  `/etc/crontabs/`, `/etc/init.d/cron start` silently no-ops (crond never
+  actually starts) while still reporting overall success. Seeding the
+  crontab file *before* calling `start` (this script's own step order)
+  avoids that trap, but the script verifies anyway with `pgrep crond`
+  rather than relying on the ordering alone; if crond isn't found running,
+  it retries once with `/etc/init.d/cron restart` and re-checks, failing
+  loudly only if still not running after that. Confirmed idempotent live by
+  running the script twice in a row (second run skips nothing but leaves
+  the crontab at exactly one matching line and crond still running).
+- `docker/provision/www/lib/devpause-sweep.sh` — the tracked source of
+  truth for `/usr/bin/devpause-sweep.sh`, run every minute by the cron
+  entry `13-provision-devpause-api.sh` seeds. Finds every uci `firewall`
+  rule section this project created for a per-device pause (`name` starting
+  with `devpause-`, extracted with POSIX `sed`/`grep` only — busybox ash,
+  matching every other script in this directory's tooling assumptions, not
+  bash/gawk), reads each one's custom `paused_until` (epoch-seconds) uci
+  option — uci tolerates arbitrary option names on a rule section, and fw4
+  silently ignores ones it doesn't recognize, confirmed live (a `[!]
+  ... specifies unknown option 'paused_until'` warning on `fw4 reload`, not
+  a failure) — and `uci -q delete`s any section whose `paused_until` has
+  already passed, `uci commit firewall`ing and `fw4 reload`ing once at the
+  end only if at least one section was actually removed. Every deletion is
+  also `logger -t devpause-sweep`'d for auditability. This script only ever
+  DELETES expired pause rules; real pause CREATION is
+  `/cgi-bin/api/device-pause`'s job (a later task, not yet built). Confirmed
+  live end-to-end: a hand-crafted `devpause-aabbccddeeff` rule with
+  `paused_until` 5 seconds in the past was genuinely removed by the next
+  real cron tick (`uci show firewall | grep devpause-aabbccddeeff` went
+  from a match to no match, `exit=1`, within 65 seconds, no manual
+  intervention), while a sibling `devpause-112233445566` rule with
+  `paused_until` 300 seconds in the future survived that same sweep cycle
+  untouched — real per-minute auto-expiry, not a client-side timer that
+  only pretends the block ends.
 
 ### Real connectivity test — what it actually means in this topology
 
