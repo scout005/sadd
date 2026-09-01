@@ -1,0 +1,89 @@
+#!/usr/bin/lua
+-- /api/ssh-key — POST only. Real dropbear host-key rotation for the
+-- Developer & API Access screen's "Rotate SSH key" button. Confirmed live
+-- against this running VM before writing this handler (docker/facts.md
+-- Section 14): deleting both host key files and restarting dropbear makes
+-- dropbear auto-regenerate fresh ones (standard OpenWrt behavior, no
+-- `dropbearkey` invocation needed here), with a genuinely different
+-- fingerprint every time.
+--
+-- POST response shape (no request body needed/read):
+--   {"ok": true, "fingerprint": "SHA256:<...>"}
+-- or on failure:
+--   {"ok": false, "error": "..."}
+--
+-- Safety note (see docker/facts.md Section 14 for the full reasoning): this
+-- is safe for THIS project's own verification workflow specifically because
+-- every SSH connection this project makes always passes
+-- `-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null` — there is no
+-- persisted known_hosts entry anywhere for a rotated key to conflict with. A
+-- real deployment using normal host-key pinning would need to separately warn
+-- the operator their client will show a "host key changed" prompt after
+-- calling this — out of scope to simulate here (the screen's own copy
+-- already says "invalidates the old one immediately", which is accurate).
+--
+-- Only the RSA host key's fingerprint is returned (matching the single
+-- fingerprint a real SSH client shows on first connect) — the ed25519 key is
+-- rotated identically but its own fingerprint isn't surfaced in this JSON,
+-- since the mockup's "Rotate now" button has no per-key-type UI to populate.
+
+local function run(cmd)
+  local p = io.popen(cmd .. " 2>/dev/null")
+  if not p then return "" end
+  local out = p:read("*a") or ""
+  p:close()
+  return (out:gsub("%s+$", ""))
+end
+
+-- Same canonical table-based json_escape() as every other endpoint in this
+-- directory (see docker/provision/www/api/vlans) — not a reinvented variant.
+local function json_escape(s)
+  if s == nil then return "" end
+  s = tostring(s)
+  s = s:gsub('[\\"\n\r\t]', {
+    ['\\'] = '\\\\',
+    ['"'] = '\\"',
+    ['\n'] = '\\n',
+    ['\r'] = '\\r',
+    ['\t'] = '\\t',
+  })
+  -- strip any other stray control characters that would make the JSON invalid
+  s = s:gsub('[\1-\31]', '')
+  return s
+end
+
+local function send_headers(status)
+  local reasons = { [405]="Method Not Allowed", [500]="Internal Server Error" }
+  if status and status ~= 200 then
+    print("Status: " .. status .. " " .. (reasons[status] or "Error"))
+  end
+  print("Content-Type: application/json\n")
+end
+
+local method = os.getenv("REQUEST_METHOD") or "GET"
+
+if method == "POST" then
+  run("rm -f /etc/dropbear/dropbear_rsa_host_key /etc/dropbear/dropbear_ed25519_host_key")
+  run("/etc/init.d/dropbear restart")
+  -- dropbear needs a brief moment after restart before the new key file is
+  -- fully written and dropbearkey can read it back — confirmed live this is
+  -- not needed in interactive testing (restart is synchronous enough there),
+  -- but a short defensive sleep here costs nothing and removes any race for
+  -- a CGI-triggered restart under uhttpd's own process model.
+  os.execute("sleep 1")
+  local fp = run("dropbearkey -y -f /etc/dropbear/dropbear_rsa_host_key 2>/dev/null | grep -i Fingerprint")
+  local fingerprint = fp:match("Fingerprint:%s*(%S+)")
+
+  if fingerprint then
+    send_headers(200)
+    print(string.format('{"ok":true,"fingerprint":"%s"}', json_escape(fingerprint)))
+  else
+    send_headers(500)
+    print('{"ok":false,"error":"key rotation ran but the new fingerprint could not be read back"}')
+  end
+
+else
+  local safe_method = tostring(method):gsub('[\\"%c]', '')
+  send_headers(405)
+  print(string.format('{"ok":false,"error":"unsupported method: %s"}', safe_method))
+end
