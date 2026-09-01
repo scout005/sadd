@@ -30,10 +30,44 @@
 -- gets the next unused /32 in 10.9.0.2-10.9.0.254, computed by scanning
 -- existing peers' allowed_ips for the lowest unused integer in that range.
 --
+-- Accepted risk (code review finding, not fully mitigated): two overlapping
+-- POST create requests are separate CGI processes with no shared lock, so
+-- they can both compute the same lowest-free octet via next_free_address()
+-- before either commits, producing two peers with the same allowed_ips. In
+-- this project's single-admin dev/test context a full fix (locking) is
+-- disproportionate; the create path's readback below adds a cheap
+-- post-write collision check (reject+revert if a duplicate allowed_ips
+-- shows up) as a partial mitigation, but a true TOCTOU window remains
+-- between the scan and that check.
+--
 -- === Write discipline ===
 -- Same write-then-readback-verify-then-commit-or-revert as every other write
 -- endpoint in this directory, adapted for a section ADD (create) and a
--- single-option SET (toggle).
+-- single-option SET (toggle). The create path's readback checks every field
+-- it writes (public_key, allowed_ips, route_allowed_ips, name) before commit
+-- — a partial check that skipped some of these could commit a
+-- silently-wrong client (e.g. a blank name) undetected.
+--
+-- === Client-supplied section id: validated before ANY uci command ===
+-- The toggle path's `id` is attacker-controlled input concatenated directly
+-- into `uci get`/`uci set` command strings (shell_quote() only escapes
+-- OPTION VALUES, not the section-id position in the command itself). Every
+-- id is rejected up front unless it matches `^[%w_]+$` — mirroring
+-- firewall-rules' DELETE handler (the only other place in this codebase
+-- accepting a client-supplied section id, gated with `id:find("[^%w_]")`
+-- before ever touching uci) — and this check runs BEFORE section_type(id)
+-- or any other uci call, not after. This is what an anonymous section
+-- rename target and this endpoint's own `wgc_<time>_<hex>` ids already look
+-- like, so no legitimate id is rejected by it.
+--
+-- === Known accepted tradeoff: private key transits briefly via argv ===
+-- The create path pipes the new client's private key through a shell
+-- command (`printf '%s' <key> | wg pubkey`) to derive its public key,
+-- meaning the key is briefly visible as a process argv (e.g. via
+-- /proc/<pid>/cmdline) for the instant that command runs. io.popen's
+-- one-directional pipe makes writing to the child's stdin (avoiding this)
+-- nontrivial without landing the key on disk first, which would be a
+-- strictly worse exposure — this is accepted as-is, not redesigned.
 
 local function run(cmd)
   local p = io.popen(cmd .. " 2>/dev/null")
@@ -222,7 +256,15 @@ elseif method == "POST" then
   elseif req.id ~= nil then
     -- === Toggle path ===
     local id = req.id
-    if type(id) ~= "string" or id == "" or (req.enabled ~= "true" and req.enabled ~= "false") then
+    -- id:find("[^%w_]") rejects anything outside [A-Za-z0-9_] BEFORE id is
+    -- ever concatenated into a uci command (section_type() below is the
+    -- first such call) — this is not optional escaping, it's the only
+    -- thing standing between a raw JSON string and shell command injection
+    -- (id is interpolated directly, unlike option VALUES which go through
+    -- shell_quote()). See the header comment's "Client-supplied section id"
+    -- section for the firewall-rules precedent this mirrors.
+    if type(id) ~= "string" or id == "" or id:find("[^%w_]")
+      or (req.enabled ~= "true" and req.enabled ~= "false") then
       send_headers(400)
       print('{"ok":false,"error":"toggle requires string id and boolean enabled"}')
     elseif section_type(id) ~= "wireguard_wg0" then
@@ -281,7 +323,26 @@ elseif method == "POST" then
         if not create_failed then
           local _, fields = list_client_sections()
           local f = fields[id]
+          -- Verify every field the writes above actually set — not just the
+          -- two most security-relevant ones. A silently-failed
+          -- `uci set network.<id>.name=...` (say) would otherwise commit a
+          -- client with a wrong/blank name undetected.
           readback_ok = f and f.public_key == pub and f.allowed_ips == client_ip .. "/32"
+            and f.route_allowed_ips == "1" and f.name == name
+
+          -- Cheap TOCTOU collision mitigation (see header comment's
+          -- "Address assignment" section): if a second concurrent create
+          -- request also grabbed this same address between our
+          -- next_free_address() scan and this write, more than one section
+          -- will now show this allowed_ips — reject rather than commit two
+          -- peers routing to the same client IP.
+          if readback_ok then
+            local dup_count = 0
+            for _, f2 in pairs(fields) do
+              if f2.allowed_ips == client_ip .. "/32" then dup_count = dup_count + 1 end
+            end
+            readback_ok = dup_count == 1
+          end
         end
 
         if not readback_ok then
@@ -306,17 +367,31 @@ elseif method == "POST" then
             run("sleep 2")
             server_pub = run("wg show wg0 public-key")
           end
-          local config = "[Interface]\n" ..
-            "PrivateKey = " .. priv .. "\n" ..
-            "Address = " .. client_ip .. "/32\n\n" ..
-            "[Peer]\n" ..
-            "PublicKey = " .. server_pub .. "\n" ..
-            "Endpoint = smith-family.saddvpn.com:51820\n" ..
-            "AllowedIPs = 10.9.0.0/24\n" ..
-            "PersistentKeepalive = 25\n"
-          send_headers(200)
-          print(string.format('{"ok":true,"id":"%s","publicKey":"%s","config":"%s"}',
-            json_escape(id), json_escape(pub), json_escape(config)))
+          if server_pub == "" then
+            -- The peer itself is already committed and live at this point
+            -- (uci commit + ifup already ran above) — this is NOT a
+            -- create-failed/revert case, and the client's private key was
+            -- the one-shot secret this response would have returned, now
+            -- gone. Report the failure honestly (500, not a false-success
+            -- 200 with a blank `PublicKey = ` line silently shipped to the
+            -- caller) rather than pretending a broken config is usable.
+            send_headers(500)
+            print(string.format(
+              '{"ok":false,"error":"client %s was created but the server public key could not be read back after ifup; the config text could not be generated — check wg0 manually"}',
+              json_escape(id)))
+          else
+            local config = "[Interface]\n" ..
+              "PrivateKey = " .. priv .. "\n" ..
+              "Address = " .. client_ip .. "/32\n\n" ..
+              "[Peer]\n" ..
+              "PublicKey = " .. server_pub .. "\n" ..
+              "Endpoint = smith-family.saddvpn.com:51820\n" ..
+              "AllowedIPs = 10.9.0.0/24\n" ..
+              "PersistentKeepalive = 25\n"
+            send_headers(200)
+            print(string.format('{"ok":true,"id":"%s","publicKey":"%s","config":"%s"}',
+              json_escape(id), json_escape(pub), json_escape(config)))
+          end
         end
       end
     end
