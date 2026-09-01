@@ -88,4 +88,47 @@ else
   fi
 fi
 
-echo "=== 13-provision-devpause-api.sh done: devpause-sweep.sh deployed, cron seeded, crond confirmed running. ==="
+echo "=== 13-provision-devpause-api.sh: sweep half done. Now deploying the /api/device-pause endpoint itself. ==="
+
+# Deploys docker/provision/www/api/device-pause (the tracked source of
+# truth for the /api/device-pause endpoint) onto the VM and verifies GET
+# returns the correct "not paused" shape for a MAC with no active pause —
+# same idiom as 12-provision-ssh-key-api.sh's own deploy-and-verify block
+# (a dedicated, self-contained step even though 02-copy-www.sh already
+# copies everything under docker/provision/www/ generically), except this
+# endpoint's verification GET is a real, safe read (unlike ssh-key's
+# POST-only/405-only check) since GET here never mutates anything.
+OPENWRT_HTTP_PORT="${OPENWRT_HTTP_PORT:-8081}"
+API_SRC_FILE="${SCRIPT_DIR}/www/api/device-pause"
+
+if [ ! -f "${API_SRC_FILE}" ]; then
+  echo "ERROR: ${API_SRC_FILE} not found." >&2
+  exit 1
+fi
+
+echo "Ensuring /www/cgi-bin/api exists on the VM (root@${OPENWRT_HOST}:${OPENWRT_PORT})..."
+ssh_run "mkdir -p /www/cgi-bin/api"
+
+echo "Copying ${API_SRC_FILE} -> root@${OPENWRT_HOST}:/www/cgi-bin/api/device-pause ..."
+# -O forces the legacy SCP protocol — this VM has no /usr/libexec/sftp-server,
+# confirmed live in 01/02/03; required, not optional, against this VM.
+# shellcheck disable=SC2086
+scp -O ${SSH_OPTS} -P "${OPENWRT_PORT}" \
+  "${API_SRC_FILE}" \
+  "${SSH_TARGET}:/www/cgi-bin/api/device-pause"
+
+echo "Making it executable (core.filemode=false means git doesn't track +x — see 02's comment)..."
+ssh_run "chmod +x /www/cgi-bin/api/device-pause && ls -la /www/cgi-bin/api/device-pause"
+
+echo "Verifying: GET http://${OPENWRT_HOST}:${OPENWRT_HTTP_PORT}/cgi-bin/api/device-pause?mac=11:22:33:44:55:66 reports not-paused for a MAC with no active pause rule..."
+BODY="$(curl -s "http://${OPENWRT_HOST}:${OPENWRT_HTTP_PORT}/cgi-bin/api/device-pause?mac=11:22:33:44:55:66")"
+echo "Response: ${BODY}"
+
+if [ "${BODY}" = '{"paused":false,"remainingSeconds":0}' ]; then
+  echo "OK: /api/device-pause reports not-paused as expected."
+else
+  echo "ERROR: expected {\"paused\":false,\"remainingSeconds\":0}, got: ${BODY}" >&2
+  exit 1
+fi
+
+echo "=== 13-provision-devpause-api.sh done: devpause-sweep.sh deployed, cron seeded, crond confirmed running, /api/device-pause deployed and verified. ==="

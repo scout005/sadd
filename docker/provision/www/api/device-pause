@@ -1,0 +1,292 @@
+#!/usr/bin/lua
+-- /api/device-pause — GET (status) + POST (create/replace a pause). Real
+-- per-MAC firewall block for the Per-Device Controls screen's "Pause
+-- internet" chips. Auto-expiry is handled by a separate cron-driven sweep
+-- (docker/provision/lib/devpause-sweep.sh, see
+-- docker/provision/13-provision-devpause-api.sh) — this endpoint only ever
+-- creates/replaces/reads the rule, never deletes an expired one itself (no
+-- request happens to trigger that at exactly the right moment).
+--
+-- GET /cgi-bin/api/device-pause?mac=<mac>
+--   -> {"paused": true|false, "remainingSeconds": <int, 0 if not paused>}
+--
+-- POST /cgi-bin/api/device-pause  body: {"mac": "<mac>", "minutes": <int>}
+--   -> {"ok": true, "paused": true, "remainingSeconds": <int>}
+--
+-- === Rule shape — confirmed live (docker/facts.md Section 14) ===
+-- A rule with src='lan' + src_mac set but no `dest` only lands in the
+-- input_lan nft chain (traffic addressed to the router itself) — NOT what a
+-- "pause internet" feature needs. dest='wan' is required to land the rule in
+-- forward_lan as a real REJECT of the device's outbound-bound traffic. This
+-- VM's wan zone is topologically unreachable (no real WAN interface — see
+-- docker/facts.md Section 1/Task 7), so end-to-end "device actually loses
+-- internet" isn't testable here, but the rule itself is real, uci/fw4-backed
+-- config, the same "prove the mechanism" bar Wave 1's port-forwarding work
+-- already established for this project.
+--
+-- Rule naming: `devpause-<mac with colons stripped, lowercased>` — a stable,
+-- deterministic name per device, so a second POST for the same MAC finds and
+-- REPLACES its own prior rule (extending/shortening a pause) rather than
+-- accumulating duplicate rules for the same device.
+--
+-- MAC validation: a strict 6-octet colon-hex pattern — anything else is
+-- rejected 400 before any uci command runs (this value is interpolated into
+-- both a uci option value, via shell_quote, and a uci section NAME derived
+-- from it, so it's validated as a whole shape up front rather than only
+-- escaped at use).
+--
+-- minutes validation: an integer, 1-1440 inclusive (1 minute to 24 hours —
+-- generous enough to cover the mockup's three chips: 15 min, 1 hr, and
+-- "Until tomorrow", which the frontend computes client-side as "minutes
+-- until next local midnight" and sends as a plain minutes value like any
+-- other duration — see sadd-website.html's handleDevicePauseChipClick, a
+-- later task, not yet built).
+--
+-- Write discipline: same write-then-readback-verify-then-commit-or-revert as
+-- every other write endpoint in this directory — adapted for a rule ADD
+-- rather than a single-option SET, using an id/field-parsing approach
+-- adapted from firewall-rules' list_redirect_sections(), generalized to
+-- `rule` sections.
+
+local function run(cmd)
+  local p = io.popen(cmd .. " 2>/dev/null")
+  if not p then return "" end
+  local out = p:read("*a") or ""
+  p:close()
+  return (out:gsub("%s+$", ""))
+end
+
+local function shell_quote(s)
+  s = tostring(s or "")
+  s = s:gsub('[\1-\9\11-\31]', '')
+  s = s:gsub('[\n\r]', ' ')
+  return "'" .. s:gsub("'", "'\\''") .. "'"
+end
+
+local function is_valid_mac(v)
+  if type(v) ~= "string" then return false end
+  return v:match("^%x%x:%x%x:%x%x:%x%x:%x%x:%x%x$") ~= nil
+end
+
+local function mac_to_rule_name(mac)
+  return "devpause-" .. mac:lower():gsub(":", "")
+end
+
+-- Parses `uci show firewall` into id -> {name=..., paused_until=...} for
+-- every `rule`-type section — adapted from firewall-rules'
+-- list_redirect_sections(), generalized from "redirect" to "rule".
+local function list_rule_sections()
+  local output = run("uci show firewall")
+  local order = {}
+  local is_rule = {}
+  local fields = {}
+  for line in output:gmatch("[^\n]+") do
+    local lhs, rhs = line:match("^(.-)=(.*)$")
+    if lhs and rhs then
+      local rest = lhs:match("^firewall%.(.+)$")
+      if rest then
+        local dot = rest:find("%.")
+        if dot then
+          local id = rest:sub(1, dot - 1)
+          local field = rest:sub(dot + 1)
+          if is_rule[id] then
+            local val = rhs:match("^'(.-)'$")
+            if not val then val = rhs end
+            fields[id][field] = val
+          end
+        else
+          local id = rest
+          local typ = rhs:match("^'?(.-)'?$")
+          if typ == "rule" and not is_rule[id] then
+            is_rule[id] = true
+            order[#order + 1] = id
+            fields[id] = {}
+          end
+        end
+      end
+    end
+  end
+  return order, fields
+end
+
+local function find_pause_rule(rule_name)
+  local order, fields = list_rule_sections()
+  for _, id in ipairs(order) do
+    if fields[id].name == rule_name then return id, fields[id] end
+  end
+  return nil, nil
+end
+
+-- Canonical table-based json_escape (adapted verbatim from
+-- docker/provision/www/api/vlans — the established convention every
+-- endpoint in this directory should use, not a reinvented variant).
+local function json_escape(s)
+  if s == nil then return "" end
+  s = tostring(s)
+  s = s:gsub('[\\"\n\r\t]', {
+    ['\\'] = '\\\\',
+    ['"'] = '\\"',
+    ['\n'] = '\\n',
+    ['\r'] = '\\r',
+    ['\t'] = '\\t',
+  })
+  s = s:gsub('[\1-\31]', '')
+  return s
+end
+
+local function read_request_body()
+  local len = tonumber(os.getenv("CONTENT_LENGTH") or "")
+  if len and len > 0 then return io.read(len) or "" end
+  return io.read("*a") or ""
+end
+
+-- Same hand-rolled flat-JSON-object parser as every other write endpoint —
+-- adapted verbatim (see wifi/adblock's header comments for the full
+-- rationale).
+local function json_parse_flat_object(s)
+  local obj = {}
+  if type(s) ~= "string" then return obj end
+  local i, len = 1, #s
+  local function skip_ws() while i <= len and s:sub(i, i):match("%s") do i = i + 1 end end
+  local function parse_string()
+    i = i + 1
+    local buf = {}
+    local escapes = { ['"']='"', ['\\']='\\', ['/']='/', ['n']='\n', ['r']='\r', ['t']='\t', ['b']='\b', ['f']='\f' }
+    while i <= len do
+      local c = s:sub(i, i)
+      if c == '"' then i = i + 1; return table.concat(buf)
+      elseif c == '\\' then
+        local nc = s:sub(i + 1, i + 1)
+        if nc == 'u' then i = i + 6
+        elseif escapes[nc] then buf[#buf+1] = escapes[nc]; i = i + 2
+        else buf[#buf+1] = nc; i = i + 2 end
+      else buf[#buf+1] = c; i = i + 1 end
+    end
+    return table.concat(buf)
+  end
+  skip_ws()
+  if s:sub(i, i) ~= '{' then return obj end
+  i = i + 1
+  skip_ws()
+  if s:sub(i, i) == '}' then return obj end
+  while i <= len do
+    skip_ws()
+    if s:sub(i, i) ~= '"' then break end
+    local key = parse_string()
+    skip_ws()
+    if s:sub(i, i) ~= ':' then break end
+    i = i + 1
+    skip_ws()
+    local val
+    if s:sub(i, i) == '"' then val = parse_string()
+    else
+      local start = i
+      while i <= len and not s:sub(i, i):match('[,}%s]') do i = i + 1 end
+      val = s:sub(start, i - 1)
+    end
+    obj[key] = val
+    skip_ws()
+    if s:sub(i, i) == ',' then i = i + 1
+    elseif s:sub(i, i) == '}' then i = i + 1; break
+    else break end
+  end
+  return obj
+end
+
+local function parse_query_mac()
+  local qs = os.getenv("QUERY_STRING") or ""
+  for pair in qs:gmatch("[^&]+") do
+    local k, v = pair:match("^([^=]+)=(.*)$")
+    if k == "mac" then
+      -- minimal percent-decode for the colon-heavy MAC values this endpoint expects
+      v = v:gsub("+", " "):gsub("%%(%x%x)", function(h) return string.char(tonumber(h, 16)) end)
+      return v
+    end
+  end
+  return nil
+end
+
+local function send_headers(status)
+  local reasons = { [400]="Bad Request", [405]="Method Not Allowed", [500]="Internal Server Error" }
+  if status and status ~= 200 then
+    print("Status: " .. status .. " " .. (reasons[status] or "Error"))
+  end
+  print("Content-Type: application/json\n")
+end
+
+local method = os.getenv("REQUEST_METHOD") or "GET"
+
+if method == "GET" then
+  local mac = parse_query_mac()
+  if not is_valid_mac(mac) then
+    send_headers(400)
+    print('{"ok":false,"error":"missing or invalid required query param: mac (must be AA:BB:CC:DD:EE:FF form)"}')
+  else
+    local _, fields = find_pause_rule(mac_to_rule_name(mac))
+    send_headers(200)
+    if fields and fields.paused_until then
+      local remaining = tonumber(fields.paused_until) - os.time()
+      if remaining and remaining > 0 then
+        print(string.format('{"paused":true,"remainingSeconds":%d}', remaining))
+      else
+        print('{"paused":false,"remainingSeconds":0}')
+      end
+    else
+      print('{"paused":false,"remainingSeconds":0}')
+    end
+  end
+
+elseif method == "POST" then
+  local body = read_request_body()
+  local req = json_parse_flat_object(body)
+  local mac = req.mac
+  local minutes = tonumber(req.minutes)
+
+  if not is_valid_mac(mac) then
+    send_headers(400)
+    print('{"ok":false,"error":"missing or invalid required field: mac (must be AA:BB:CC:DD:EE:FF form)"}')
+  elseif not minutes or minutes ~= math.floor(minutes) or minutes < 1 or minutes > 1440 then
+    send_headers(400)
+    print('{"ok":false,"error":"missing or invalid required field: minutes (integer, 1-1440)"}')
+  else
+    local rule_name = mac_to_rule_name(mac)
+    local expires_at = os.time() + (minutes * 60)
+
+    -- Replace any existing pause rule for this MAC (extend/shorten), rather
+    -- than accumulating duplicates.
+    local existing_id = find_pause_rule(rule_name)
+    if existing_id then run("uci -q delete firewall." .. existing_id) end
+
+    run("uci add firewall rule")
+    run("uci set firewall.@rule[-1].name=" .. shell_quote(rule_name))
+    run("uci set firewall.@rule[-1].src=" .. shell_quote("lan"))
+    run("uci set firewall.@rule[-1].src_mac=" .. shell_quote(mac))
+    run("uci set firewall.@rule[-1].dest=" .. shell_quote("wan"))
+    run("uci set firewall.@rule[-1].target=" .. shell_quote("REJECT"))
+    run("uci set firewall.@rule[-1].proto=" .. shell_quote("all"))
+    run("uci set firewall.@rule[-1].paused_until=" .. shell_quote(tostring(expires_at)))
+
+    local _, readback_fields = find_pause_rule(rule_name)
+    local readback_ok = readback_fields
+      and readback_fields.src_mac == mac
+      and readback_fields.dest == "wan"
+      and readback_fields.target == "REJECT"
+      and readback_fields.paused_until == tostring(expires_at)
+
+    if not readback_ok then
+      run("uci revert firewall")
+      send_headers(500)
+      print('{"ok":false,"error":"failed to verify the pause rule write; reverted"}')
+    else
+      run("uci commit firewall")
+      run("fw4 reload")
+      send_headers(200)
+      print(string.format('{"ok":true,"paused":true,"remainingSeconds":%d}', minutes * 60))
+    end
+  end
+
+else
+  local safe_method = tostring(method):gsub('[\\"%c]', '')
+  send_headers(405)
+  print(string.format('{"ok":false,"error":"unsupported method: %s"}', safe_method))
+end
