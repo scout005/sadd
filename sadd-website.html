@@ -785,7 +785,8 @@ html.large-text .scr-title{font-size:1.15em;}
       // device (see renderDevcontrolsScreen's own comment) — a no-op otherwise.
       if(state.screen === 'devcontrols'){ state.devcontrolsRenderId++; renderDevcontrolsScreen(); }
       if(state.screen === 'devcontrols'){ state.devcontrolsBedtimeRenderId++; renderDevcontrolsBedtimeScreen(); }
-      if(state.screen === 'parental'){ state.parentalSafeSearchRenderId++; renderParentalSafeSearchScreen(); state.parentalBlockedSitesRenderId++; renderParentalBlockedSitesScreen(); }
+      if(state.screen === 'parental'){ state.parentalSafeSearchRenderId++; renderParentalSafeSearchScreen(); }
+      if(state.screen === 'parental'){ state.parentalBlockedSitesRenderId++; renderParentalBlockedSitesScreen(); }
     }
     window.scrollTo({top:0});
   }
@@ -2036,6 +2037,12 @@ html.large-text .scr-title{font-size:1.15em;}
   //      reveal/hide, unlike every other add-flow in this file. No delete affordance in
   //      the mockup, so none is built (mirrors Priority Devices/WireGuard Clients). ----
   function renderParentalBlockedSiteRow(entry){
+    // Guard against a missing domain (code review finding) — mirrors the equivalent
+    // guard in renderQosPriorityRow: one malformed entry returning '' from .map()
+    // degrades that one row to nothing, rather than throwing and silently blanking
+    // the whole list (the backend contract guarantees domain on every stored entry,
+    // so this is defense in depth, not a known-reachable case).
+    if(!entry || !entry.domain) return '';
     return '<div class="tech-row"><div class="tr-label">'+escapeHtml(entry.domain)+'</div><div class="tr-val">Blocked</div></div>';
   }
 
