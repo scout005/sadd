@@ -9,10 +9,18 @@
 --   {"running": true|false, "port": 51820, "publicKey": "<base64>", "subnet": "10.9.0.0/24"}
 --
 -- === running ===
--- `ubus call network.interface.wg0 status` (same real-liveness-signal idea as
--- Network & VLANs' /api/vlans reading `ip link show` — not a cached/assumed
--- value) reporting `"up": true` -> true. Anything else (down, no such
--- interface, ubus failure) -> false.
+-- `ubus call network.interface.wg0 status` reporting a true `up` field ->
+-- true. Anything else (down, no such interface, ubus failure) -> false. Not
+-- a cached/assumed value, same real-liveness-signal intent as Network &
+-- VLANs' /api/vlans reading `ip link show` — but NOT the same *mechanism*:
+-- vlans' own header comment explicitly avoids parsing ubus's nested
+-- multi-line JSON for exactly this reason, in favor of a flatter, more
+-- robust signal. This endpoint still has to read ubus (there's no equally
+-- simple `ip link`-only signal for "is this specific wg interface up AND
+-- configured", not just "does a wg0 device exist"), so it matches on the
+-- field with `%s*` around the colon (tolerant of ubus's exact spacing/
+-- pretty-printing, which is not a stable contract) rather than a brittle
+-- literal `'"up": true'` substring.
 --
 -- === port / publicKey ===
 -- Always read live from `wg show wg0` (not from uci, which stores the
@@ -70,7 +78,7 @@ end
 
 local function is_running()
   local out = run("ubus call network.interface.wg0 status")
-  return out:find('"up": true', 1, true) ~= nil
+  return out:match('"up"%s*:%s*true') ~= nil
 end
 
 local function wg_port_and_pubkey()
@@ -81,13 +89,23 @@ local function wg_port_and_pubkey()
   return tonumber(port) or EXPECTED_PORT, pubkey
 end
 
+-- Adapted verbatim from vlans/wifi/etc.'s json_escape() — same table-based
+-- escape + strip-remaining-control-chars shape as every other endpoint in
+-- this directory (this file's only string field is publicKey, base64, so in
+-- practice this rarely does anything, but it follows the same convention).
 local function json_escape(s)
-  s = tostring(s or "")
-  return s:gsub('[%c"\\]', function(c)
-    if c == '"' then return '\\"' end
-    if c == '\\' then return '\\\\' end
-    return string.format('\\u%04x', c:byte())
-  end)
+  if s == nil then return "" end
+  s = tostring(s)
+  s = s:gsub('[\\"\n\r\t]', {
+    ['\\'] = '\\\\',
+    ['"'] = '\\"',
+    ['\n'] = '\\n',
+    ['\r'] = '\\r',
+    ['\t'] = '\\t',
+  })
+  -- strip any other stray control characters that would make the JSON invalid
+  s = s:gsub('[\1-\31]', '')
+  return s
 end
 
 local function shell_quote(s)

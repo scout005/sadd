@@ -221,11 +221,13 @@ REMOTE_SCRIPT
 
 # --- Deploy the /api/wireguard endpoint ---
 echo "Deploying /api/wireguard..."
+# -O forces the legacy SCP protocol — this VM has no /usr/libexec/sftp-server,
+# confirmed live in 01/02/03; required, not optional, against this VM.
 # shellcheck disable=SC2086
 scp -O ${SSH_OPTS} -P "${OPENWRT_PORT}" \
   "$(dirname "$0")/www/api/wireguard" \
   "${SSH_TARGET}:/www/cgi-bin/api/wireguard"
-ssh_run "chmod +x /www/cgi-bin/api/wireguard"
+ssh_run "chmod +x /www/cgi-bin/api/wireguard && ls -la /www/cgi-bin/api/wireguard"
 
 # curl (not wget, which is all this VM has — see 08/09/10's own verify
 # blocks) runs on the HOST against the mapped HTTP port, same as every
