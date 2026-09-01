@@ -243,7 +243,19 @@ bash docker/provision/10-provision-vlans-api.sh
 #     onto the VM.
 bash docker/provision/11-provision-wireguard-api.sh
 
-# 12. Verify.
+# 12. Deploy the /api/ssh-key endpoint (real dropbear host-key rotation for
+#     the Developer & API Access screen's "Rotate SSH key" button) and
+#     verify GET is correctly rejected with 405 (this endpoint is
+#     POST-only). Unlike steps 8-11, this needs no baseline VM state to
+#     provision — dropbear already runs on every fresh boot with nothing new
+#     to create first — so this step matches steps 4-7's "stateless
+#     endpoint, nothing to provision beyond the file itself" shape. The
+#     verify step deliberately checks GET's 405 rejection rather than
+#     issuing a real POST, so running this provisioning script never itself
+#     rotates the VM's real SSH host keys.
+bash docker/provision/12-provision-ssh-key-api.sh
+
+# 13. Verify.
 curl -s http://localhost:8081/cgi-bin/api/ping     # -> {"ok":true}
 curl -sI http://localhost:8081/cgi-bin/api/ping    # -> Content-Type: application/json among the headers
 curl -sI http://localhost:8081/                    # -> 200 OK, serving sadd-website.html
@@ -256,6 +268,7 @@ curl -s http://localhost:8081/cgi-bin/api/wifi  # -> JSON object of real UCI wir
 curl -s http://localhost:8081/cgi-bin/api/adblock  # -> JSON object of real dnsmasq-blocklist state, e.g. {"enabled":true,"blockedThisWeek":4} — blockedThisWeek increases by exactly 1 per subsequent real blocked lookup (e.g. `ssh root@localhost -p 2223 nslookup doubleclick.net 127.0.0.1`), confirmed live
 curl -s http://localhost:8081/cgi-bin/api/vlans  # -> JSON array of all 5 real networks, e.g. [{"name":"Main Network","subnet":"192.168.1.0/24","active":true},{"name":"Kids","subnet":"192.168.2.0/24","active":true},{"name":"IoT / Smart Home","subnet":"192.168.3.0/24","active":true},{"name":"Guests","subnet":"192.168.4.0/24","active":true},{"name":"Quarantine","subnet":"192.168.5.0/24","active":true}] — `active` reflects genuinely live kernel state: `ssh root@localhost -p 2223 ip link set br-lan.2 down` flips Kids' `active` to `false` immediately, confirmed live
 curl -s http://localhost:8081/cgi-bin/api/wireguard  # -> JSON object of real WireGuard server state, e.g. {"running":true,"port":51820,"publicKey":"n4W57HtezCeRGFeKQ/PM19i2YrsN3OFNbgQETg/6x28=","subnet":"10.9.0.0/24"} — `running`/`publicKey` reflect genuinely live kernel state: `POST -d '{"enabled":false}'` makes `ip link show wg0` report "can't find device", `POST -d '{"enabled":true}'` brings the real interface back with the same public key, confirmed live
+curl -s -X POST http://localhost:8081/cgi-bin/api/ssh-key  # -> real dropbear RSA host-key rotation, e.g. {"ok":true,"fingerprint":"SHA256:6Kl/5/4foMm95Fv+cFOkg9KeqmAWqdvFjMqihufCN5k"} — confirmed live to genuinely change the real key each call: `ssh -p 2223 root@localhost "dropbearkey -y -f /etc/dropbear/dropbear_rsa_host_key | grep Fingerprint"` shows a different fingerprint before vs. after, matching the response's `fingerprint` field exactly, and a second POST changes it again to a third distinct value (not toggling between two); `curl -s http://localhost:8081/cgi-bin/api/ssh-key` (a GET) -> 405
 ```
 
 **Step 3 in detail — overwriting the stock landing page is intentional:**
@@ -651,6 +664,56 @@ specifically, as a sibling of `luci`, not a replacement for it.
   runs `ifup wg0` and brings the real interface back with the same
   public key as before (private key persists in
   `/etc/wireguard-privkey` regardless of the toggle).
+- `docker/provision/12-provision-ssh-key-api.sh` — copies (and chmods, and
+  curl-verifies) `docker/provision/www/api/ssh-key` onto the VM's
+  `/www/cgi-bin/api/ssh-key`. Unlike `08`-`11`, this step provisions no
+  baseline VM state at all beyond the endpoint file itself — dropbear
+  already runs on every fresh OpenWrt boot with real host keys already
+  present, so there's nothing to create first, matching `06`/`07`'s
+  "stateless endpoint" shape rather than `08`-`11`'s "create baseline
+  config/packages first" shape. Its verify step deliberately checks that a
+  `GET` is rejected with a real `405` (this endpoint is POST-only) rather
+  than issuing an actual `POST`, so simply (re-)running this provisioning
+  script never itself rotates the VM's real SSH host keys as a side effect
+  — a real rotation only happens when something (a person, or a later
+  frontend wiring task) deliberately POSTs to the deployed endpoint.
+- `docker/provision/www/api/ssh-key` — the tracked source of truth for the
+  `/api/ssh-key` endpoint: `POST` (no request body read) deletes both
+  `/etc/dropbear/dropbear_rsa_host_key` and
+  `/etc/dropbear/dropbear_ed25519_host_key`, then runs
+  `/etc/init.d/dropbear restart` — standard OpenWrt/dropbear behavior is to
+  auto-regenerate any missing host key file on start, with no
+  `dropbearkey`-invocation step needed in this handler at all. After a
+  brief defensive `sleep 1` (to give dropbear's restart time to finish
+  writing the new key file before it's read back, removing any race under
+  uhttpd's CGI process model — not needed in the interactive testing this
+  was confirmed against, but harmless here), the endpoint reads the new RSA
+  key's fingerprint back via `dropbearkey -y -f
+  /etc/dropbear/dropbear_rsa_host_key | grep -i Fingerprint` and returns
+  `{"ok":true,"fingerprint":"SHA256:..."}`; if the fingerprint can't be
+  read back for any reason, it returns `Status: 500` with
+  `{"ok":false,"error":"..."}` rather than a false success. Only the RSA
+  key's fingerprint is surfaced (matching what a real SSH client shows on
+  first connect) — the ed25519 key is rotated identically alongside it, but
+  the mockup's "Rotate now" button has no per-key-type UI to show a second
+  fingerprint for. Confirmed live end-to-end against this running VM
+  (`docker/facts.md` Section 14, and re-confirmed independently of the
+  endpoint's own claim during this task): the real RSA fingerprint read
+  directly over SSH before vs. after a `POST` to this endpoint genuinely
+  differs and matches the response's `fingerprint` field exactly, and a
+  second `POST` changes it again to a third distinct value — real proof of
+  a rotation on every call, not a toggle between two fixed values. Any
+  method other than `POST` gets `Status: 405`. This is safe specifically
+  for this project's own SSH-based verification workflow because every SSH
+  connection this project makes always passes `-o StrictHostKeyChecking=no
+  -o UserKnownHostsFile=/dev/null` — there's no persisted `known_hosts`
+  entry anywhere for a rotated key to conflict with; a real deployment
+  using normal host-key pinning would need to separately warn the operator
+  their client will show a "host key changed" prompt after calling this
+  (out of scope to simulate here — the screen's own copy already says
+  "invalidates the old one immediately", which is accurate). Uses the same
+  canonical table-based `json_escape()` as every other endpoint in this
+  directory.
 
 ### Real connectivity test — what it actually means in this topology
 
@@ -766,12 +829,16 @@ device.
   port 8081 to all interfaces, not just `localhost` — anyone reachable on
   the local network can add/delete real firewall rules, flip the real guest
   Wi-Fi network on/off, flip real ad blocking on/off, or flip the real
-  WireGuard server on/off, with a plain `curl` (four independent
+  WireGuard server on/off, with a plain `curl` (five independent
   write-capable endpoints: `/api/firewall-rules`, `/api/wifi`,
-  `/api/adblock`, `/api/wireguard`). Acceptable only
-  because this is an explicitly local, single-user dev/test tool — not
-  something to carry into a later wave or real deployment as-is. The
-  **read-only** endpoints (`/api/devices`, `/api/logs`, `/api/system-info`,
+  `/api/adblock`, `/api/wireguard`, and `/api/ssh-key` — this last one is a
+  little different in kind from the other four: it doesn't mutate any
+  persisted uci config the way they do, but a plain unauthenticated `POST`
+  still immediately rotates this VM's real SSH host keys with no
+  confirmation, undo, or operator warning, so it belongs in this list too).
+  Acceptable only because this is an explicitly local, single-user dev/test
+  tool — not something to carry into a later wave or real deployment as-is.
+  The **read-only** endpoints (`/api/devices`, `/api/logs`, `/api/system-info`,
   and, as of Wave 4, `/api/vlans`) are equally unauthenticated — anyone on
   the local network can silently read real device/MAC/IP presence, real log
   lines, real hardware/uptime info, and real VLAN topology with a plain
