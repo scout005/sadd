@@ -13,6 +13,17 @@
 # had real zones to build on for Task 3/Wave 1's firewall-rules endpoint.
 # See docker/facts.md Section 11 for the full live investigation.
 #
+# Known DRY concern (flagged by Wave 4's final integration review, not yet
+# acted on): the idempotent verify-completeness / create-if-missing /
+# revert-and-retry-once-then-fail-loudly shape below is now duplicated
+# near-identically in 09-provision-adblock-api.sh and
+# 10-provision-vlans-api.sh, with no shared library between the three. A
+# `docker/provision/lib/idempotent-uci.sh` (or similar) helper is a
+# reasonable extraction candidate if a fourth script ever needs this shape —
+# deliberately deferred for now since three ~50-80 line scripts is still
+# cheap to read standalone, and each has scp-deployment reasons (see the
+# per-file CGI comments under www/api/) to stay self-contained.
+#
 # Baseline config created (mirrors docker/facts.md Section 11's confirmed
 # sequence exactly):
 #   - wireless.radio0 (wifi-device, type=mac80211, disabled=1) — a phantom

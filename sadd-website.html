@@ -1448,8 +1448,13 @@ html.large-text .scr-title{font-size:1.15em;}
   // Manages the .api-fallback-notice that sits as anchorEl's NEXT SIBLING (not a
   // descendant) — the shape used by every single-row/hero-style screen (About,
   // Settings, Guest Wi-Fi, Ad Blocking), as opposed to the list-rendering screens
-  // (Devices, Firewall & Ports, Diagnostics & Logs), which manage their notice as a
-  // descendant of a list container instead and don't use this helper.
+  // (Devices, Firewall & Ports, Diagnostics & Logs, Network & VLANs), which manage
+  // their notice as a descendant of a list container instead (inline
+  // `listEl.querySelectorAll('.ROWCLASS, .api-fallback-notice')` on each of those
+  // four) and don't use this helper. That list-side pattern is now at the same
+  // 4-instance count that triggered this helper's own extraction (see below) but
+  // hasn't been extracted itself — a `syncListFromApi(listEl, rowClass, data,
+  // rowRenderFn)`-shaped helper is a reasonable next candidate, not yet done.
   //   hasData true  → removes any existing notice, returns null.
   //   hasData false → removes any existing notice, creates a fresh one with the
   //                   given message, inserts it, and returns it (so a caller like

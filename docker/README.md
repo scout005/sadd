@@ -679,7 +679,13 @@ device.
   (three independent write-capable endpoints as of Wave 4:
   `/api/firewall-rules`, `/api/wifi`, `/api/adblock`). Acceptable only
   because this is an explicitly local, single-user dev/test tool — not
-  something to carry into a later wave or real deployment as-is.
+  something to carry into a later wave or real deployment as-is. The
+  **read-only** endpoints (`/api/devices`, `/api/logs`, `/api/system-info`,
+  and, as of Wave 4, `/api/vlans`) are equally unauthenticated — anyone on
+  the local network can silently read real device/MAC/IP presence, real log
+  lines, real hardware/uptime info, and real VLAN topology with a plain
+  `curl`. Disclosure rather than mutation, but the same "local, single-user
+  dev tool only" caveat applies.
 - The global search feature (built earlier this session, unrelated to this
   work) can't highlight search results on the Devices, Firewall & Ports
   (port-forwarding rules only), and Diagnostics & Logs screens when the
