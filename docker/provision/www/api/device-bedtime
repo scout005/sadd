@@ -336,10 +336,19 @@ elseif method == "POST" then
           -- `uci commit firewall` (see header comment). One final fresh read
           -- after commit is the only way this response can't lie about the
           -- real committed state.
+          -- Derive BOTH fields from this same fresh read (code review finding), not just
+          -- `active` — a genuinely concurrent DELETE for this same MAC landing between our
+          -- own commit and this read (a double-submit/two-tab scenario) could make
+          -- final_fields nil even though this request's own create just succeeded; the
+          -- previous version hardcoded "enabled":true regardless, which would have been
+          -- actively wrong (claiming a schedule exists when the rule was just removed by
+          -- someone else) in that narrow window instead of just reporting neither field
+          -- as active/present.
           local _, final_fields = find_bedtime_rule(rule_name)
+          local final_enabled = final_fields ~= nil
           local final_active = final_fields and final_fields.enabled == "1"
           send_headers(200)
-          print(string.format('{"ok":true,"enabled":true,"active":%s}', final_active and "true" or "false"))
+          print(string.format('{"ok":true,"enabled":%s,"active":%s}', final_enabled and "true" or "false", final_active and "true" or "false"))
         end
       end
     else
