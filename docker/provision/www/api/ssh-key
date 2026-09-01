@@ -60,9 +60,23 @@ local function send_headers(status)
   print("Content-Type: application/json\n")
 end
 
+-- Reads the RSA host key's current fingerprint, or nil if the file is
+-- missing/unreadable. Called both before and after rotation (see below) —
+-- "a fingerprint could be parsed" alone isn't proof a rotation actually
+-- happened (e.g. a silently-failing `rm -f`, under some unusual read-only
+-- overlay state, would leave the OLD key in place for dropbear to keep
+-- serving, and this would happily re-read the same fingerprint); comparing
+-- against the pre-rotation value is what actually confirms the key changed.
+local function read_fingerprint()
+  local out = run("dropbearkey -y -f /etc/dropbear/dropbear_rsa_host_key 2>/dev/null | grep -i Fingerprint")
+  return out:match("Fingerprint:%s*(%S+)")
+end
+
 local method = os.getenv("REQUEST_METHOD") or "GET"
 
 if method == "POST" then
+  local old_fingerprint = read_fingerprint()
+
   run("rm -f /etc/dropbear/dropbear_rsa_host_key /etc/dropbear/dropbear_ed25519_host_key")
   run("/etc/init.d/dropbear restart")
   -- dropbear needs a brief moment after restart before the new key file is
@@ -71,15 +85,14 @@ if method == "POST" then
   -- but a short defensive sleep here costs nothing and removes any race for
   -- a CGI-triggered restart under uhttpd's own process model.
   os.execute("sleep 1")
-  local fp = run("dropbearkey -y -f /etc/dropbear/dropbear_rsa_host_key 2>/dev/null | grep -i Fingerprint")
-  local fingerprint = fp:match("Fingerprint:%s*(%S+)")
+  local fingerprint = read_fingerprint()
 
-  if fingerprint then
+  if fingerprint and fingerprint ~= old_fingerprint then
     send_headers(200)
     print(string.format('{"ok":true,"fingerprint":"%s"}', json_escape(fingerprint)))
   else
     send_headers(500)
-    print('{"ok":false,"error":"key rotation ran but the new fingerprint could not be read back"}')
+    print('{"ok":false,"error":"key rotation ran but the fingerprint did not change (or could not be read back)"}')
   end
 
 else
