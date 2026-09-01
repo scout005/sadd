@@ -648,3 +648,50 @@ nothing to discover here the way `uci show firewall` already had real
 zones/rules to build on in Wave 1. This mirrors Wave 1's firewall work in
 spirit (real `uci` config, real reload, no real broadcast/traffic) but the
 starting state is empty rather than pre-populated.
+
+## 12. Wave 4 pre-investigation — real DNS blocklist and real VLAN interfaces, both confirmed live
+
+Confirmed live (2026-09-01, before writing the Wave 4 plan):
+
+**DNS-based ad blocking works via dnsmasq's own `confdir`, no new packages needed:**
+```
+mkdir -p /etc/dnsmasq.blocklist.d
+echo "address=/doubleclick.net/0.0.0.0" > /etc/dnsmasq.blocklist.d/blocklist.conf
+uci set dhcp.@dnsmasq[0].confdir=/etc/dnsmasq.blocklist.d
+uci set dhcp.@dnsmasq[0].logqueries=1
+uci commit dhcp
+/etc/init.d/dnsmasq restart
+```
+`nslookup doubleclick.net 127.0.0.1` afterward genuinely resolves to `0.0.0.0` — real
+blocking, not simulated. `logqueries=1` makes each query show up in `logread` with a
+distinct, greppable line for a blocked hit: `... config doubleclick.net is 0.0.0.0`
+(vs. a real upstream failure, which shows `... config error is REFUSED` — since this
+VM has no WAN, ALL non-blocklisted/non-local lookups fail this way regardless of
+blocking; there's no meaningful "blocked vs. successfully resolved" comparison to make
+here, only "blocked vs. not queried/not in our list," and the blocked-hit log line is
+the real, countable signal to build a "N blocked this week" stat from — parse
+`logread` for `config <domain> is 0.0.0.0` lines where `<domain>` is in the blocklist,
+same general approach as the existing `/api/logs` endpoint's `logread` parsing.
+
+**VLANs are genuinely real at the kernel level, not just inert `uci` config:**
+```
+uci set network.kids=interface
+uci set network.kids.proto=static
+uci set network.kids.device=br-lan.2
+uci set network.kids.ipaddr=192.168.2.1
+uci set network.kids.netmask=255.255.255.0
+uci commit network
+/etc/init.d/network reload
+```
+`ip link show` afterward shows a genuine, `UP`, kernel-level 802.1q VLAN sub-interface:
+`br-lan.2@br-lan`. `network reload` exits 0 cleanly (the radio0-related lines in its
+output are just the same phantom-wireless noise `wifi reload` already produces
+harmlessly, per §11 — unrelated to the VLAN interface itself). This is a stronger
+result than Wave 3's original roadmap note assumed ("needs real multi-interface
+trunking this VM's topology can't meaningfully demonstrate") — the VLAN tagging
+itself is real and kernel-verifiable even without a second physical NIC to carry it
+to a real trunked switch. Implication: Wave 4's planned read-only VLAN list can be
+backed by genuinely created, genuinely `ip link`-visible interfaces, not just `uci`
+strings — a stronger "real" bar than originally assumed, though still config-level
+in the sense that no distinct physical port/hardware trunk exists to test end-to-end
+inter-VLAN traffic isolation against.
