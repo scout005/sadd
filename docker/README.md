@@ -2,13 +2,14 @@
 
 A real OpenWrt 23.05.5 (x86-64) instance, booted with KVM-accelerated QEMU,
 reachable from the host for LuCI, SSH, and a small `/api/*` backend the
-frontend prototype talks to (six screens/sections wired to it so far, across
-three completed waves — Devices/Firewall & Ports, About/Diagnostics & Logs,
-Settings/Guest Wi-Fi). See
+frontend prototype talks to (eight screens/sections wired to it so far,
+across four completed waves — Devices/Firewall & Ports, About/Diagnostics &
+Logs, Settings/Guest Wi-Fi, Ad Blocking/Network & VLANs). See
 `docs/superpowers/specs/2026-08-30-openwrt-integration-pilot-design.md` for
 the full design/roadmap and `docs/superpowers/plans/2026-08-30-openwrt-integration-wave1.md`,
-`docs/superpowers/plans/2026-08-31-openwrt-integration-wave2.md`, and
-`docs/superpowers/plans/2026-08-31-openwrt-integration-wave3.md` for the
+`docs/superpowers/plans/2026-08-31-openwrt-integration-wave2.md`,
+`docs/superpowers/plans/2026-08-31-openwrt-integration-wave3.md`, and
+`docs/superpowers/plans/2026-09-01-openwrt-integration-wave4.md` for the
 implementation plans this environment supports.
 
 ## Quick start
@@ -651,13 +652,34 @@ device.
   setup (confirmed by exhaustive `nft list ruleset` inspection). See "Real
   connectivity test" above for what was actually proven instead (a `src='lan'`
   rule intercepting real live traffic, proving the same underlying mechanism).
+- **Network & VLANs has no real device-count** — `/api/vlans` deliberately
+  excludes a per-VLAN device count (see `docker/provision/www/api/vlans`'s
+  header comment): this VM's dnsmasq serves one shared lease pool off
+  `lan`/`br-lan`, so a genuine per-VLAN count would need a real, separate
+  DHCP service per interface, a materially bigger undertaking than this
+  wave's narrow read-only scope. The frontend shows a static "—" placeholder
+  in that column for every real row instead of fabricating a plausible
+  number.
+- **Ad Blocking's "This week" count is real but not a true rolling week** —
+  `/api/adblock`'s `blockedThisWeek` counts real `logread` lines matching a
+  blocked-domain signature, but `logread`'s buffer is a small fixed-size
+  ring, nowhere near a full week's history; the count reflects whatever's
+  currently in that buffer, not genuine 7-day persistence. Real numbers,
+  not guaranteed complete-week coverage — documented as aspirational in
+  `docker/provision/www/api/adblock` itself. Also worth noting: this VM's
+  blocklist is a fixed 3-domain demo set (`doubleclick.net`,
+  `adservice.google.com`, `tracker.example.com`) provisioned by
+  `09-provision-adblock-api.sh`, not a real, maintained, updatable
+  third-party blocklist feed — adding/removing domains from the live
+  blocklist isn't exposed through the UI or API in this wave.
 - **No authentication on `/cgi-bin/api/*`**, and `docker-compose.yml` binds
   port 8081 to all interfaces, not just `localhost` — anyone reachable on
-  the local network can add/delete real firewall rules, or flip the real
-  guest Wi-Fi network on/off, with a plain `curl` (two independent
-  write-capable endpoints as of Wave 3: `/api/firewall-rules`, `/api/wifi`).
-  Acceptable only because this is an explicitly local, single-user dev/test
-  tool — not something to carry into a later wave or real deployment as-is.
+  the local network can add/delete real firewall rules, flip the real guest
+  Wi-Fi network on/off, or flip real ad blocking on/off, with a plain `curl`
+  (three independent write-capable endpoints as of Wave 4:
+  `/api/firewall-rules`, `/api/wifi`, `/api/adblock`). Acceptable only
+  because this is an explicitly local, single-user dev/test tool — not
+  something to carry into a later wave or real deployment as-is.
 - The global search feature (built earlier this session, unrelated to this
   work) can't highlight search results on the Devices, Firewall & Ports
   (port-forwarding rules only), and Diagnostics & Logs screens when the
@@ -681,4 +703,24 @@ device.
   Navigation still lands on the correct screen every time on every affected
   screen; only the cosmetic pulse is silently skipped, exactly matching the
   search feature's own designed "fail silently on content drift" behavior.
-  Full detail in the design spec's Error Handling section.
+  **Wave 4 update:** Ad Blocking is unaffected for the same reason as
+  Settings/Guest Wi-Fi — none of its three `searchIndex` entries ("Ad
+  Blocking", "doubleclick.net", "adservice.google.com") target the two
+  spans that actually go dynamic (`#adblockStat`/`#adblockSwitch`); all
+  three point at content the plan deliberately kept static (the screen
+  label, and the mini-log's top-3-domains list). Network & VLANs is
+  different from every other affected-or-unaffected screen so far: its five
+  `searchIndex` entries ("Main Network", "Kids", "IoT / Smart Home",
+  "Guests", "Quarantine") DO target the one span that goes dynamic — the
+  VLAN list itself, fully replaced by `renderVlansScreen` — yet highlighting
+  still works, confirmed live (headless Chrome via `puppeteer-core` against
+  the real VM): because the real `/cgi-bin/api/vlans` response's `name`
+  field is a hardcoded human-label map matching these exact demo strings
+  (`docker/provision/www/api/vlans`'s own header comment), the freshly
+  re-rendered `.adv-row` elements still contain the matchText the index was
+  authored against, so `highlightAndScroll` finds it. This is a coincidence
+  of the two being authored to agree, not a design guarantee — a future
+  edit to either the blocklist domains or the VLAN name map would silently
+  reintroduce the Devices/Firewall-rules/Logs-style miss for whichever
+  entries drift out of sync. Full detail in the design spec's Error
+  Handling section.
