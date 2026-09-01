@@ -324,7 +324,23 @@ bash docker/provision/14-provision-qos-priority-api.sh
 #     step 13 established for devpause-sweep.sh + /api/device-pause.
 bash docker/provision/15-provision-bedtime-api.sh
 
-# 16. Verify.
+# 16. Deploy the /api/safe-search endpoint (real DNS-level SafeSearch
+#     enforcement — dnsmasq `cname=` rewrites for Google/YouTube/Bing/
+#     DuckDuckGo — for the Parental Controls screen's "Safe Search" toggle)
+#     and verify it responds with valid JSON. No baseline VM state needed
+#     beyond the /etc/dnsmasq.blocklist.d directory step 9 already
+#     provisions — this endpoint only ever creates/reads/removes its own
+#     single file, safesearch.conf, inside that same shared confdir
+#     directory, alongside (and never touching) Ad Blocking's own
+#     blocklist.conf — so this step is deploy-and-verify only, same shape as
+#     steps 12 and 14. Every line safesearch.conf ever contains is a fixed
+#     constant, so the write itself goes through Lua's own io.open (no
+#     shell/uci involved), with `/etc/init.d/dnsmasq restart` still shelled
+#     out to apply the change, same as every other dnsmasq-config-touching
+#     endpoint.
+bash docker/provision/16-provision-safe-search-api.sh
+
+# 17. Verify.
 curl -s http://localhost:8081/cgi-bin/api/ping     # -> {"ok":true}
 curl -sI http://localhost:8081/cgi-bin/api/ping    # -> Content-Type: application/json among the headers
 curl -sI http://localhost:8081/                    # -> 200 OK, serving sadd-website.html
@@ -348,6 +364,8 @@ curl -s -X POST -d '{"mac":"11:22:33:44:55:66"}' http://localhost:8081/cgi-bin/a
 curl -s "http://localhost:8081/cgi-bin/api/device-bedtime?mac=11:22:33:44:55:66"  # -> {"enabled":false,"active":false} for a MAC with no Bedtime schedule configured
 curl -s -X POST -d '{"mac":"11:22:33:44:55:66","enabled":true}' http://localhost:8081/cgi-bin/api/device-bedtime  # -> real per-MAC recurring schedule, e.g. {"ok":true,"enabled":true,"active":false} (active reflects the real current UTC hour, computed fresh on create, not a stale default) — confirmed live: `uci show firewall | grep bedtime_112233445566` shows a real `rule` section with `src='lan'`, `src_mac='11:22:33:44:55:66'`, `dest='wan'`, `target='REJECT'`, `proto='all'`; a subsequent GET returns the same `{"enabled":true,...}` state; running `/usr/bin/bedtime-sweep.sh` by hand with the VM's clock temporarily set to an in-window UTC hour (e.g. 23:00) flips the rule's `enabled` uci option to `1` and its `REJECT` entries genuinely appear in `nft list ruleset`; setting the clock to an out-of-window hour and re-running the sweep flips it back to `0` and the entries genuinely disappear (VM clock restored to real time immediately after)
 curl -s -X POST -d '{"mac":"11:22:33:44:55:66","enabled":false}' http://localhost:8081/cgi-bin/api/device-bedtime  # -> {"ok":true,"enabled":false,"active":false} — confirmed live: `uci show firewall | grep bedtime_112233445566` goes from a match to no match, a real removal (verified by readback after delete+commit+reload, not just an unconditional 200); a second identical POST (already absent) is an idempotent no-op success
+curl -s http://localhost:8081/cgi-bin/api/safe-search  # -> {"enabled":false} on a fresh/never-toggled VM
+curl -s -X POST -d '{"enabled":true}' http://localhost:8081/cgi-bin/api/safe-search  # -> {"ok":true,"enabled":true} — confirmed live: `cat /etc/dnsmasq.blocklist.d/safesearch.conf` shows the 9 fixed `cname=` lines; `ssh root@localhost -p 2223 nslookup www.google.com 127.0.0.1` now shows a real `canonical name = forcesafesearch.google.com` line; throughout, `/etc/dnsmasq.blocklist.d/blocklist.conf` (Ad Blocking's own file) and `nslookup doubleclick.net 127.0.0.1` (still resolving to `0.0.0.0`) are completely unaffected — the two features' files coexist in the same confdir directory with zero interaction; `POST -d '{"enabled":false}'` removes `safesearch.conf` and the CNAME rewrite genuinely stops (`nslookup www.google.com` reverts to a plain `REFUSED`, no canonical name line); both directions are idempotent (a repeat POST for the current state is a no-op success, not an error)
 ```
 
 **Step 3 in detail — overwriting the stock landing page is intentional:**
@@ -1163,6 +1181,68 @@ specifically, as a sibling of `luci`, not a replacement for it.
   MAC-shaped payloads containing `;`, backticks, and `$()` on both `GET`
   and `POST` (clean `400`s, no shell execution) — all test rules cleaned
   up afterward, no pending uci changes left on the VM.
+- `docker/provision/16-provision-safe-search-api.sh` — deploy-and-verify
+  only, matching `12-provision-ssh-key-api.sh`'s and
+  `14-provision-qos-priority-api.sh`'s own endpoint-deploy shape: no
+  baseline VM state to create here beyond the `/etc/dnsmasq.blocklist.d`
+  directory step 9 already provisions (Wave 4) — this endpoint only ever
+  creates/reads/removes its own single file inside that already-existing
+  directory. `scp -O`'s `docker/provision/www/api/safe-search` onto
+  `/www/cgi-bin/api/safe-search`, chmods it executable, then verifies with a
+  real `curl -sf` `GET` — checked to be either exact valid response
+  (`{"enabled":true}` or `{"enabled":false}`) rather than assuming a fresh,
+  never-toggled VM, since this step can be re-run against a VM that's
+  already had Safe Search turned on by prior use.
+- `docker/provision/www/api/safe-search` — the tracked source of truth for
+  the `/api/safe-search` endpoint: `GET /cgi-bin/api/safe-search` returns
+  `{"enabled": <bool>}`, true exactly when
+  `/etc/dnsmasq.blocklist.d/safesearch.conf` exists and its content matches
+  the fixed 9-line `cname=` constant byte-for-byte. `POST
+  /cgi-bin/api/safe-search` (body `{"enabled": true|false}`) writes or
+  removes that file and restarts dnsmasq to apply the change. Real
+  DNS-level enforcement, confirmed live (`docker/facts.md` Section 17):
+  dnsmasq's `cname=` directive genuinely rewrites a query to another
+  hostname, and this endpoint's 9 lines cover Google search, YouTube, Bing,
+  and DuckDuckGo (matching the mockup's own "Filters results on Google,
+  Bing, YouTube & DuckDuckGo" copy) via their real,
+  independently-verified-live CNAME targets
+  (`forcesafesearch.google.com`/`restrict.youtube.com`/`strict.bing.com`/
+  `safe.duckduckgo.com`) — the same "narrow, not exhaustive" precedent Ad
+  Blocking's own 3-domain list already set; country-TLD variants
+  (`google.co.uk`, etc.) and mobile-app-specific endpoints aren't covered.
+  **File ownership, the design this endpoint most depends on getting
+  right:** it manages exactly one file, `safesearch.conf`, living inside
+  the same `/etc/dnsmasq.blocklist.d` confdir directory Ad Blocking (Wave
+  4) already provisions and owns its own separate file (`blocklist.conf`)
+  in — this endpoint never reads, writes, or deletes `blocklist.conf`, and
+  never touches the `dhcp.@dnsmasq[0].confdir` uci option Ad Blocking's own
+  toggle depends on; confirmed live that dnsmasq's confdir genuinely loads
+  multiple `.conf` files from one directory simultaneously, so the two
+  files coexist with zero interaction. Every line `safesearch.conf` ever
+  contains is a fixed constant — no user-supplied value is ever written
+  here — so unlike every uci-backed write endpoint in this directory, the
+  write itself goes straight through Lua's own `io.open`/`write` (no
+  `io.popen`/shell invocation, confirmed live to work cleanly on this VM),
+  which is simpler and has zero shell-injection surface since nothing
+  dynamic ever reaches it; `/etc/init.d/dnsmasq restart` (a fixed,
+  non-interpolated command) is still shelled out via `run()` to apply the
+  change, same as every other dnsmasq-config-touching endpoint. There's no
+  uci layer here to stage/commit/revert, so verification is a plain
+  read-file-back-and-compare after the write (or confirm absence after a
+  delete) rather than the uci readback-verify-commit-or-revert sequence
+  other endpoints use — the plain-file equivalent of the same
+  don't-claim-success-without-checking discipline. Both directions
+  confirmed live end-to-end against this running VM: `POST
+  {"enabled":true}` makes a real `nslookup www.google.com 127.0.0.1` show a
+  genuine `canonical name = forcesafesearch.google.com` line; `POST
+  {"enabled":false}` removes the file and the same lookup reverts to a
+  plain `REFUSED` with no canonical-name line; throughout both directions
+  (and repeated, idempotent POSTs in the same state), `cat
+  /etc/dnsmasq.blocklist.d/blocklist.conf` kept showing its original,
+  byte-identical 3 `address=` lines and `nslookup doubleclick.net
+  127.0.0.1` kept resolving to `0.0.0.0` — Ad Blocking's own real config
+  and real blocking behavior, completely undisturbed by every safe-search
+  operation performed against the VM.
 
 ### Real connectivity test — what it actually means in this topology
 

@@ -1,0 +1,219 @@
+#!/usr/bin/lua
+-- /api/safe-search — GET (status) + POST (toggle). Real DNS-level SafeSearch
+-- enforcement for the Parental Controls screen's "Safe Search" toggle,
+-- confirmed live before writing this handler (docker/facts.md Section 17):
+-- dnsmasq's `cname=` directive genuinely rewrites a query to another
+-- hostname (confirmed via real `nslookup` CNAME resolution) — the standard,
+-- widely-documented mechanism real routers use to enforce SafeSearch at the
+-- DNS level, not something invented for this project.
+--
+-- GET response shape: {"enabled": true|false}
+-- POST body: {"enabled": true|false} -> {"ok": true, "enabled": <bool>}
+--
+-- === File ownership — critical, do not deviate ===
+-- Manages exactly ONE file, /etc/dnsmasq.blocklist.d/safesearch.conf, inside
+-- the SAME confdir directory Ad Blocking (Wave 4) already provisions and
+-- owns its own separate file (blocklist.conf) in. This endpoint NEVER reads,
+-- writes, or deletes blocklist.conf, and NEVER touches the
+-- dhcp.@dnsmasq[0].confdir uci option — confirmed live (docker/facts.md
+-- Section 17) that dnsmasq's confdir loads multiple .conf files from the
+-- same directory simultaneously, so both features' files coexist safely
+-- with zero interaction.
+--
+-- === Fully static content, no shell/uci involved for the write itself ===
+-- Every line this file ever contains is a fixed constant — no user-supplied
+-- value is ever written here, unlike blocked-sites' per-domain files — so
+-- this endpoint writes the file directly via Lua's own io.open/write (no
+-- io.popen/shell invocation for the write itself, confirmed live to work
+-- cleanly on this VM), which is simpler and has zero shell-injection surface
+-- since nothing dynamic ever reaches it. `/etc/init.d/dnsmasq restart` (a
+-- fixed, non-interpolated command) is still shelled out via run(), same as
+-- every other endpoint that needs to apply a dnsmasq config change.
+--
+-- === Domain list — a plausible, not-exhaustive baseline ===
+-- Covers Google search, YouTube, Bing, and DuckDuckGo (matching the
+-- mockup's own "Filters results on Google, Bing, YouTube & DuckDuckGo" copy
+-- exactly) via their real, independently-verified-live CNAME targets
+-- (docker/facts.md Section 17: forcesafesearch.google.com,
+-- restrict.youtube.com, strict.bing.com, safe.duckduckgo.com — all four
+-- confirmed still resolving from a real internet-connected host at
+-- investigation time). Same "narrow, not exhaustive" precedent as Ad
+-- Blocking's own 3-domain list — country-TLD variants (google.co.uk, etc.)
+-- and mobile-app-specific endpoints are not covered.
+--
+-- === Read-only verification, not full write-then-readback-verify-then-commit ===
+-- There's no uci layer here to stage/commit/revert — a POST either
+-- successfully writes (or removes) the file and restarts dnsmasq, or it
+-- doesn't. The endpoint reads the file back after writing to confirm the
+-- write genuinely landed before reporting success (catching a full-disk or
+-- permission failure, the plain-file equivalent of every other endpoint's
+-- uci readback-verify step), and reports 500 rather than a false 200 if the
+-- content doesn't match what was just written.
+
+local CONF_PATH = "/etc/dnsmasq.blocklist.d/safesearch.conf"
+
+local CNAME_LINES = {
+  "cname=www.google.com,forcesafesearch.google.com",
+  "cname=google.com,forcesafesearch.google.com",
+  "cname=www.youtube.com,restrict.youtube.com",
+  "cname=youtube.com,restrict.youtube.com",
+  "cname=m.youtube.com,restrict.youtube.com",
+  "cname=www.bing.com,strict.bing.com",
+  "cname=bing.com,strict.bing.com",
+  "cname=duckduckgo.com,safe.duckduckgo.com",
+  "cname=www.duckduckgo.com,safe.duckduckgo.com",
+}
+local EXPECTED_CONTENT = table.concat(CNAME_LINES, "\n") .. "\n"
+
+local function run(cmd)
+  local p = io.popen(cmd .. " 2>/dev/null")
+  if not p then return "" end
+  local out = p:read("*a") or ""
+  p:close()
+  return (out:gsub("%s+$", ""))
+end
+
+local function json_escape(s)
+  if s == nil then return "" end
+  s = tostring(s)
+  s = s:gsub('[\\"\n\r\t]', {
+    ['\\'] = '\\\\', ['"'] = '\\"', ['\n'] = '\\n', ['\r'] = '\\r', ['\t'] = '\\t',
+  })
+  s = s:gsub('[\1-\31]', '')
+  return s
+end
+
+local function read_file(path)
+  local f = io.open(path, "r")
+  if not f then return nil end
+  local content = f:read("*a")
+  f:close()
+  return content
+end
+
+local function is_enabled()
+  local content = read_file(CONF_PATH)
+  return content == EXPECTED_CONTENT
+end
+
+local function read_request_body()
+  local len = tonumber(os.getenv("CONTENT_LENGTH") or "")
+  if len and len > 0 then return io.read(len) or "" end
+  return io.read("*a") or ""
+end
+
+-- Same hand-rolled flat-JSON-object parser as every other write endpoint —
+-- adapted verbatim from adblock/device-pause.
+local function json_parse_flat_object(s)
+  local obj = {}
+  if type(s) ~= "string" then return obj end
+  local i, len = 1, #s
+  local function skip_ws() while i <= len and s:sub(i, i):match("%s") do i = i + 1 end end
+  local function parse_string()
+    i = i + 1
+    local buf = {}
+    local escapes = { ['"']='"', ['\\']='\\', ['/']='/', ['n']='\n', ['r']='\r', ['t']='\t', ['b']='\b', ['f']='\f' }
+    while i <= len do
+      local c = s:sub(i, i)
+      if c == '"' then i = i + 1; return table.concat(buf)
+      elseif c == '\\' then
+        local nc = s:sub(i + 1, i + 1)
+        if nc == 'u' then i = i + 6
+        elseif escapes[nc] then buf[#buf+1] = escapes[nc]; i = i + 2
+        else buf[#buf+1] = nc; i = i + 2 end
+      else buf[#buf+1] = c; i = i + 1 end
+    end
+    return table.concat(buf)
+  end
+  skip_ws()
+  if s:sub(i, i) ~= '{' then return obj end
+  i = i + 1
+  skip_ws()
+  if s:sub(i, i) == '}' then return obj end
+  while i <= len do
+    skip_ws()
+    if s:sub(i, i) ~= '"' then break end
+    local key = parse_string()
+    skip_ws()
+    if s:sub(i, i) ~= ':' then break end
+    i = i + 1
+    skip_ws()
+    local val
+    if s:sub(i, i) == '"' then val = parse_string()
+    else
+      local start = i
+      while i <= len and not s:sub(i, i):match('[,}%s]') do i = i + 1 end
+      val = s:sub(start, i - 1)
+    end
+    obj[key] = val
+    skip_ws()
+    if s:sub(i, i) == ',' then i = i + 1
+    elseif s:sub(i, i) == '}' then i = i + 1; break
+    else break end
+  end
+  return obj
+end
+
+local function send_headers(status)
+  local reasons = { [400]="Bad Request", [405]="Method Not Allowed", [500]="Internal Server Error" }
+  if status and status ~= 200 then
+    print("Status: " .. status .. " " .. (reasons[status] or "Error"))
+  end
+  print("Content-Type: application/json\n")
+end
+
+local method = os.getenv("REQUEST_METHOD") or "GET"
+
+if method == "GET" then
+  send_headers(200)
+  print(string.format('{"enabled":%s}', is_enabled() and "true" or "false"))
+
+elseif method == "POST" then
+  local body = read_request_body()
+  local req = json_parse_flat_object(body)
+  local enabled_req = req.enabled
+
+  if enabled_req ~= "true" and enabled_req ~= "false" then
+    send_headers(400)
+    print('{"ok":false,"error":"missing or invalid required field: enabled (must be a JSON boolean true or false)"}')
+  else
+    local want_enabled = enabled_req == "true"
+
+    if want_enabled then
+      local f = io.open(CONF_PATH, "w")
+      local write_ok = false
+      if f then
+        f:write(EXPECTED_CONTENT)
+        f:close()
+        write_ok = true
+      end
+      if not write_ok then
+        send_headers(500)
+        print('{"ok":false,"error":"failed to write safesearch.conf"}')
+      else
+        run("/etc/init.d/dnsmasq restart")
+        if read_file(CONF_PATH) == EXPECTED_CONTENT then
+          send_headers(200)
+          print('{"ok":true,"enabled":true}')
+        else
+          send_headers(500)
+          print('{"ok":false,"error":"safesearch.conf write did not verify on readback"}')
+        end
+      end
+    else
+      os.remove(CONF_PATH)
+      run("/etc/init.d/dnsmasq restart")
+      if read_file(CONF_PATH) == nil then
+        send_headers(200)
+        print('{"ok":true,"enabled":false}')
+      else
+        send_headers(500)
+        print('{"ok":false,"error":"failed to remove safesearch.conf"}')
+      end
+    end
+  end
+
+else
+  send_headers(405)
+  print(string.format('{"ok":false,"error":"unsupported method: %s"}', json_escape(tostring(method))))
+end
