@@ -1164,8 +1164,14 @@ html.large-text .scr-title{font-size:1.15em;}
   function setWireguardSwitchVisual(sw, statusTextEl, portEl, pubkeyEl, running, port, publicKey){
     sw.classList.toggle('on', running);
     sw.setAttribute('aria-checked', running ? 'true' : 'false');
-    if(statusTextEl) setEscapedText(statusTextEl, (running ? 'Running' : 'Stopped') + ' · UDP port ' + port);
-    if(portEl) setEscapedText(portEl, String(port));
+    // port is guarded the same way pubkeyEl/subnetEl already are below — a response missing
+    // this field leaves the prior text in place rather than rendering the literal string
+    // "undefined" (into both the status line and the Port tech-row), matching the "never let
+    // a missing field leak through" idiom About's version row established. Not currently
+    // reachable against the real endpoint (it always includes port), but this keeps the
+    // function's own three optional fields consistently defensive rather than two out of three.
+    if(statusTextEl && port !== undefined) setEscapedText(statusTextEl, (running ? 'Running' : 'Stopped') + ' · UDP port ' + port);
+    if(portEl && port !== undefined) setEscapedText(portEl, String(port));
     if(pubkeyEl && publicKey) setEscapedText(pubkeyEl, publicKey);
   }
 
@@ -1205,7 +1211,7 @@ html.large-text .scr-title{font-size:1.15em;}
   //      heroEl/etc. are captured by reference before the await, and render() always fully
   //      replaces appContent on navigation. ----
   async function handleWireguardSwitchClick(sw){
-    if(sw.dataset.pending === 'true') return;
+    if(sw.dataset.pending === 'true') return; // already mid-request — ignore extra clicks
     const heroEl = sw.closest('.toggle-hero');
     const statusTextEl = document.getElementById('wireguardStatusText');
     const portEl = document.getElementById('wireguardPortVal');
@@ -1216,7 +1222,7 @@ html.large-text .scr-title{font-size:1.15em;}
     const currentPubkey = pubkeyEl ? pubkeyEl.textContent : '';
     sw.dataset.pending = 'true';
     sw.classList.add('pending');
-    setWireguardSwitchVisual(sw, statusTextEl, portEl, pubkeyEl, nextOn, currentPort, currentPubkey);
+    setWireguardSwitchVisual(sw, statusTextEl, portEl, pubkeyEl, nextOn, currentPort, currentPubkey); // optimistic flip, port/pubkey preserved
     const result = await fetchRouterApiWithStatus('/cgi-bin/api/wireguard', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
@@ -1225,6 +1231,9 @@ html.large-text .scr-title{font-size:1.15em;}
     sw.dataset.pending = 'false';
     sw.classList.remove('pending');
     if(result === null || !result.ok){
+      // revert — no false-success left showing after a real or network failure; port/pubkey
+      // are put back exactly as they were too, since setWireguardSwitchVisual always writes
+      // all three (switch, status text, port) together.
       setWireguardSwitchVisual(sw, statusTextEl, portEl, pubkeyEl, wasOn, currentPort, currentPubkey);
       const msg = (result && result.data && result.data.error) ? result.data.error
         : (result === null ? "Can't reach router — VPN server not changed." : ('Request failed (status '+result.status+') — VPN server not changed.'));
