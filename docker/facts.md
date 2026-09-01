@@ -830,3 +830,44 @@ uci commit firewall
 fw4 reload
 ```
 A rule with `src='lan'` and `src_mac` set but **no `dest` field** only lands in the `input_lan` nft chain (traffic addressed to the router itself) — confirmed by grepping the full `nft list ruleset` output for the test MAC and finding exactly one match, in `input_lan`, not `forward_lan`. That alone would NOT block a device's outbound/internet-bound traffic, only its ability to reach the router's own local services — the wrong rule for a "pause internet" feature. Adding `dest='wan'` makes fw4 emit the rule into `forward_lan` as `jump reject_to_wan` instead — the semantically correct "block this device's traffic toward the internet" rule. This VM's `wan` zone is (per Section 1/Task 7) topologically unreachable — there's no real WAN interface for traffic to actually flow through — but the *rule itself* is real, is generated correctly by real `fw4`/`uci firewall` config, and is the exact same shape Wave 1's port-forwarding work already established as this project's "prove the mechanism, not full end-to-end production traffic" bar. All three test rules were removed (`uci delete` + `fw4 reload`) after confirming their nft output — nothing was left committed to the VM's firewall config from this investigation.
+
+## 15. Wave 6 pre-investigation — real WireGuard client-peer management and real per-device QoS marking, both confirmed live
+
+Confirmed live (2026-09-01, VM already provisioned through Wave 5 — real `wg0` server up, real device-pause endpoint deployed), before writing the Wave 6 plan.
+
+**Re-assessment of the roadmap's original Wave 6 candidate list**: none of the six items named when Wave 6 was first sketched (Traffic & QoS as a whole screen, Multi-WAN & Failover, Parental Controls' profile-level hub, VPN Server OpenVPN, Connect a Laptop VPN, Weekly Usage) gained new feasibility from this investigation — the structural blockers documented in the design spec's Wave 6 section (no second WAN interface, no child↔device profile concept in OpenWrt, DPI-level app-detection claims, redundant-with-WireGuard OpenVPN backend) are still exactly as true as when Wave 5 was scoped, and none of them were re-investigated here since nothing about this VM's environment changed. Instead, reading Wave 5's own screens with fresh eyes surfaced two genuinely real, narrowly-scoped extensions that weren't part of the original Wave 6 list at all: WireGuard's own "Client devices" section (deliberately left static in Wave 5, `docker/provision/www/api/wireguard`'s header comment says so explicitly) and Traffic & QoS's "Priority devices" list (part of the still-fully-static `advqos` screen). Both reuse mechanisms Wave 5 already proved real, rather than introducing new categories of risk.
+
+**Real WireGuard client-peer creation, confirmed live — the `wireguard_wg0` uci section type**:
+```
+umask 077
+wg genkey > /tmp/client-priv.key
+wg pubkey < /tmp/client-priv.key > /tmp/client-pub.key
+CLIENT_PUB=$(cat /tmp/client-pub.key)
+uci add network wireguard_wg0
+uci set network.@wireguard_wg0[-1].public_key="$CLIENT_PUB"
+uci set network.@wireguard_wg0[-1].allowed_ips='10.9.0.2/32'
+uci set network.@wireguard_wg0[-1].route_allowed_ips='1'
+uci commit network
+ifdown wg0; ifup wg0
+```
+`wg show wg0` afterward shows a real, genuinely-configured peer (`peer: <pubkey> / allowed ips: 10.9.0.2/32`) — this is the real netifd-native way to add a WireGuard peer to an existing `proto=wireguard` interface, a natural continuation of Wave 5's own `network.wg0` setup, not a new mechanism.
+
+**Per-peer `disabled` option genuinely works, confirmed live both directions** — `uci set network.@wireguard_wg0[N].disabled='1'` + `ifdown wg0; ifup wg0` makes that peer genuinely disappear from `wg show wg0`'s output (0 peers shown); `disabled='0'` + reload brings it back with the exact same public key. This is the real mechanism for a per-client on/off switch, mirroring `network.wg0.disabled` itself (the interface-level toggle Wave 5's hero switch already uses) at the peer level.
+
+**No real end-to-end tunnel connectivity was attempted or is planned for Wave 6**: `docker-compose.yml`'s current `ports:` mapping only exposes 8081 (HTTP) and 2223 (SSH) — WireGuard's UDP 51820 is not mapped to the host, so an actual external client couldn't reach this VM's `wg0` today. Opening that port and installing/testing a real WireGuard client on the host machine was considered and deliberately not pursued for this wave — it's a meaningfully bigger, separate scope (host-side client tooling, a docker-compose port-mapping change, and a live tunnel data-flow test) for marginal proof value beyond what this project's established "prove the mechanism, not full external reachability" bar already requires (the same bar every WAN-adjacent feature in this project has used since Wave 1's port-forwarding). Real keys, real uci state, real `wg show` peer visibility, and a real per-peer enable/disable toggle are enough to clear that bar, consistent with precedent.
+
+**Real per-device QoS traffic marking, confirmed live — `uci firewall`'s native `MARK` target**, no new packages needed (`tc`/SQM were checked again and are still not installed by default, matching §13's original finding, but turned out to be unnecessary for this slice — see below):
+```
+uci add firewall rule
+uci set firewall.@rule[-1].name='<name>'
+uci set firewall.@rule[-1].src='lan'
+uci set firewall.@rule[-1].src_mac='<mac>'
+uci set firewall.@rule[-1].dest='wan'
+uci set firewall.@rule[-1].target='MARK'
+uci set firewall.@rule[-1].set_mark='0x2a'
+uci commit firewall
+fw4 reload
+```
+Confirmed the resulting nft output lands in the correct chain depending on `dest`, exactly mirroring §14's device-pause finding: **without** `dest='wan'`, the MARK rule lands in `mangle_input` (hooked at `input` — only traffic addressed to the router itself gets marked, not what a "priority device" feature needs); **with** `dest='wan'`, it correctly lands in `mangle_forward` (hooked at `forward` — the device's actual routed/forwarded traffic gets marked, matching both TCP and UDP automatically, no separate rule needed per protocol). This is the same `src=lan, dest=wan` shape §14 already established as correct for a per-device rule, just with `target=MARK`/`set_mark` instead of `target=REJECT` — a genuinely new but low-risk variation on an already-proven pattern, real uci/fw4-managed state (survives any other `fw4 reload` triggered elsewhere in the app, unlike a raw nft rule would).
+
+**Scoping implications**: Traffic & QoS's "Priority devices" list (`.adv-row` entries, "+ Add priority device" button, no per-row remove/delete affordance in the mockup — matching Network & VLANs' precedent of a real, add-only-in-the-UI list rather than Firewall & Ports' full add+delete) can become real: add a device → real MARK rule created; list reads real state. The screen's "Gaming priority"/"Video call priority" toggles stay static (no single real config item either one would toggle — real QoS priority is normally tied to specific ports/protocols the mockup doesn't specify) and "Bandwidth used today" stays static (still needs real substantial traffic volume to be meaningful, per §13's original reasoning, unchanged). WireGuard's "Client devices" list and "+ Add client (generates QR code)" can become real for add+list+per-row-toggle (no delete affordance in the mockup either); QR-code generation itself, AmneziaWG, Site-to-site, third-party-VPN device routing, and the measured-throughput stat stay static, per Wave 5's own already-documented scope note.
