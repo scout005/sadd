@@ -65,7 +65,23 @@ id=$(find_one_expired_id)
 while [ -n "$id" ]; do
   paused_until=$(uci -q get "firewall.${id}.paused_until")
   logger -t devpause-sweep "removing expired pause: firewall.${id} (paused_until=${paused_until}, now=${NOW})"
-  uci -q delete "firewall.${id}"
+  # Unlike the old batched version (which iterated a fixed, pre-collected list
+  # once, so a failing delete just left that one entry for next tick — always
+  # bounded), this loop re-derives `id` from a FRESH scan after every delete
+  # (see the header comment on why that's required for correctness). If a
+  # delete were to fail without actually removing the section (a persistently
+  # read-only overlay, a stuck uci lock, ...), a fresh scan would keep
+  # re-finding that same still-expired id forever — an actual infinite loop
+  # this cron invocation would never return from. Checking the exit status and
+  # breaking out (rather than looping to another fresh scan) caps that: the
+  # rest of this tick's genuinely-removable rules were already handled above,
+  # and the stuck one is safely retried on the NEXT minute's tick instead —
+  # same "bounded, self-healing, never data loss" property the old code had,
+  # restored for the failure case the rewrite otherwise would have lost.
+  if ! uci -q delete "firewall.${id}"; then
+    logger -t devpause-sweep "ERROR: failed to delete firewall.${id} — leaving it for the next sweep tick rather than retrying it forever this tick"
+    break
+  fi
   CHANGED=1
   id=$(find_one_expired_id)
 done
