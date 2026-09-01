@@ -18,8 +18,13 @@
 -- === Rule shape ===
 -- Same src=lan/dest=wan REJECT shape device-pause already established
 -- (docker/facts.md Section 14) for "block this device's outbound traffic,
--- not just its access to the router itself" — confirmed correct again here,
--- unchanged.
+-- not just its access to the router itself" — including device-pause's own
+-- proto='all' (code review finding, fixed before this endpoint's first
+-- release: the original version of this file omitted proto, which per
+-- facts.md Section 15's own finding for a similarly proto-less rule likely
+-- defaults to matching only tcp+udp, silently leaving ICMP and everything
+-- else unblocked during Bedtime — the opposite of "unchanged parity" this
+-- comment used to (incorrectly) claim).
 --
 -- === Timezone honesty — same disclosure as bedtime-sweep.sh ===
 -- This VM has no configured timezone (confirmed live, docker/facts.md
@@ -51,10 +56,26 @@
 --
 -- === Known shell gotcha this Lua file does NOT hit ===
 -- bedtime-sweep.sh's header comment documents a real busybox-ash arithmetic
--- gotcha with zero-padded `date -u +%H` output. This endpoint reads the
--- hour via Lua's own os.date/tonumber (not a shell arithmetic expression),
--- which has no equivalent octal-parsing pitfall — tonumber("08") in Lua
--- correctly returns 8, confirmed live before shipping this file.
+-- gotcha with zero-padded `date -u +%H` output. This endpoint reads the hour
+-- via os.date("!*t").hour, which Lua already returns as a real number, not a
+-- zero-padded string — there's no shell arithmetic expression and no
+-- tonumber() call in this path at all, so the octal-parsing pitfall
+-- bedtime-sweep.sh works around simply doesn't apply here.
+--
+-- === Staying in sync with a concurrently-running sweep ===
+-- Unlike every other write endpoint in this directory, this one's
+-- correctness depends on staying in sync with a SEPARATE, independently
+-- scheduled process (bedtime-sweep.sh, cron every 5 minutes) that
+-- legitimately mutates the exact same section's `enabled` option this
+-- endpoint also writes. uci's uncommitted changes are visible to any
+-- process reading via `uci show`/`uci get` (not process-isolated), and
+-- bedtime-sweep.sh's own `uci commit firewall` commits the ENTIRE firewall
+-- delta, not just its own change — so a sweep tick landing between this
+-- endpoint's readback and its own `uci commit` could commit a DIFFERENT
+-- `enabled` value than what this endpoint computed locally (code review
+-- finding). Both the create path and the delete path therefore do one final
+-- fresh read AFTER their own `uci commit firewall`, and report that
+-- observed value rather than a pre-commit local variable.
 
 local function run(cmd)
   local p = io.popen(cmd .. " 2>/dev/null")
@@ -242,14 +263,17 @@ elseif method == "POST" then
   else
     local rule_name = mac_to_rule_name(mac)
     local want_enabled = enabled_req == "true"
-    local existing_id = find_bedtime_rule(rule_name)
+    -- Minor code review fix: capture both return values on this one lookup
+    -- rather than calling find_bedtime_rule(rule_name) a second time inside
+    -- the `if existing_id then` branch below (each call spawns a fresh `uci
+    -- show firewall` process).
+    local existing_id, existing_fields = find_bedtime_rule(rule_name)
 
     if want_enabled then
       if existing_id then
         -- Idempotent: schedule already configured. Report its real current state.
-        local _, fields = find_bedtime_rule(rule_name)
         send_headers(200)
-        print(string.format('{"ok":true,"enabled":true,"active":%s}', fields.enabled == "1" and "true" or "false"))
+        print(string.format('{"ok":true,"enabled":true,"active":%s}', existing_fields.enabled == "1" and "true" or "false"))
       else
         local section_id = mac_to_section_id(mac)
         local active_now = currently_in_window()
@@ -274,6 +298,7 @@ elseif method == "POST" then
           run("uci set firewall." .. section_id .. ".src_mac=" .. shell_quote(mac))
           run("uci set firewall." .. section_id .. ".dest=" .. shell_quote("wan"))
           run("uci set firewall." .. section_id .. ".target=" .. shell_quote("REJECT"))
+          run("uci set firewall." .. section_id .. ".proto=" .. shell_quote("all"))
           run("uci set firewall." .. section_id .. ".enabled=" .. shell_quote(active_now and "1" or "0"))
         end
 
@@ -282,7 +307,7 @@ elseif method == "POST" then
           local order, all_fields = list_bedtime_sections()
           local f = all_fields[section_id]
           readback_ok = f and f.src_mac == mac and f.dest == "wan" and f.target == "REJECT"
-            and f.enabled == (active_now and "1" or "0")
+            and f.proto == "all" and f.enabled == (active_now and "1" or "0")
           if readback_ok then
             local dup_count = 0
             for _, id2 in ipairs(order) do
@@ -304,19 +329,45 @@ elseif method == "POST" then
         else
           run("uci commit firewall")
           run("fw4 reload")
+          -- Code review finding: report the value actually committed, not
+          -- the pre-commit `active_now` local — a concurrently-running
+          -- bedtime-sweep.sh tick can legitimately change this exact
+          -- section's `enabled` option between our own readback and our own
+          -- `uci commit firewall` (see header comment). One final fresh read
+          -- after commit is the only way this response can't lie about the
+          -- real committed state.
+          local _, final_fields = find_bedtime_rule(rule_name)
+          local final_active = final_fields and final_fields.enabled == "1"
           send_headers(200)
-          print(string.format('{"ok":true,"enabled":true,"active":%s}', active_now and "true" or "false"))
+          print(string.format('{"ok":true,"enabled":true,"active":%s}', final_active and "true" or "false"))
         end
       end
     else
       -- want_enabled == false: remove the schedule if present. Idempotent no-op if absent.
-      if existing_id then
+      if not existing_id then
+        send_headers(200)
+        print('{"ok":true,"enabled":false,"active":false}')
+      else
         run("uci -q delete firewall." .. shell_quote(existing_id))
         run("uci commit firewall")
         run("fw4 reload")
+        -- Code review finding: run() discards `uci -q delete`'s exit status,
+        -- so a failed delete (lock contention, transient uci error) was
+        -- previously indistinguishable from success — this endpoint would
+        -- unconditionally report {"enabled":false,...} even if the rule was
+        -- still sitting there fully committed and possibly still actively
+        -- blocking the device. A minimal readback closes that gap: if the
+        -- rule is still findable after the delete+commit+reload sequence,
+        -- report a real 500 instead of a false 200 success.
+        local still_there = find_bedtime_rule(rule_name)
+        if still_there then
+          send_headers(500)
+          print('{"ok":false,"error":"failed to verify the Bedtime rule was removed"}')
+        else
+          send_headers(200)
+          print('{"ok":true,"enabled":false,"active":false}')
+        end
       end
-      send_headers(200)
-      print('{"ok":true,"enabled":false,"active":false}')
     end
   end
 
