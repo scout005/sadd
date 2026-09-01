@@ -200,7 +200,30 @@ bash docker/provision/08-provision-wifi-api.sh
 #    that uci claims it is.
 bash docker/provision/09-provision-adblock-api.sh
 
-# 10. Verify.
+# 10. Create the 4 missing baseline VLAN interfaces (this VM already has
+#     network.lan = 192.168.1.0/24 from a stock boot; the demo VLANs shown
+#     in sadd-website.html's screens['advnetwork'] — Kids/192.168.2.0/24,
+#     IoT-Smart-Home/192.168.3.0/24, Guests/192.168.4.0/24,
+#     Quarantine/192.168.5.0/24 — do not exist yet; see docker/facts.md
+#     Section 12) via real `uci network` interface sections
+#     (proto=static, device=br-lan.<2|3|4|5>, matching ipaddr/netmask) and
+#     `/etc/init.d/network reload`, and deploy the /api/vlans endpoint
+#     (real UCI + kernel-backed name/subnet/active state for the Network &
+#     VLANs screen's VLAN list) and verify it responds with a JSON array of
+#     all 5 networks. Idempotent AND self-healing, same two-layer pattern
+#     as steps 8/9 (uci-completeness readback, revert+recreate on
+#     incompleteness) PLUS a second, kernel-level layer this step alone
+#     needs: after `network reload`, each `br-lan.N` device is checked to
+#     genuinely show the `UP` flag in `ip link show` — not just that `uci`
+#     claims the section is correct — since a real kernel VLAN
+#     sub-interface, not just inert config, is what this step actually
+#     creates (confirmed live in docker/facts.md Section 12: `ip link show`
+#     shows a genuine, `UP`, `br-lan.2@br-lan`-style 802.1q interface). A
+#     device found not up is handled the same revert-and-retry-once way as
+#     an incomplete uci section, never left silently broken.
+bash docker/provision/10-provision-vlans-api.sh
+
+# 11. Verify.
 curl -s http://localhost:8081/cgi-bin/api/ping     # -> {"ok":true}
 curl -sI http://localhost:8081/cgi-bin/api/ping    # -> Content-Type: application/json among the headers
 curl -sI http://localhost:8081/                    # -> 200 OK, serving sadd-website.html
@@ -211,6 +234,7 @@ curl -s http://localhost:8081/cgi-bin/api/system-info  # -> JSON object of real 
 curl -s http://localhost:8081/cgi-bin/api/logs  # -> JSON array (newest-first, capped at 30) of real logread lines, e.g. [{"timestamp":"Mon Aug 31 15:18:55 2026","message":"authpriv.info dropbear[2232]: Exit (root) from <192.168.1.2:60990>: Disconnect received"}, ...]
 curl -s http://localhost:8081/cgi-bin/api/wifi  # -> JSON object of real UCI wireless state, e.g. {"ssid":"Smith Family","guestEnabled":false}
 curl -s http://localhost:8081/cgi-bin/api/adblock  # -> JSON object of real dnsmasq-blocklist state, e.g. {"enabled":true,"blockedThisWeek":4} — blockedThisWeek increases by exactly 1 per subsequent real blocked lookup (e.g. `ssh root@localhost -p 2223 nslookup doubleclick.net 127.0.0.1`), confirmed live
+curl -s http://localhost:8081/cgi-bin/api/vlans  # -> JSON array of all 5 real networks, e.g. [{"name":"Main Network","subnet":"192.168.1.0/24","active":true},{"name":"Kids","subnet":"192.168.2.0/24","active":true},{"name":"IoT / Smart Home","subnet":"192.168.3.0/24","active":true},{"name":"Guests","subnet":"192.168.4.0/24","active":true},{"name":"Quarantine","subnet":"192.168.5.0/24","active":true}] — `active` reflects genuinely live kernel state: `ssh root@localhost -p 2223 ip link set br-lan.2 down` flips Kids' `active` to `false` immediately, confirmed live
 ```
 
 **Step 3 in detail — overwriting the stock landing page is intentional:**
@@ -464,6 +488,78 @@ specifically, as a sibling of `luci`, not a replacement for it.
   Graceful degradation: a failed `uci get` or `logread` degrades to
   `enabled:false` / `blockedThisWeek:0` rather than crashing or emitting
   malformed JSON.
+- `docker/provision/10-provision-vlans-api.sh` — same shape as
+  `08-provision-wifi-api.sh`/`09-provision-adblock-api.sh`: (1) creates the
+  4 missing baseline VLAN `network` interface sections on the VM over SSH
+  (this VM already has `network.lan` = 192.168.1.0/24 from a stock boot —
+  see `docker/facts.md` Section 3 — but no config at all for the other 4
+  demo VLANs shown in `sadd-website.html`'s `screens['advnetwork']`; see
+  `docker/facts.md` Section 12 for the confirmed live sequence this script
+  uses unmodified: `proto=static`, `device=br-lan.<N>`, matching
+  `ipaddr`/`netmask`, `uci commit network`, `/etc/init.d/network reload`);
+  (2) copies (and chmods, and curl-verifies)
+  `docker/provision/www/api/vlans` onto the VM's `/www/cgi-bin/api/vlans`.
+  VLAN id mapping chosen (matches each subnet's third octet, for
+  readability): `kids`→id 2/`br-lan.2`/192.168.2.1, `iot`→id
+  3/`br-lan.3`/192.168.3.1, `guests`→id 4/`br-lan.4`/192.168.4.1,
+  `quarantine`→id 5/`br-lan.5`/192.168.5.1. Idempotent AND self-healing,
+  with a SECOND verification layer `08`/`09` didn't need: (a)
+  uci-completeness — each section is checked for every expected field via
+  readback, not mere existence, same revert-and-recreate-on-incompleteness
+  discipline as `08`/`09`; (b) kernel-liveness — after `network reload`,
+  each `br-lan.N` device is independently checked to genuinely show the
+  `UP` flag in `ip link show <device>` (not just that `uci` claims the
+  section is correct), since this step is the first one in this directory
+  that creates a real, kernel-verifiable interface, not just config/file
+  state (confirmed live in `docker/facts.md` Section 12: a genuine, `UP`,
+  802.1q `br-lan.2@br-lan`-style sub-interface). A device found not up
+  after reload is handled the same revert+recreate+reload-once-more way as
+  an incomplete uci section, never left silently broken. Confirmed
+  idempotent live by running it twice in a row against an
+  already-configured VM (second run skips all 4 sections' creation,
+  confirms all 4 devices already up with no reload needed, and still
+  passes the endpoint redeploy/verify) and confirmed the kernel-liveness
+  check reflects genuinely live state (not just post-creation): manually
+  running `ip link set br-lan.2 down` over SSH and then re-running this
+  script detects the down interface, brings it back up via the
+  revert+recreate+reload retry path, confirmed live.
+- `docker/provision/www/api/vlans` — the tracked source of truth for the
+  `/api/vlans` endpoint: `GET` returns
+  `[{"name","subnet","active"}, ...]` for a fixed, known list of all 5
+  networks (`lan`, `kids`, `iot`, `guests`, `quarantine`), in the same
+  order as the mockup's VLAN list. `name` is a small hardcoded
+  section-name → human-label map (uci section identifiers can't contain
+  spaces/slashes, so there's no uci field to derive "IoT / Smart Home"
+  from). `subnet` is computed, not hardcoded: `network.<name>.ipaddr` (a
+  host address, e.g. `192.168.2.1`) AND `network.<name>.netmask` (e.g.
+  `255.255.255.0`), via a hand-rolled 8-bit bitwise AND (Lua 5.1 on this VM
+  has no native bitwise ops/`bit32`) applied octet-by-octet to get the real
+  network address, plus a real popcount of the netmask's set bits for the
+  CIDR prefix length (not an assumed `/24`) — formatted as
+  `<network-address>/<prefix-len>` (e.g. `192.168.2.0/24`), confirmed live
+  against all 5 real networks. `active` is real kernel interface state via
+  `ip link show <device>` (`lan`→`br-lan`, the 4 VLANs→`br-lan.<N>`),
+  checking for the exact `UP` flag token in the device's flag list —
+  chosen over `ubus call network.interface.<name> status` (which also
+  carries a real `up` boolean) because ubus's output is a much larger
+  nested JSON object that would need a real parser this VM doesn't have
+  (no lua-cjson), while `ip link show`'s flag list is one plain-text line
+  a single Lua pattern parses robustly. Confirmed live that `active`
+  reflects genuinely live state, not a cached value: manually bringing
+  `br-lan.2` down over SSH and re-curling this endpoint immediately flips
+  Kids' `active` to `false`; bringing it back up flips it back to `true`.
+  Deliberately excludes a device-count field — out of scope per the plan
+  (would need a real per-VLAN DHCP service, a materially bigger
+  undertaking; this VM's dnsmasq still serves one shared lease pool off
+  `lan`/`br-lan`) — the frontend keeps a static demo number for that
+  column instead. Graceful degradation: any network whose `ipaddr`/
+  `netmask` can't be read, or whose `ip link show` fails, still gets an
+  entry in the response (the array is always exactly 5 entries), just with
+  `subnet` falling back to `""` and/or `active` falling back to `false`
+  rather than crashing or emitting malformed JSON. Hand-builds its
+  response JSON (with the same defensive escaper as every other endpoint
+  in this directory) rather than installing `lua-cjson`, for the same
+  no-outbound-internet reason.
 
 ### Real connectivity test — what it actually means in this topology
 

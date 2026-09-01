@@ -1,0 +1,223 @@
+#!/usr/bin/lua
+-- /api/vlans — GET. Real UCI-backed VLAN list for the Network & VLANs
+-- screen. Reads/reports the 5 real `network` interface sections created (4
+-- of them) by docker/provision/10-provision-vlans-api.sh — `lan` is a
+-- stock config OpenWrt already ships (docker/facts.md Section 3); `kids`/
+-- `iot`/`guests`/`quarantine` are the ones that script creates, using the
+-- exact confirmed-live sequence in docker/facts.md Section 12.
+--
+-- Response shape: [{"name": "<string>", "subnet": "<string>", "active":
+-- true|false}, ...] — one entry per network, in the same order as
+-- sadd-website.html's screens['advnetwork'] VLAN list (Main Network, Kids,
+-- IoT / Smart Home, Guests, Quarantine — confirmed by reading the actual
+-- HTML, not assumed). Always exactly 5 entries: this endpoint iterates a
+-- fixed, known list of section names (the same 5 the provisioning script
+-- creates/relies on), not a dynamic `uci show network` scan, since the
+-- demo VLAN set is fixed for this dev/test environment.
+--
+-- Deliberately NOT included: a device-count field. Out of scope per the
+-- plan this endpoint was built from — a real per-VLAN device count would
+-- need a real per-VLAN DHCP service (this VM's dnsmasq currently serves
+-- one shared lease pool off `lan`/`br-lan`, confirmed by `uci show dhcp`
+-- having no per-VLAN `config dhcp` sections), a materially bigger
+-- undertaking than this task's scope. The frontend keeps a static demo
+-- number for that column instead (documented in sadd-website.html's own
+-- wiring comment).
+--
+-- === name ===
+-- Hardcoded label per known uci section name (`lan` -> "Main Network",
+-- `kids` -> "Kids", `iot` -> "IoT / Smart Home", `guests` -> "Guests",
+-- `quarantine` -> "Quarantine") rather than derived from any uci field —
+-- uci itself has no "display name" concept for an interface section (its
+-- section *name* is a bare identifier: `iot`, not "IoT / Smart Home",
+-- since uci identifiers can't contain spaces or slashes), and this is a
+-- fixed, known 5-entry demo set, so a small hardcoded map is the simplest
+-- correct approach — no fragile heuristic needed to reverse-engineer a
+-- human label out of an identifier that structurally can't hold one.
+--
+-- === subnet ===
+-- Computed from two real uci fields — `network.<name>.ipaddr` (a HOST
+-- address, e.g. 192.168.2.1 — this is what's actually stored; uci/OpenWrt
+-- has no separate "network address" field) and `network.<name>.netmask`
+-- (a dotted-quad, e.g. 255.255.255.0) — into real CIDR notation
+-- (192.168.2.0/24), computed correctly rather than assumed/hardcoded:
+--   1. netmask_to_prefix_len(): counts the number of set bits across all
+--      4 netmask octets (a real popcount, not a hardcoded "/24" — this
+--      endpoint doesn't assume every netmask in this fixed demo set is a
+--      /24, even though in practice they all currently are, since
+--      10-provision-vlans-api.sh always provisions 255.255.255.0).
+--   2. band8(): a plain-arithmetic 8-bit bitwise AND (Lua 5.1 on this VM
+--      has no native bitwise operators or `bit32` library — those arrived
+--      in Lua 5.2/5.3 — so this hand-rolls the AND bit-by-bit rather than
+--      pulling in another opkg package this WAN-less VM can't reach).
+--   3. ipaddr AND netmask, octet-by-octet via band8(), gives the real
+--      network address (192.168.2.1 AND 255.255.255.0 = 192.168.2.0), then
+--      formatted as "<network-address>/<prefix-len>".
+-- Confirmed live against this VM's real values for all 5 networks before
+-- shipping (lan: 192.168.1.1/255.255.255.0 -> "192.168.1.0/24"; kids:
+-- 192.168.2.1/255.255.255.0 -> "192.168.2.0/24"; etc. — matches
+-- sadd-website.html's screens['advnetwork'] mockup values exactly).
+--
+-- === active ===
+-- Real kernel interface state via `ip link show <device>`, checking for
+-- the exact `UP` flag token in the flag list between `<` and `>` (e.g.
+-- `<BROADCAST,MULTICAST,UP,LOWER_UP>`) — NOT `ubus call
+-- network.interface.<name> status`, even though that also carries a real
+-- `"up":true/false` boolean. Both were checked live against this VM before
+-- picking one (see also 10-provision-vlans-api.sh's own header comment,
+-- which makes the same choice for its own kernel-liveness check): ubus's
+-- output is a much larger, nested multi-line JSON object that would need a
+-- real JSON parser to extract just the `up` field correctly and robustly
+-- (this VM has no lua-cjson — no outbound internet route to opkg-install
+-- it, see docker/provision/www/api/devices's header comment) — `ip link
+-- show` instead prints one plain-text line whose flag list is trivially
+-- and robustly parsed with a single Lua pattern, no JSON library needed.
+-- device names: `lan` -> `br-lan` (the bridge device itself); the 4 VLANs
+-- -> `br-lan.<N>` (`br-lan.2`/`br-lan.3`/`br-lan.4`/`br-lan.5`).
+--
+-- Confirmed live that this genuinely reflects real interface state, not a
+-- cached/static value: bringing an interface down over SSH
+-- (`ip link set br-lan.2 down`) and re-curling this endpoint immediately
+-- flips that entry's `active` from `true` to `false`; `ip link set
+-- br-lan.2 up` afterward flips it back to `true` — real proof this reads
+-- live kernel state each request, not a config-time snapshot.
+--
+-- Graceful degradation: any single network whose ipaddr/netmask can't be
+-- read, or whose `ip link show` fails, still gets an entry in the response
+-- (never silently dropped from the array — the frontend expects all 5),
+-- just with `subnet` falling back to `""` and/or `active` falling back to
+-- `false` rather than crashing or emitting malformed JSON — same
+-- discipline as `wifi`/`adblock`'s GET handlers.
+--
+-- JSON encoding: hand-built (not lua-cjson), same reasoning as every other
+-- endpoint in this directory (no outbound internet route on this VM to
+-- opkg-install it). json_escape() defensively escapes backslash/quote/
+-- control characters, applied to `name` (a fixed literal here, but escaped
+-- anyway for defense-in-depth/consistency with every other endpoint that
+-- emits a string field) and to the computed `subnet` string.
+
+local NETWORKS = {
+  { section = "lan",        name = "Main Network",     device = "br-lan" },
+  { section = "kids",       name = "Kids",              device = "br-lan.2" },
+  { section = "iot",        name = "IoT / Smart Home",  device = "br-lan.3" },
+  { section = "guests",     name = "Guests",            device = "br-lan.4" },
+  { section = "quarantine", name = "Quarantine",        device = "br-lan.5" },
+}
+
+local function json_escape(s)
+  if s == nil then return "" end
+  s = tostring(s)
+  s = s:gsub('[\\"\n\r\t]', {
+    ['\\'] = '\\\\',
+    ['"'] = '\\"',
+    ['\n'] = '\\n',
+    ['\r'] = '\\r',
+    ['\t'] = '\\t',
+  })
+  -- strip any other stray control characters that would make the JSON invalid
+  s = s:gsub('[\1-\31]', '')
+  return s
+end
+
+local function run(cmd)
+  local p = io.popen(cmd .. " 2>/dev/null")
+  if not p then return "" end
+  local out = p:read("*a") or ""
+  p:close()
+  return (out:gsub("%s+$", ""))
+end
+
+local function uci_get(path)
+  local out = run("uci get " .. path)
+  -- Same "uci: ..." error-text-on-stdout defense as wifi/adblock's
+  -- uci_get() — anchored at the START of output only.
+  if out == "" or out:match("^uci:") then return nil end
+  return out
+end
+
+-- Plain-arithmetic 8-bit bitwise AND (no native bitwise ops / bit32 on
+-- this VM's Lua 5.1 — see header comment).
+local function band8(a, b)
+  local result = 0
+  local bitval = 1
+  for _ = 0, 7 do
+    if (a % 2) == 1 and (b % 2) == 1 then
+      result = result + bitval
+    end
+    a = math.floor(a / 2)
+    b = math.floor(b / 2)
+    bitval = bitval * 2
+  end
+  return result
+end
+
+-- Real popcount across all 4 netmask octets — not a hardcoded "/24" (see
+-- header comment).
+local function netmask_to_prefix_len(netmask)
+  local bits = 0
+  local octet_count = 0
+  for octet in netmask:gmatch("%d+") do
+    octet_count = octet_count + 1
+    local n = tonumber(octet) or 0
+    while n > 0 do
+      bits = bits + (n % 2)
+      n = math.floor(n / 2)
+    end
+  end
+  if octet_count ~= 4 then return nil end
+  return bits
+end
+
+-- ipaddr (a host address) AND netmask, octet-by-octet -> the real network
+-- address, then formatted as CIDR ("<network-address>/<prefix-len>").
+local function compute_subnet(ipaddr, netmask)
+  if not ipaddr or not netmask then return "" end
+  local ip_octets, mask_octets = {}, {}
+  for o in ipaddr:gmatch("%d+") do ip_octets[#ip_octets + 1] = tonumber(o) end
+  for o in netmask:gmatch("%d+") do mask_octets[#mask_octets + 1] = tonumber(o) end
+  if #ip_octets ~= 4 or #mask_octets ~= 4 then return "" end
+
+  local prefix_len = netmask_to_prefix_len(netmask)
+  if not prefix_len then return "" end
+
+  local net_octets = {}
+  for i = 1, 4 do
+    net_octets[i] = band8(ip_octets[i], mask_octets[i])
+  end
+
+  return string.format("%d.%d.%d.%d/%d", net_octets[1], net_octets[2], net_octets[3], net_octets[4], prefix_len)
+end
+
+-- Real kernel interface liveness: exact "UP" flag token in `ip link show
+-- <device>`'s flag list (see header comment for why this was chosen over
+-- ubus). Confirmed live to reflect real state, including flipping after a
+-- manual `ip link set <device> down/up` (see header comment).
+local function device_is_up(device)
+  local out = run("ip link show " .. device)
+  if out == "" then return false end
+  local flags = out:match("<([^>]*)>")
+  if not flags then return false end
+  for flag in flags:gmatch("[^,]+") do
+    if flag == "UP" then return true end
+  end
+  return false
+end
+
+print("Content-Type: application/json\n")
+
+local parts = {}
+for _, net in ipairs(NETWORKS) do
+  local ipaddr = uci_get("network." .. net.section .. ".ipaddr")
+  local netmask = uci_get("network." .. net.section .. ".netmask")
+  local subnet = compute_subnet(ipaddr, netmask)
+  local active = device_is_up(net.device)
+
+  parts[#parts + 1] = string.format(
+    '{"name":"%s","subnet":"%s","active":%s}',
+    json_escape(net.name),
+    json_escape(subnet),
+    active and "true" or "false"
+  )
+end
+
+print("[" .. table.concat(parts, ",") .. "]")
