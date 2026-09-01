@@ -695,3 +695,62 @@ backed by genuinely created, genuinely `ip link`-visible interfaces, not just `u
 strings — a stronger "real" bar than originally assumed, though still config-level
 in the sense that no distinct physical port/hardware trunk exists to test end-to-end
 inter-VLAN traffic isolation against.
+
+## 13. Wave 5 pre-investigation — feasibility survey across all 10 remaining Group-1 roadmap items, confirmed live
+
+Confirmed live (2026-09-01, before writing the Wave 5 plan). This VM was rebooted fresh via `docker compose up -d` (no state carried over from Wave 4's investigation session).
+
+**`tc` is NOT installed and is a separate package**, unlike `ip` (already present):
+```
+$ ssh ... "which tc"
+ash: tc: not found
+```
+Host has internet access and confirms an exact match for this target/release (`ip-full_6.3.0-1_x86_64.ipk`, `sqm-scripts_1.6.0-1_all.ipk` under `.../23.05.5/packages/x86_64/{base,packages}/`), so `tc`-based QoS is *technically* installable via the established host-download-then-scp pattern — but see the Traffic & QoS scoping note below on why this wave doesn't use it.
+
+**No wireless-driver-style blocker for WireGuard — kernel module version matches this VM's exact kernel build:**
+```
+$ ssh ... "uname -r"
+5.15.167
+$ curl -s https://downloads.openwrt.org/releases/23.05.5/targets/x86/64/packages/ | grep -io 'kmod-wireguard[^"]*\.ipk'
+kmod-wireguard_5.15.167-1_x86_64.ipk
+```
+The kmod's version string (`5.15.167`) is an exact match to `uname -r`, not just a close one — OpenWrt kmod packages are normally version-pinned to one specific kernel build, so a mismatch would mean "cannot install." This one matches exactly, meaning `kmod-wireguard` is very likely to insmod cleanly. `wireguard-tools_1.0.20210914-2_x86_64.ipk` (the userspace `wg`/`wg-quick` tools) is under `.../packages/x86_64/base/` (not `packages/` or `routing/` — worth remembering for the provisioning script's download URL). Both `.ipk`s are architecture `x86_64`, matching `DISTRIB_ARCH` — no other feed had a wireguard-tools match. Neither package has been downloaded/installed yet as of this writing — only their existence and version-match was confirmed from the host.
+
+**`nft` (fw4's backend) supports arbitrary counter objects, confirmed live:**
+```
+nft add table inet test5
+nft add chain inet test5 c
+nft add rule inet test5 c counter
+nft list table inet test5   # -> "counter packets 0 bytes 0"
+nft delete table inet test5
+```
+Real, incrementable byte/packet counters are available with no new packages — relevant to Traffic & QoS's "bandwidth used today" stat and a potential future Weekly Usage stat, if either is ever revisited.
+
+**`cron`'s init script silently refuses to start crond unless `/etc/crontabs/` already has at least one file — confirmed by reading `/etc/init.d/cron` directly:**
+```sh
+start_service() {
+	[ -z "$(ls /etc/crontabs/)" ] && return 1
+	...
+}
+```
+`/etc/init.d/cron start` returns exit 0 either way (the `return 1` only aborts `start_service`, procd still reports the overall init script call as successful), which makes the failure silent — running `/etc/init.d/cron start` against a stock fresh VM does NOT actually start `crond` (confirmed: `ps` showed no `crond` process afterward), and looks like it worked. **Implication for provisioning**: a script that wants a working cron must first create at least one file under `/etc/crontabs/` (e.g. `/etc/crontabs/root` with a comment line or a real entry) *before* calling `/etc/init.d/cron start`/`enable`, then verify via `ps` or `pgrep crond` that the daemon is actually up — not just trust the init script's exit code.
+
+**Mockup content survey (`sadd-website.html`'s `screens` object, read directly, not assumed) for all 10 remaining Group-1 roadmap items — this materially changed the wave's scope from the roadmap's title-only listing:**
+
+- **Per-Device Controls** (`devcontrols`) — a per-device detail screen (hardcoded to a demo device "Emma's iPhone" today) with: a `.timer-row` of `.timer-chip` buttons for "Pause internet" (15 min / 1 hr / Until tomorrow, no live countdown element in the markup), a `.switch`-based "Bedtime" toggle (School nights 9PM-7AM), a `.radio-card` group for "Content filter - this device" (Kid-safe / Teen / Off), and a static "Blocked apps - this device" list (TikTok/Instagram/YouTube/Roblox, Blocked/Allowed). Reached today only as a standalone demo screen, not linked from the real Devices list.
+- **Developer & API Access** (`advapi`) — API keys section (masked demo key, "Generate new API key" - a Sadd-cloud concept, no OpenWrt/UCI equivalent), Webhooks (static "Not configured"), Remote access: an `SSH access` `.switch` (currently rendered `off` in the markup even though this VM's dropbear is actually always running) plus a plain `<button class="btn btn-secondary">Rotate now</button>` next to "Rotate SSH key" / "Generates a new key and invalidates the old one immediately", and static Docker-containers/opkg informational text.
+- **VPN Server (WireGuard)** (`advwireguard`) — uses the established `.toggle-hero` + `.switch on` hero pattern (`<div class="th-main"><strong>WireGuard Server</strong><span>Running &middot; UDP port 51820</span></div><div class="switch on"></div>`, structurally identical to the About/Settings/Guest-Wi-Fi/Ad-Blocking hero rows this codebase already has a `syncFallbackNotice`-based pattern for) plus a `Connection details` block of `.tech-row`s (Protocol, Port, Public key, VPN subnet, Hostname), then Advanced toggles (persistent keepalive, redirect-all-client-traffic, full-LAN-access), a Client devices list with "Add client (generates QR code)", a measured-throughput stat, third-party-VPN device routing, Site-to-site, and an AmneziaWG section.
+- **VPN Server (OpenVPN)** (`advvpn`) — same shape as WireGuard's screen (protocol/port/cipher/auth-digest/subnet tech-rows, advanced toggles, client certificates list), explicitly framed in its own copy as the non-default alternate protocol ("The one-tap toggle in Remote Access uses WireGuard by default").
+- **Connect a Laptop (VPN)** (`laptopvpn`) — two client paths: an "Easy setup" path that references downloading a fictional "Sadd Connect" app (Windows/Mac) and signing in with a Sadd account, and a manual path ("Download your configuration file" -> `Download .ovpn` -> open in an OpenVPN-compatible app) - both feeding into a static `Server smith-family.saddvpn.com / Port 1194 (UDP)` details block.
+- **Traffic & QoS** (`advqos`) — Gaming-priority and Video-call-priority toggles, a "Priority devices" list (2 hardcoded demo devices), and a static "Bandwidth used today" breakdown by device given as fixed percentages (Living Room TV 41%, Leo's Xbox 26%, Everything else 33%) with no chart/real-time element.
+- **Multi-WAN & Failover** (`advwan`) — Primary (Fiber, 1000/500 Mbps, Connected) and Backup (Cellular, "Not configured") connections, auto-switch toggle, a Failover/Load-balance mode radio group, "Pin a device to one connection," and a static "Recent switch history" ("No failover events... stable for 30 days").
+- **Parental Controls** (`parental`, the profile-level hub) — per-child profile cards (Emma/Leo), then for the selected child: Bedtime toggle, "Pause now" (profile-wide, not per-device), a Homework-mode custom weekly schedule grid, a Content-filter radio group (Kid-safe/Teen/Off/Custom with 15 named categories), Safe Search toggle, a custom-blocked-sites list, a Blocked-apps list explicitly split into "Reliable" vs. "Best-effort" tiers ("Best-effort apps use traffic patterns that can change - we can't promise 100% blocking the way we can for Reliable ones"), and per-site Exceptions.
+- **Weekly Usage** (`usagereport`) — explicitly per-CHILD, not per-router: "Emma's Weekly Usage," a day-by-day screen-time breakdown for one calendar week, and a "Top apps & categories" list with real-looking per-app durations (YouTube 4h20m, Roblox 3h05m, etc.) plus a "Social media (blocked) 0m - filter working" line.
+- **Notifications** (`notifications`) — on direct inspection this is a pure notification-**preferences** panel (toggle groups for "Notify me for" urgency level, "New device joins," "Security threats blocked," "Child device tries a blocked site," "Network goes offline" (always-on, can't be turned off), an industry-wide-security-incident alert opt-in with static preview text, and a weekly "Network Health summary" email opt-in with static preview text) — there is no live notification feed/list anywhere in this screen's markup, and no push/email delivery system exists (or is in scope) to back any of it with real state.
+
+**Scoping implications drawn from the above** (see the Wave 5 plan for the full reasoning):
+- Per-Device Controls, Developer & API Access, and VPN Server (WireGuard) each have at least one slice that's genuinely backable with real VM state using patterns already established in this codebase (real firewall/nft state, the hero-toggle pattern, a real dropbear action) — these are Wave 5's scope.
+- Traffic & QoS's core content (the bandwidth-percentage breakdown) needs real, *substantial* per-device traffic to mean anything; this VM only ever carries trivial manual-test traffic, so a real number here would be technically real but not honestly representative. Deferred.
+- Multi-WAN & Failover requires a second real WAN-side interface, which this single-NIC VM structurally does not have and cannot gain without a docker/entrypoint.sh networking rework (a second tap device) — out of proportion for a wave. Deferred.
+- Parental Controls (profile-level), Weekly Usage, and most of VPN Server (WireGuard)'s own client-management/AmneziaWG/site-to-site sections, VPN Server (OpenVPN), and Connect a Laptop (VPN) all either depend on a child<->device "profile" concept that exists only in the fictional Sadd cloud app (not OpenWrt/UCI), or explicitly claim DPI-level per-app traffic detection ("Reliable" vs "Best-effort" blocking) this environment has no honest way to do, or reference a fictional client app that can't be made real regardless of VM state. Deferred/excluded.
+- Notifications turned out, on actually reading its markup, to have no live state to back at all — reclassified from a Wave 5 candidate to Group 2 (pure UI, no work needed), not merely deferred.
