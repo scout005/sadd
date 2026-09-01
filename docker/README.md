@@ -181,7 +181,26 @@ bash docker/provision/07-provision-logs-api.sh
 #    /api/firewall-rules endpoint.
 bash docker/provision/08-provision-wifi-api.sh
 
-# 9. Verify.
+# 9. Create a baseline DNS ad-blocklist (this VM has NO dnsmasq confdir/
+#    blocklist config at all on a fresh boot; see docker/facts.md Section 12)
+#    via dnsmasq's own `confdir` mechanism (no new opkg package needed) and
+#    deploy the /api/adblock endpoint (real dnsmasq-log-backed
+#    enabled/blockedThisWeek state for the Ad Blocking screen) and verify it
+#    responds with a JSON object. Idempotent AND self-healing, same pattern
+#    as step 8: the blocklist file's content is checked byte-for-byte
+#    (not just "does it exist") and both uci options are read back and
+#    compared against their expected values; an incomplete/stale config
+#    (e.g. left behind by a prior run, or a hand-edited file missing a
+#    domain) is reverted (`uci revert dhcp`) and recreated rather than left
+#    broken and silently skipped forever — same rollback-on-failure pattern
+#    as steps 5 and 8. Also runs a genuine functional check every time (not
+#    just after a fresh create): a real `nslookup doubleclick.net 127.0.0.1`
+#    over SSH, confirmed to resolve to `0.0.0.0` — real proof the
+#    confdir/logqueries/restart pipeline is actually in effect, not just
+#    that uci claims it is.
+bash docker/provision/09-provision-adblock-api.sh
+
+# 10. Verify.
 curl -s http://localhost:8081/cgi-bin/api/ping     # -> {"ok":true}
 curl -sI http://localhost:8081/cgi-bin/api/ping    # -> Content-Type: application/json among the headers
 curl -sI http://localhost:8081/                    # -> 200 OK, serving sadd-website.html
@@ -191,6 +210,7 @@ curl -s http://localhost:8081/cgi-bin/api/firewall-rules  # -> JSON array of cur
 curl -s http://localhost:8081/cgi-bin/api/system-info  # -> JSON object of real distro/hardware/uptime info, e.g. {"distribution":"OpenWrt","version":"23.05.5","revision":"r24106-10cc5fcd00","target":"x86/64","model":"QEMU Standard PC (i440FX + PIIX, 1996)","kernel":"5.15.167","uptime":117}
 curl -s http://localhost:8081/cgi-bin/api/logs  # -> JSON array (newest-first, capped at 30) of real logread lines, e.g. [{"timestamp":"Mon Aug 31 15:18:55 2026","message":"authpriv.info dropbear[2232]: Exit (root) from <192.168.1.2:60990>: Disconnect received"}, ...]
 curl -s http://localhost:8081/cgi-bin/api/wifi  # -> JSON object of real UCI wireless state, e.g. {"ssid":"Smith Family","guestEnabled":false}
+curl -s http://localhost:8081/cgi-bin/api/adblock  # -> JSON object of real dnsmasq-blocklist state, e.g. {"enabled":true,"blockedThisWeek":4} — blockedThisWeek increases by exactly 1 per subsequent real blocked lookup (e.g. `ssh root@localhost -p 2223 nslookup doubleclick.net 127.0.0.1`), confirmed live
 ```
 
 **Step 3 in detail — overwriting the stock landing page is intentional:**
@@ -378,6 +398,72 @@ specifically, as a sibling of `luci`, not a replacement for it.
   `guestEnabled` falls back to `false` (matching the mockup's static
   "Guest network: Off" default) rather than crashing or emitting malformed
   JSON.
+- `docker/provision/09-provision-adblock-api.sh` — same shape as
+  `08-provision-wifi-api.sh`: (1) creates a baseline DNS blocklist on the VM
+  over SSH (this VM has no dnsmasq `confdir`/blocklist config at all on a
+  fresh boot — see `docker/facts.md` Section 12 for the confirmed live
+  sequence this script uses unmodified: `mkdir -p
+  /etc/dnsmasq.blocklist.d`, an `address=/<domain>/0.0.0.0` line per demo
+  domain — `doubleclick.net`, `adservice.google.com`, `tracker.example.com`,
+  the exact three shown in `sadd-website.html`'s `screens['adblock']`
+  "This week" mini-log, confirmed by reading the actual HTML, not assumed —
+  `dhcp.@dnsmasq[0].confdir` and `dhcp.@dnsmasq[0].logqueries=1` via `uci`,
+  commit, `/etc/init.d/dnsmasq restart`); (2) copies (and chmods, and
+  curl-verifies) `docker/provision/www/api/adblock` onto the VM's
+  `/www/cgi-bin/api/adblock`. Idempotent and self-healing: the blocklist
+  file's content is compared byte-for-byte against the expected three lines
+  (not just "does the file exist") and both uci options are read back and
+  compared against their expected values — a config left behind by a
+  prior partial run, or hand-edited to drop a domain, is detected as
+  incomplete rather than silently trusted. When incomplete, uncommitted
+  `dhcp` changes are reverted (`uci revert dhcp`) and the whole config is
+  recreated from scratch, verified again, and only committed once complete
+  (one retry, then a loud failure with a revert) — same
+  verify-before-commit/revert-on-failure pattern as
+  `08-provision-wifi-api.sh` and `firewall-rules`' POST handler. Beyond the
+  uci/file readback, this script also runs a genuine functional check every
+  time it runs (not just after a fresh create): a real `nslookup
+  doubleclick.net 127.0.0.1` over SSH, confirmed to return `Address:
+  0.0.0.0` — real proof the confdir/logqueries/restart pipeline is actually
+  in effect, not just that uci claims it is. Confirmed idempotent live by
+  running it twice in a row against an already-configured VM (second run
+  skips config creation entirely, logs "already exists and is complete,
+  skipping", and still passes the functional nslookup check and endpoint
+  redeploy/verify) and by running it against a VM with a deliberately
+  stale/partial blocklist file (a leftover single-domain file from an
+  earlier manual test) — correctly detected as incomplete, reverted, and
+  recreated with the full three-domain content.
+- `docker/provision/www/api/adblock` — the tracked source of truth for the
+  `/api/adblock` endpoint: `GET` returns `{"enabled": <bool>,
+  "blockedThisWeek": <int>}`. `enabled` is whether `uci get
+  dhcp.@dnsmasq[0].confdir` currently equals the exact path
+  `09-provision-adblock-api.sh` provisions
+  (`/etc/dnsmasq.blocklist.d`) — checked live, not cached, so a
+  hand-reverted or repointed config is correctly reported as disabled.
+  `blockedThisWeek` counts real `logread` lines matching `config <domain>
+  is 0.0.0.0` for each of the three blocklisted domains — the real, live-
+  confirmed log signature `logqueries=1` produces for a blocked hit
+  (`docker/facts.md` Section 12), genuinely distinct from `config error is
+  REFUSED`, which is what every *other* lookup on this WAN-less VM shows
+  regardless of blocking. Unlike `logs` (`logread -l 30`, capped for a short
+  UI list), this endpoint runs plain `logread` with no line cap, so a count
+  isn't silently truncated by unrelated log noise (dropbear session lines,
+  etc.) crowding out older blocked-hit lines. Matching is a plain literal
+  substring search (`string.find(line, needle, 1, true)`) rather than a
+  `string.match` pattern, since the three domains are fixed known constants
+  with nothing to capture — deliberately simpler than `logs`/`system-info`'s
+  pattern-based field extraction, which both need capture groups for
+  genuinely variable content. **"This week" is aspirational, documented as
+  such in the code**: `logread`'s buffer is a small fixed-size ring, nowhere
+  near a full week's history, so this counts everything currently in that
+  buffer, not a true rolling 7-day count — real numbers, not guaranteed
+  complete-week coverage; real week-long persistence is explicitly out of
+  scope. Hand-builds its response JSON (no free-form string fields, so no
+  escaper needed) rather than installing `lua-cjson`, for the same
+  no-outbound-internet reason as every other endpoint in this directory.
+  Graceful degradation: a failed `uci get` or `logread` degrades to
+  `enabled:false` / `blockedThisWeek:0` rather than crashing or emitting
+  malformed JSON.
 
 ### Real connectivity test — what it actually means in this topology
 

@@ -1,0 +1,121 @@
+#!/usr/bin/lua
+-- /api/adblock — real dnsmasq-blocklist-backed status for the Ad Blocking
+-- screen. Reads the baseline config created by
+-- docker/provision/09-provision-adblock-api.sh (see that script and
+-- docker/facts.md Section 12 for the confirmed live investigation this
+-- endpoint is built on).
+--
+-- Response shape: {"enabled": true|false, "blockedThisWeek": <int>}
+--
+-- === enabled ===
+-- `uci get dhcp.@dnsmasq[0].confdir` currently equals the exact path the
+-- blocklist was provisioned at (/etc/dnsmasq.blocklist.d) -> true. Absent,
+-- unreadable, or pointed somewhere else -> false. This deliberately checks
+-- the *current* live value rather than a fixed boolean, so a config that's
+-- been hand-reverted or repointed elsewhere over SSH is correctly reported
+-- as disabled without needing this endpoint to change.
+--
+-- === blockedThisWeek ===
+-- Real count of `logread` lines matching the pattern `config <domain> is
+-- 0.0.0.0`, for each of the three domains the blocklist was provisioned
+-- with (doubleclick.net, adservice.google.com, tracker.example.com —
+-- confirmed live in docker/facts.md Section 12 to be dnsmasq's exact,
+-- distinct log signature for a blocked hit, thanks to
+-- dhcp.@dnsmasq[0].logqueries=1 being set by the provisioning script). This
+-- is a genuinely different signature from `config error is REFUSED`, which
+-- is what shows for literally every *other* lookup on this VM (there is no
+-- WAN here — see docker/facts.md — so nothing ever resolves successfully
+-- upstream; "blocked vs. not queried/not in our list" is the only
+-- meaningful comparison this environment can make, not "blocked vs.
+-- successfully resolved").
+--
+-- Data source: `logread` via io.popen, same shell-out approach as
+-- `system-info`'s `ubus call` and `logs`' `logread -l 30`. Unlike `logs`
+-- (which caps at 30 lines for a short "recent activity" UI list), this
+-- endpoint intentionally does NOT pass `-l N` — it wants to count every
+-- blocked-hit line currently in the log buffer, not just the newest 30
+-- overall lines (which would mostly be non-blocklist noise like dropbear
+-- session lines and drown out the count).
+--
+-- *** "This week" is aspirational, not literal — documented limitation ***
+-- `logread`'s buffer is a small, fixed-size in-memory ring (nowhere near a
+-- full week's worth of DNS query history), so this genuinely counts
+-- everything currently sitting in that buffer, not a true rolling 7-day
+-- count. That's an accepted limitation for this dev/test environment, not
+-- something this endpoint tries to paper over with fake persistence — a
+-- real "per-week" counter would need a separate on-disk counter/database
+-- that survives log rotation and VM restarts, which is out of scope here.
+-- The number is real (every count reflects an actual blocked DNS lookup
+-- that really happened), just not a guaranteed *complete* week of them.
+--
+-- Line-matching approach: each of the three domains is a fixed, known
+-- constant this endpoint controls (not client input), and the log line
+-- signature is a literal substring, not a pattern with capture groups to
+-- extract — so this uses plain literal substring search
+-- (`string.find(line, needle, 1, true)`, the `true` "plain" flag disabling
+-- Lua pattern-magic-character interpretation) rather than a `string.match`
+-- pattern like `logs`/`system-info` use for their own field extraction.
+-- This is simpler and correct here specifically because there is nothing to
+-- capture — a `find`-based containment check is all "did this log line
+-- represent a blocked hit for domain X" needs.
+--
+-- JSON encoding: hand-built, same choice as every other endpoint in this
+-- directory (no outbound internet route on this VM to opkg-install
+-- lua-cjson — see docker/provision/www/api/devices's header comment). This
+-- endpoint's response has no free-form string fields (just a bool and an
+-- int), so no escaper is needed for the response itself.
+--
+-- Graceful degradation: if `uci get` or `logread` fails for any reason,
+-- `enabled` falls back to false and `blockedThisWeek` falls back to 0
+-- (io.popen returning nil, or the command producing no matching output,
+-- both degrade to "nothing counted" rather than crashing or emitting
+-- malformed JSON) — same discipline as `wifi`'s GET handler.
+
+local EXPECTED_CONFDIR = "/etc/dnsmasq.blocklist.d"
+local BLOCKED_DOMAINS = { "doubleclick.net", "adservice.google.com", "tracker.example.com" }
+
+local function run(cmd)
+  local p = io.popen(cmd .. " 2>/dev/null")
+  if not p then return "" end
+  local out = p:read("*a") or ""
+  p:close()
+  return (out:gsub("%s+$", ""))
+end
+
+local function uci_get(path)
+  local out = run("uci get " .. path)
+  -- Same "uci: ..." error-text-on-stdout defense as docker/provision/www/api/wifi's
+  -- uci_get() — anchored at the START of output only, so a legitimate value
+  -- that merely contains "uci:" somewhere is never false-flagged.
+  if out == "" or out:match("^uci:") then return nil end
+  return out
+end
+
+local function is_enabled()
+  local confdir = uci_get("dhcp.@dnsmasq[0].confdir")
+  return confdir == EXPECTED_CONFDIR
+end
+
+local function count_blocked_this_week()
+  -- Deliberately no `-l N` cap here (unlike `logs`' `logread -l 30`) — see
+  -- header comment: this wants every blocked-hit line currently in the log
+  -- buffer, not just the newest N overall lines.
+  local raw = run("logread")
+  local count = 0
+  for line in raw:gmatch("[^\r\n]+") do
+    for _, domain in ipairs(BLOCKED_DOMAINS) do
+      if line:find("config " .. domain .. " is 0.0.0.0", 1, true) then
+        count = count + 1
+        break -- a line can only match one domain; don't double-count it
+      end
+    end
+  end
+  return count
+end
+
+print("Content-Type: application/json\n")
+print(string.format(
+  '{"enabled":%s,"blockedThisWeek":%d}',
+  is_enabled() and "true" or "false",
+  count_blocked_this_week()
+))
