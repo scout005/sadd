@@ -246,4 +246,31 @@ case "${BODY}" in
     ;;
 esac
 
+# --- Deploy the /api/wireguard-clients endpoint ---
+echo "Deploying /api/wireguard-clients..."
+# -O forces the legacy SCP protocol — this VM has no /usr/libexec/sftp-server,
+# confirmed live in 01/02/03; required, not optional, against this VM.
+# shellcheck disable=SC2086
+scp -O ${SSH_OPTS} -P "${OPENWRT_PORT}" \
+  "$(dirname "$0")/www/api/wireguard-clients" \
+  "${SSH_TARGET}:/www/cgi-bin/api/wireguard-clients"
+ssh_run "chmod +x /www/cgi-bin/api/wireguard-clients && ls -la /www/cgi-bin/api/wireguard-clients"
+
+# curl (not wget, which is all this VM has — see 08/09/10's own verify
+# blocks) runs on the HOST against the mapped HTTP port, same as every
+# other endpoint's deploy script.
+echo "Verifying: curl http://${OPENWRT_HOST}:${OPENWRT_HTTP_PORT}/cgi-bin/api/wireguard-clients ..."
+CLIENTS_BODY="$(curl -sf "http://${OPENWRT_HOST}:${OPENWRT_HTTP_PORT}/cgi-bin/api/wireguard-clients")"
+echo "${CLIENTS_BODY}"
+
+case "${CLIENTS_BODY}" in
+  \[*\])
+    echo "OK: /api/wireguard-clients responded with what looks like a JSON array."
+    ;;
+  *)
+    echo "ERROR: response does not look like a JSON array." >&2
+    exit 1
+    ;;
+esac
+
 echo "=== 11-provision-wireguard-api.sh done ==="

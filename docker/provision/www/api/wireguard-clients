@@ -1,0 +1,328 @@
+#!/usr/bin/lua
+-- /api/wireguard-clients — GET (list) + POST (create OR toggle, dispatched by
+-- which fields the body has). Real WireGuard client-peer management for the
+-- VPN Server (WireGuard) screen's "Client devices" section, extending the
+-- real wg0 server docker/provision/11-provision-wireguard-api.sh already
+-- provisions (docker/facts.md Section 15 has the confirmed-live investigation
+-- this endpoint is built on: real wireguard_wg0 peer creation, real per-peer
+-- disabled toggle, both proven before this file was written).
+--
+-- GET response shape:
+--   [{"id":"...", "name":"...", "publicKey":"...", "enabled":true|false, "added":"..."}, ...]
+--
+-- === Security note: private keys never leave the server except at the
+-- moment of creation ===
+-- A client's PRIVATE key is generated here, returned ONCE in the create
+-- response, and then discarded — never written to uci, never logged, never
+-- retrievable again after that single response. This matches real-world
+-- WireGuard practice (the server only ever needs to know each peer's PUBLIC
+-- key to route/verify traffic) and means this endpoint's own uci state has
+-- no secret material a later GET could leak.
+--
+-- === Stable section ids ===
+-- Every created peer section is immediately uci-renamed to a stable id
+-- (wgc_<time>_<6 hex>), the same firewall-rules precedent device-pause
+-- already generalized — never left addressed by a positional @wireguard_wg0[N]
+-- reference across more than the single uci add call.
+--
+-- === Address assignment ===
+-- The server itself owns 10.9.0.1 (network.wg0.addresses). Each client peer
+-- gets the next unused /32 in 10.9.0.2-10.9.0.254, computed by scanning
+-- existing peers' allowed_ips for the lowest unused integer in that range.
+--
+-- === Write discipline ===
+-- Same write-then-readback-verify-then-commit-or-revert as every other write
+-- endpoint in this directory, adapted for a section ADD (create) and a
+-- single-option SET (toggle).
+
+local function run(cmd)
+  local p = io.popen(cmd .. " 2>/dev/null")
+  if not p then return "" end
+  local out = p:read("*a") or ""
+  p:close()
+  return (out:gsub("%s+$", ""))
+end
+
+local function shell_quote(s)
+  s = tostring(s or "")
+  s = s:gsub('[\1-\9\11-\31]', '')
+  s = s:gsub('[\n\r]', ' ')
+  return "'" .. s:gsub("'", "'\\''") .. "'"
+end
+
+-- Canonical table-based json_escape — copied verbatim from
+-- docker/provision/www/api/device-pause / vlans. Do not reinvent.
+local function json_escape(s)
+  if s == nil then return "" end
+  s = tostring(s)
+  s = s:gsub('[\\"\n\r\t]', {
+    ['\\'] = '\\\\', ['"'] = '\\"', ['\n'] = '\\n', ['\r'] = '\\r', ['\t'] = '\\t',
+  })
+  s = s:gsub('[\1-\31]', '')
+  return s
+end
+
+local function random_hex(nbytes)
+  local f = io.open("/dev/urandom", "rb")
+  if not f then return tostring(os.time()) end
+  local bytes = f:read(nbytes) or ""
+  f:close()
+  local hex = {}
+  for k = 1, #bytes do hex[#hex + 1] = string.format("%02x", bytes:byte(k)) end
+  return table.concat(hex)
+end
+
+-- Parses `uci show network` into id -> fields for every `wireguard_wg0`-type
+-- section — same id/field-split algorithm as firewall-rules'
+-- list_redirect_sections() / device-pause's list_rule_sections(), generalized
+-- to a different config (network) and type (wireguard_wg0).
+local function list_client_sections()
+  local output = run("uci show network")
+  local order, is_client, fields = {}, {}, {}
+  for line in output:gmatch("[^\n]+") do
+    local lhs, rhs = line:match("^(.-)=(.*)$")
+    if lhs and rhs then
+      local rest = lhs:match("^network%.(.+)$")
+      if rest then
+        local dot = rest:find("%.")
+        if dot then
+          local id, field = rest:sub(1, dot - 1), rest:sub(dot + 1)
+          if is_client[id] then
+            local val = rhs:match("^'(.-)'$")
+            fields[id][field] = val or rhs
+          end
+        else
+          local id = rest
+          local typ = rhs:match("^'?(.-)'?$")
+          if typ == "wireguard_wg0" and not is_client[id] then
+            is_client[id] = true
+            order[#order + 1] = id
+            fields[id] = {}
+          end
+        end
+      end
+    end
+  end
+  return order, fields
+end
+
+local function section_type(id)
+  return run("uci get network." .. id)
+end
+
+local function next_free_address()
+  local _, fields = list_client_sections()
+  local used = {}
+  for _, f in pairs(fields) do
+    local octet = f.allowed_ips and f.allowed_ips:match("^10%.9%.0%.(%d+)/32$")
+    if octet then used[tonumber(octet)] = true end
+  end
+  for n = 2, 254 do
+    if not used[n] then return n end
+  end
+  return nil -- subnet exhausted (254 clients) — extremely unlikely in this dev/test context
+end
+
+local function read_request_body()
+  local len = tonumber(os.getenv("CONTENT_LENGTH") or "")
+  if len and len > 0 then return io.read(len) or "" end
+  return io.read("*a") or ""
+end
+
+-- Same hand-rolled flat-JSON-object parser as every other write endpoint —
+-- copy verbatim from device-pause.
+local function json_parse_flat_object(s)
+  local obj = {}
+  if type(s) ~= "string" then return obj end
+  local i, len = 1, #s
+  local function skip_ws() while i <= len and s:sub(i, i):match("%s") do i = i + 1 end end
+  local function parse_string()
+    i = i + 1
+    local buf = {}
+    local escapes = { ['"']='"', ['\\']='\\', ['/']='/', ['n']='\n', ['r']='\r', ['t']='\t', ['b']='\b', ['f']='\f' }
+    while i <= len do
+      local c = s:sub(i, i)
+      if c == '"' then i = i + 1; return table.concat(buf)
+      elseif c == '\\' then
+        local nc = s:sub(i + 1, i + 1)
+        if nc == 'u' then i = i + 6
+        elseif escapes[nc] then buf[#buf+1] = escapes[nc]; i = i + 2
+        else buf[#buf+1] = nc; i = i + 2 end
+      else buf[#buf+1] = c; i = i + 1 end
+    end
+    return table.concat(buf)
+  end
+  skip_ws()
+  if s:sub(i, i) ~= '{' then return obj end
+  i = i + 1
+  skip_ws()
+  if s:sub(i, i) == '}' then return obj end
+  while i <= len do
+    skip_ws()
+    if s:sub(i, i) ~= '"' then break end
+    local key = parse_string()
+    skip_ws()
+    if s:sub(i, i) ~= ':' then break end
+    i = i + 1
+    skip_ws()
+    local val
+    if s:sub(i, i) == '"' then val = parse_string()
+    else
+      local start = i
+      while i <= len and not s:sub(i, i):match('[,}%s]') do i = i + 1 end
+      val = s:sub(start, i - 1)
+    end
+    obj[key] = val
+    skip_ws()
+    if s:sub(i, i) == ',' then i = i + 1
+    elseif s:sub(i, i) == '}' then i = i + 1; break
+    else break end
+  end
+  return obj
+end
+
+local function send_headers(status)
+  local reasons = { [400]="Bad Request", [404]="Not Found", [405]="Method Not Allowed", [500]="Internal Server Error" }
+  if status and status ~= 200 then
+    print("Status: " .. status .. " " .. (reasons[status] or "Error"))
+  end
+  print("Content-Type: application/json\n")
+end
+
+local method = os.getenv("REQUEST_METHOD") or "GET"
+
+if method == "GET" then
+  local order, fields = list_client_sections()
+  local rows = {}
+  for _, id in ipairs(order) do
+    local f = fields[id]
+    rows[#rows + 1] = string.format(
+      '{"id":"%s","name":"%s","publicKey":"%s","enabled":%s,"added":"%s"}',
+      json_escape(id), json_escape(f.name or ""), json_escape(f.public_key or ""),
+      (f.disabled ~= "1") and "true" or "false", json_escape(f.added or "")
+    )
+  end
+  send_headers(200)
+  print("[" .. table.concat(rows, ",") .. "]")
+
+elseif method == "POST" then
+  local body = read_request_body()
+  local req = json_parse_flat_object(body)
+
+  if req.id ~= nil and req.name ~= nil then
+    -- Neither shape: a body naming both a create field (name) and a toggle
+    -- field (id) is ambiguous, not a silently-preferred toggle — rejected up
+    -- front rather than falling into the toggle branch below and quietly
+    -- discarding `name` (a real gap live testing surfaced: an id belonging
+    -- to an existing client plus a `name` here would otherwise toggle that
+    -- client while ignoring the name field entirely, not what "matches
+    -- neither shape" should do).
+    send_headers(400)
+    print('{"ok":false,"error":"body must match either the create shape ({name}) or the toggle shape ({id, enabled}), not both"}')
+  elseif req.id ~= nil then
+    -- === Toggle path ===
+    local id = req.id
+    if type(id) ~= "string" or id == "" or (req.enabled ~= "true" and req.enabled ~= "false") then
+      send_headers(400)
+      print('{"ok":false,"error":"toggle requires string id and boolean enabled"}')
+    elseif section_type(id) ~= "wireguard_wg0" then
+      send_headers(404)
+      print('{"ok":false,"error":"no such client"}')
+    else
+      local enabled = req.enabled == "true"
+      run("uci set network." .. id .. ".disabled=" .. shell_quote(enabled and "0" or "1"))
+      local readback = run("uci get network." .. id .. ".disabled")
+      local ok = enabled and (readback == "0" or readback == "") or (not enabled and readback == "1")
+      if not ok then
+        run("uci revert network")
+        send_headers(500)
+        print('{"ok":false,"error":"failed to verify the toggle write; reverted"}')
+      else
+        run("uci commit network")
+        run("ifdown wg0"); run("ifup wg0")
+        send_headers(200)
+        print(string.format('{"ok":true,"enabled":%s}', enabled and "true" or "false"))
+      end
+    end
+
+  else
+    -- === Create path ===
+    local name = req.name
+    if type(name) ~= "string" or name:match("^%s*$") then
+      send_headers(400)
+      print('{"ok":false,"error":"missing or invalid required field: name (non-empty string)"}')
+    else
+      local octet = next_free_address()
+      if not octet then
+        send_headers(500)
+        print('{"ok":false,"error":"no free addresses left in 10.9.0.0/24"}')
+      else
+        local priv = run("wg genkey")
+        local pub = run("printf '%s' " .. shell_quote(priv) .. " | wg pubkey")
+        local id = "wgc_" .. os.time() .. "_" .. random_hex(3)
+        local client_ip = "10.9.0." .. octet
+
+        local anon = run("uci add network wireguard_wg0")
+        local create_failed = anon == "" or anon:find("[^%w_]")
+        if not create_failed then
+          run("uci rename network." .. anon .. "=" .. id)
+          create_failed = section_type(id) ~= "wireguard_wg0"
+        end
+
+        if not create_failed then
+          run("uci set network." .. id .. ".public_key=" .. shell_quote(pub))
+          run("uci set network." .. id .. ".allowed_ips=" .. shell_quote(client_ip .. "/32"))
+          run("uci set network." .. id .. ".route_allowed_ips=" .. shell_quote("1"))
+          run("uci set network." .. id .. ".name=" .. shell_quote(name))
+          run("uci set network." .. id .. ".added=" .. shell_quote(os.date("%b %d")))
+        end
+
+        local readback_ok = false
+        if not create_failed then
+          local _, fields = list_client_sections()
+          local f = fields[id]
+          readback_ok = f and f.public_key == pub and f.allowed_ips == client_ip .. "/32"
+        end
+
+        if not readback_ok then
+          run("uci revert network")
+          send_headers(500)
+          print('{"ok":false,"error":"failed to verify the new client write; reverted"}')
+        else
+          run("uci commit network")
+          run("ifdown wg0"); run("ifup wg0")
+          -- ifup is not synchronous — `wg show wg0 public-key` immediately
+          -- after can race the interface actually coming back up and return
+          -- empty (confirmed live: a request right after ifup got an empty
+          -- server pubkey in `config` even though the peer itself was
+          -- created correctly). Same short settle-then-retry precedent as
+          -- 11-provision-wireguard-api.sh's own `ifup wg0; sleep 2`.
+          local server_pub = run("wg show wg0 public-key")
+          if server_pub == "" then
+            run("sleep 1")
+            server_pub = run("wg show wg0 public-key")
+          end
+          if server_pub == "" then
+            run("sleep 2")
+            server_pub = run("wg show wg0 public-key")
+          end
+          local config = "[Interface]\n" ..
+            "PrivateKey = " .. priv .. "\n" ..
+            "Address = " .. client_ip .. "/32\n\n" ..
+            "[Peer]\n" ..
+            "PublicKey = " .. server_pub .. "\n" ..
+            "Endpoint = smith-family.saddvpn.com:51820\n" ..
+            "AllowedIPs = 10.9.0.0/24\n" ..
+            "PersistentKeepalive = 25\n"
+          send_headers(200)
+          print(string.format('{"ok":true,"id":"%s","publicKey":"%s","config":"%s"}',
+            json_escape(id), json_escape(pub), json_escape(config)))
+        end
+      end
+    end
+  end
+
+else
+  send_headers(405)
+  print(string.format('{"ok":false,"error":"unsupported method: %s"}', json_escape(tostring(method))))
+end
