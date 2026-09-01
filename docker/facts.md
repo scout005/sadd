@@ -754,3 +754,79 @@ start_service() {
 - Multi-WAN & Failover requires a second real WAN-side interface, which this single-NIC VM structurally does not have and cannot gain without a docker/entrypoint.sh networking rework (a second tap device) — out of proportion for a wave. Deferred.
 - Parental Controls (profile-level), Weekly Usage, and most of VPN Server (WireGuard)'s own client-management/AmneziaWG/site-to-site sections, VPN Server (OpenVPN), and Connect a Laptop (VPN) all either depend on a child<->device "profile" concept that exists only in the fictional Sadd cloud app (not OpenWrt/UCI), or explicitly claim DPI-level per-app traffic detection ("Reliable" vs "Best-effort" blocking) this environment has no honest way to do, or reference a fictional client app that can't be made real regardless of VM state. Deferred/excluded.
 - Notifications turned out, on actually reading its markup, to have no live state to back at all — reclassified from a Wave 5 candidate to Group 2 (pure UI, no work needed), not merely deferred.
+
+## 14. Wave 5 hands-on build verification — WireGuard, SSH key rotation, and per-device firewall block, all proven end-to-end live before writing the plan
+
+Confirmed live (2026-09-01, same VM session as Section 13), going one step further than a feasibility survey: each of Wave 5's three real mechanisms was actually built and torn down once by hand first, to de-risk the exact commands the plan and provisioning scripts specify.
+
+**WireGuard: full install chain has MORE transitive kernel-module dependencies than `opkg`'s first error message reveals — confirmed by iterating twice:**
+
+`kmod-wireguard`'s declared deps are `kmod-crypto-lib-chacha20poly1305`, `kmod-crypto-lib-curve25519`, `kmod-udptunnel4`, `kmod-udptunnel6` — but `kmod-crypto-lib-chacha20poly1305` and `kmod-crypto-lib-curve25519` themselves each have a further undeclared-until-you-try-them dependency layer (`kmod-crypto-lib-chacha20`, `kmod-crypto-lib-poly1305`, `kmod-crypto-kpp`). All packages are pulled from the same target-specific feed as `kmod-wireguard` itself (`.../targets/x86/64/packages/`, kernel-version-pinned `5.15.167-1`), all `x86_64`. Full working set (9 `.ipk` files total, all downloaded via `curl` on the host then `scp -O` to the VM's `/tmp/`, matching the Task 1/Wave 1 host-download-then-scp pattern exactly):
+```
+kmod-crypto-kpp
+kmod-crypto-lib-chacha20
+kmod-crypto-lib-chacha20poly1305
+kmod-crypto-lib-curve25519
+kmod-crypto-lib-poly1305
+kmod-udptunnel4
+kmod-udptunnel6
+kmod-wireguard
+wireguard-tools
+```
+`opkg install` all 9 together in one command succeeds cleanly (order within the command doesn't matter — opkg resolves it). Sequencing matters only in that all 9 must be present in `/tmp` before the install command runs; a partial set produces the "Unknown package" / "cannot find dependency" errors shown above rather than a clean failure naming exactly what's still missing beyond the first layer.
+
+**Critical, easy-to-miss step: `modprobe wireguard` still fails after all 9 packages are opkg-installed, until you separately confirm the module actually probes — `opkg install` succeeding is not the same as the kernel module loading:**
+```
+$ modprobe wireguard
+# (no output, but...)
+$ dmesg | tail
+kmodloader: missing dependency curve25519-x86_64
+kmodloader: failed to find dependency libchacha20poly1305
+...
+```
+This only happens if the crypto-lib packages weren't ALL installed together in the same batch (an earlier partial `opkg install` of just `kmod-wireguard` + `wireguard-tools` "succeeded" per opkg's own output for those two specific packages, while silently leaving `kmod-wireguard` non-functional because its transitive deps were never resolved — opkg only complained about the leaf packages that were literally missing from that particular install command, not about kmod-wireguard being broken as a result). **Implication for provisioning**: always install the full 9-package set in one `opkg install` invocation, then explicitly verify with `lsmod | grep wireguard` (or by successfully creating a `type wireguard` link) — never trust "opkg install exited 0" alone as proof the module is usable.
+
+**Second critical, easy-to-miss step: netifd does NOT pick up the newly-installed `wireguard.sh` proto handler without a full network service restart — `uci commit` + `ifup`/`network reload` alone silently leave the interface undefined:**
+```
+$ uci set network.wg0=interface; uci set network.wg0.proto=wireguard; ...; uci commit network
+$ ifup wg0        # no error, but...
+$ ubus call network.interface.wg0 status
+{ "up": false, "proto": "none", "errors": [{"code": "NO_DEVICE"}] }
+```
+Only `/etc/init.d/network restart` (a full daemon restart, not `network reload`/`reload_config`) makes netifd re-scan `/lib/netifd/proto/*.sh` and recognize `proto=wireguard`; after that, `status` correctly reports `"proto": "wireguard"`, `"up": true`, and the real assigned address. **Implication for provisioning**: the WireGuard provisioning script must call `/etc/init.d/network restart` once, immediately after `wireguard-tools` is opkg-installed, before the first `uci set network.wg0...` + `ifup` — not just `fw4`/`network reload`, which the existing Ad Blocking/VLANs scripts use successfully for their own (already-registered) proto types.
+
+**Once past those two gotchas, the whole mechanism is genuinely real end-to-end, confirmed with an actual keypair and actual interface, not just config:**
+```
+umask 077
+wg genkey > /tmp/wg-priv.key
+wg pubkey < /tmp/wg-priv.key > /tmp/wg-pub.key
+uci set network.wg0=interface
+uci set network.wg0.proto=wireguard
+uci set network.wg0.private_key="$(cat /tmp/wg-priv.key)"
+uci set network.wg0.listen_port=51820
+uci set network.wg0.addresses='10.9.0.1/24'
+uci commit network
+ifup wg0
+```
+— produces a real `wg0` kernel interface (`ip link show wg0` → `POINTOPOINT,NOARP,UP,LOWER_UP`), a real, deterministic public key derived from the stored private key (`wg show wg0` → `public key: A+Vn1/Lp9qma+i8UEuUO+V84QkCAQf7d9+HBzi8OzW0=`, matching `wg pubkey` computed from the same private key independently), and a real listening UDP port (`listening port: 51820`, matches `network.wg0.listen_port` exactly, not a random fallback port). The on/off toggle write-path — `uci set network.wg0.disabled=1` + `ifdown wg0`, and the reverse `disabled=0` + `ifup wg0` — was confirmed live to genuinely remove/recreate the kernel interface each direction (`ip link show wg0` fails with "can't find device" while disabled, real interface reappears with the same public key on re-enable), the same shape as `wireless.guest.disabled` (Wave 3) and dnsmasq's `confdir` (Wave 4).
+
+**SSH host-key rotation ("Rotate SSH key" button) — confirmed real and safe for this project's own SSH-based verification workflow:**
+```
+rm -f /etc/dropbear/dropbear_rsa_host_key /etc/dropbear/dropbear_ed25519_host_key
+/etc/init.d/dropbear restart
+```
+Dropbear auto-regenerates both missing host key files on start (standard OpenWrt behavior, no extra `dropbearkey` invocation needed) and the new key's fingerprint (confirmed via `dropbearkey -y -f ... | grep Fingerprint`) genuinely differs from the pre-rotation one every time. This is safe to wire into a real write endpoint specifically *because* this project's own SSH verification convention already always passes `-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null` (no persisted `known_hosts` entry to conflict with a rotated key) — a real deployment using normal host-key pinning would need to warn the operator their client will show a "host key changed" prompt after rotating, but that's out of scope to simulate here.
+
+**Per-device "Pause internet" block — confirmed the correct real UCI firewall rule shape, and that the obvious-looking simpler version is wrong:**
+```
+uci add firewall rule
+uci set firewall.@rule[-1].name='devpause-<mac-no-colons>'
+uci set firewall.@rule[-1].src='lan'
+uci set firewall.@rule[-1].src_mac='<mac>'
+uci set firewall.@rule[-1].dest='wan'
+uci set firewall.@rule[-1].target='REJECT'
+uci set firewall.@rule[-1].proto='all'
+uci commit firewall
+fw4 reload
+```
+A rule with `src='lan'` and `src_mac` set but **no `dest` field** only lands in the `input_lan` nft chain (traffic addressed to the router itself) — confirmed by grepping the full `nft list ruleset` output for the test MAC and finding exactly one match, in `input_lan`, not `forward_lan`. That alone would NOT block a device's outbound/internet-bound traffic, only its ability to reach the router's own local services — the wrong rule for a "pause internet" feature. Adding `dest='wan'` makes fw4 emit the rule into `forward_lan` as `jump reject_to_wan` instead — the semantically correct "block this device's traffic toward the internet" rule. This VM's `wan` zone is (per Section 1/Task 7) topologically unreachable — there's no real WAN interface for traffic to actually flow through — but the *rule itself* is real, is generated correctly by real `fw4`/`uci firewall` config, and is the exact same shape Wave 1's port-forwarding work already established as this project's "prove the mechanism, not full end-to-end production traffic" bar. All three test rules were removed (`uci delete` + `fw4 reload`) after confirming their nft output — nothing was left committed to the VM's firewall config from this investigation.
