@@ -1670,7 +1670,8 @@ html.large-text .scr-title{font-size:1.15em;}
     const myRenderId = state.devcontrolsBedtimeRenderId;
     const sw = document.getElementById('devcontrolsBedtimeSwitch');
     if(!sw) return;
-    const descEl = sw.closest('.setting-row') ? sw.closest('.setting-row').querySelector('.sr-main span') : null;
+    const row = sw.closest('.setting-row'); // cached once (code review finding) — reused below
+    const descEl = row ? row.querySelector('.sr-main span') : null;
     const data = await fetchRouterApi('/cgi-bin/api/device-bedtime?mac=' + encodeURIComponent(dev.mac));
     if(state.screen !== 'devcontrols' || state.devcontrolsBedtimeRenderId !== myRenderId) return;
     if(data && typeof data === 'object'){
@@ -1696,7 +1697,8 @@ html.large-text .scr-title{font-size:1.15em;}
     const nextEnabled = !wasEnabled;
     const dev = state.selectedDevice;
     if(!dev || !dev.mac) return;
-    const descEl = sw.closest('.setting-row') ? sw.closest('.setting-row').querySelector('.sr-main span') : null;
+    const row = sw.closest('.setting-row'); // cached once (code review finding) — reused below
+    const descEl = row ? row.querySelector('.sr-main span') : null;
     sw.dataset.pending = 'true';
     sw.classList.add('pending');
     const result = await fetchRouterApiWithStatus('/cgi-bin/api/device-bedtime', {
@@ -1712,11 +1714,11 @@ html.large-text .scr-title{font-size:1.15em;}
     } else {
       // revert to exactly the prior known state — no false-success left showing
       setDevcontrolsBedtimeVisual(sw, descEl, wasEnabled, wasActive);
-      let notice = sw.closest('.setting-row') ? sw.closest('.setting-row').nextElementSibling : null;
+      let notice = row ? row.nextElementSibling : null;
       if(!notice || !notice.classList || !notice.classList.contains('api-fallback-notice')){
         notice = document.createElement('div');
         notice.className = 'api-fallback-notice';
-        if(sw.closest('.setting-row')) sw.closest('.setting-row').insertAdjacentElement('afterend', notice);
+        if(row) row.insertAdjacentElement('afterend', notice);
       }
       if(notice.dataset.removeTimer) clearTimeout(Number(notice.dataset.removeTimer));
       const msg = (result && result.data && result.data.error) ? result.data.error
@@ -2292,10 +2294,18 @@ html.large-text .scr-title{font-size:1.15em;}
       const wgClientId = sw.dataset.wireguardClientSwitch;
       if(wgClientId){ handleWireguardClientToggle(sw, wgClientId); return; }
       // Per-Device Controls' "Bedtime" switch is likewise a REAL write control (POST
-      // /cgi-bin/api/device-bedtime {mac, enabled}), intercepted the same way, before the
-      // generic branch below — see handleDevcontrolsBedtimeClick's own comment for the
-      // enabled-vs-active design.
-      if(sw.id === 'devcontrolsBedtimeSwitch'){ handleDevcontrolsBedtimeClick(sw); return; }
+      // /cgi-bin/api/device-bedtime {mac, enabled}) — but ONLY when reached with a real
+      // selected device (state.selectedDevice), same as the Pause-internet chips'
+      // row.dataset.mac gate on this same screen (code review finding: the original
+      // version gated on device-context INSIDE handleDevcontrolsBedtimeClick with a bare
+      // early return, which meant a click on the screen's static/no-device path — e.g.
+      // reached via the global search result for "Per-Device Controls", which clears
+      // selectedDevice — did nothing at all, not even the cosmetic flip every other switch
+      // on this screen still gets; gating here instead lets that case correctly fall
+      // through to the generic branch below, matching the Pause chips' own precedent).
+      if(sw.id === 'devcontrolsBedtimeSwitch' && state.selectedDevice && state.selectedDevice.mac){
+        handleDevcontrolsBedtimeClick(sw); return;
+      }
       sw.classList.toggle('on');
       sw.setAttribute('aria-checked', sw.classList.contains('on') ? 'true' : 'false');
       if(sw.id === 'largeTextSwitch') document.documentElement.classList.toggle('large-text', sw.classList.contains('on'));
