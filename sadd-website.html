@@ -802,6 +802,22 @@ html.large-text .scr-title{font-size:1.15em;}
 
   function goTo(screen){
     if(screens[screen] === undefined) return;
+    // Per-Device Controls (devcontrols) only overlays real data when state.selectedDevice
+    // is set (see renderDevcontrolsScreen's own comment) — set by the real Devices-list
+    // click handler immediately before it calls goTo('devcontrols'), so it survives THAT
+    // specific navigation. But devcontrols also has a second, unrelated entry point (the
+    // global search index has a "Per-Device Controls" result that calls goTo('devcontrols')
+    // directly) which must show the static demo, not stale real data left over from an
+    // earlier, unrelated device click — without this clear, once ANY device had ever been
+    // clicked in the session, every later arrival at devcontrols via search would
+    // incorrectly keep overlaying that old device's real name/status/pause-state (a real,
+    // reachable bug caught in Wave 5's spec review, fixed here). Clearing on every
+    // navigation AWAY from devcontrols (not on arrival) is what makes this correct: the
+    // device-row handler's own goTo('devcontrols') call is never affected (screen really
+    // is 'devcontrols' at that point, condition below is false), but any later navigation
+    // to a different screen resets selectedDevice before the user can possibly reach
+    // devcontrols again via a non-device-click path.
+    if(screen !== 'devcontrols') state.selectedDevice = null;
     state.screen = screen;
     render();
   }
