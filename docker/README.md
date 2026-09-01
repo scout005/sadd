@@ -278,7 +278,21 @@ bash docker/provision/12-provision-ssh-key-api.sh
 #     ordered.
 bash docker/provision/13-provision-devpause-api.sh
 
-# 14. Verify.
+# 14. Deploy the /api/qos-priority endpoint (real per-device traffic
+#     marking — a uci firewall rule with target=MARK, set_mark=0x2a,
+#     src=lan, dest=wan, landing in the real mangle_forward nft chain — for
+#     the Traffic & QoS screen's "Priority devices" list) and verify GET
+#     responds with a JSON array. Like step 12's /api/ssh-key and step 13's
+#     /api/device-pause, this needs no baseline VM state to provision — uci
+#     firewall rule sections already exist as a concept on a fresh VM — so
+#     this step is deploy-and-verify only, no baseline-config half. POST is
+#     idempotent per MAC (a second POST for an already-marked device is a
+#     no-op success, not a duplicate rule or an error), and there is no
+#     DELETE (same read-mostly-list choice /api/vlans made — a rule created
+#     here can currently only be removed by hand over SSH).
+bash docker/provision/14-provision-qos-priority-api.sh
+
+# 15. Verify.
 curl -s http://localhost:8081/cgi-bin/api/ping     # -> {"ok":true}
 curl -sI http://localhost:8081/cgi-bin/api/ping    # -> Content-Type: application/json among the headers
 curl -sI http://localhost:8081/                    # -> 200 OK, serving sadd-website.html
@@ -294,6 +308,8 @@ curl -s http://localhost:8081/cgi-bin/api/wireguard  # -> JSON object of real Wi
 curl -s -X POST http://localhost:8081/cgi-bin/api/ssh-key  # -> real dropbear RSA host-key rotation, e.g. {"ok":true,"fingerprint":"SHA256:6Kl/5/4foMm95Fv+cFOkg9KeqmAWqdvFjMqihufCN5k"} — confirmed live to genuinely change the real key each call: `ssh -p 2223 root@localhost "dropbearkey -y -f /etc/dropbear/dropbear_rsa_host_key | grep Fingerprint"` shows a different fingerprint before vs. after, matching the response's `fingerprint` field exactly, and a second POST changes it again to a third distinct value (not toggling between two); `curl -s http://localhost:8081/cgi-bin/api/ssh-key` (a GET) -> 405
 curl -s "http://localhost:8081/cgi-bin/api/device-pause?mac=11:22:33:44:55:66"  # -> {"paused":false,"remainingSeconds":0} for a MAC with no active pause rule
 curl -s -X POST -d '{"mac":"11:22:33:44:55:66","minutes":15}' http://localhost:8081/cgi-bin/api/device-pause  # -> real per-MAC block, e.g. {"ok":true,"paused":true,"remainingSeconds":900} — confirmed live: `uci show firewall | grep devpause-112233445566` shows a real `rule` section with `src='lan'`, `src_mac='11:22:33:44:55:66'`, `dest='wan'`, `target='REJECT'`; a subsequent GET for the same mac reports `paused:true` with a real, ticking-down `remainingSeconds`; and — proven via a genuine 65+ second wait for a real cron tick, not simulated — a rule whose `paused_until` has passed is actually removed by `/usr/bin/devpause-sweep.sh` (confirmed both for a single expired rule and for three rules expiring in the same minute, see the `devpause-sweep.sh` file note below for the exact live multi-expiry proof)
+curl -s http://localhost:8081/cgi-bin/api/qos-priority  # -> `[]` on a fresh VM
+curl -s -X POST -d '{"mac":"11:22:33:44:55:66"}' http://localhost:8081/cgi-bin/api/qos-priority  # -> {"ok":true,"mac":"11:22:33:44:55:66"} — confirmed live: `uci show firewall | grep qospriority_112233445566` shows a real `rule` section with `src='lan'`, `src_mac='11:22:33:44:55:66'`, `dest='wan'`, `target='MARK'`, `set_mark='0x2a'`; a subsequent GET returns `[{"mac":"11:22:33:44:55:66"}]`; `ssh root@localhost -p 2223 "nft list ruleset"` shows the real `mangle_forward` chain entries (`ether saddr 11:22:33:44:55:66 ... meta mark set 0x0000002a`, one for tcp and one for udp) — genuinely marking the device's forwarded traffic, not just config; a second identical POST is idempotent (`uci show firewall | grep -c qospriority_112233445566` stays at exactly 7 lines = 1 section, not 2)
 ```
 
 **Step 3 in detail — overwriting the stock landing page is intentional:**
@@ -871,6 +887,70 @@ specifically, as a sibling of `luci`, not a replacement for it.
   reporting the rule occupying `@rule[9]` at that moment, confirming the
   fresh-rescan loop cleared every same-tick expiry in one pass rather than
   one per minute.
+- `docker/provision/14-provision-qos-priority-api.sh` — deploy-and-verify
+  only, matching `12-provision-ssh-key-api.sh`'s and
+  `13-provision-devpause-api.sh`'s own endpoint-deploy shape: no baseline
+  uci config to create first (unlike steps 8-11), since a `uci firewall`
+  rule section already exists as a concept on a fresh VM. `scp -O`'s
+  `docker/provision/www/api/qos-priority` onto
+  `/www/cgi-bin/api/qos-priority`, chmods it executable, then verifies with
+  a real `curl -sf` `GET` — checked to be a genuine JSON array (`[...]`)
+  rather than string-matching one specific empty/non-empty body, since this
+  step can be re-run against a VM that already has priority rules on it
+  from prior use, unlike `device-pause`'s verify (which checks an exact
+  not-paused body for a MAC that has no rule of its own yet).
+- `docker/provision/www/api/qos-priority` — the tracked source of truth for
+  the `/api/qos-priority` endpoint: `GET /cgi-bin/api/qos-priority` returns
+  `[{"mac":"AA:BB:CC:DD:EE:FF"}, ...]`, one entry per uci `firewall` rule
+  section whose `.name` starts with `qospriority-`, parsed the same
+  `list_rule_sections()`-style approach `device-pause` uses (generalized
+  here as `list_priority_sections()`/`find_priority_rule()`). Only `mac` is
+  returned — no display name is stored server-side; the frontend
+  cross-references a fresh `/api/devices` fetch by MAC at render time,
+  falling back to the raw MAC for a device that isn't currently
+  DHCP-leased, an intentional, honest behavior (a prioritized device isn't
+  guaranteed to always be online), not a bug. `POST /cgi-bin/api/qos-priority`
+  (body `{"mac": "<mac>"}`) creates a real `rule` section with `src='lan'`,
+  `src_mac=<mac>`, `dest='wan'`, `target='MARK'`, `set_mark='0x2a'` —
+  confirmed live to land in the real `mangle_forward` nft chain (not just
+  `input_lan`), genuinely marking the device's own forwarded traffic, the
+  same `src=lan`/`dest=wan` distinction `device-pause`'s own investigation
+  established for `REJECT` rules (docker/facts.md Section 14) applying
+  identically here for `MARK` (confirmed live again for this endpoint,
+  docker/facts.md Section 15). `0x2a` is a fixed, arbitrary mark value —
+  there's no second priority tier or tc/SQM queueing discipline consuming
+  it yet in this wave, so its exact numeric value has no behavioral meaning
+  beyond proving the marking mechanism itself is real. Same stable-id-rename
+  discipline as `device-pause` (`qospriority-<mac-no-colons>` as the rule's
+  `.name` value, `qospriority_<mac-no-colons>` — underscored, since uci
+  section identifiers can't contain hyphens — as the actual rename target),
+  and the same write-then-readback-verify-then-commit-or-revert discipline,
+  strict MAC validation, and canonical `json_escape()` as every other write
+  endpoint in this directory. A second `POST` for a MAC that already has a
+  rule is idempotent: `find_priority_rule()` finds the existing section by
+  its `.name` and returns `{"ok":true,"mac":"..."}` immediately without any
+  further uci write — confirmed live (`uci show firewall | grep -c
+  qospriority_112233445566` stays at exactly 7 lines, i.e. one section, not
+  two, across repeated POSTs for the same MAC). No `DELETE` — the mockup has
+  no remove affordance for these rows, the same choice `/api/vlans` made for
+  its own read-mostly list; a rule created here can currently only be
+  removed by hand over SSH, a known, documented limitation rather than a
+  silently-missing feature. **Security note (code-review-driven extra
+  scrutiny):** unlike `wireguard-clients`' toggle path, which accepted a
+  client-supplied section id and — before a real command-injection bug was
+  found and fixed in commit `cfbb97d` — concatenated it unquoted into shell
+  commands with only a `type=="string"` check, this endpoint never accepts
+  a client-supplied section id at all; both `qospriority-<mac>` and
+  `qospriority_<mac>` are derived internally from `mac`, which is strictly
+  regex-validated (`is_valid_mac`, the same 6-octet colon-hex pattern
+  `device-pause` uses) before it touches any uci command, and every value
+  interpolated into a shell command also goes through `shell_quote()` as
+  defense in depth. Confirmed live: `POST` bodies with MAC-shaped-looking
+  payloads containing `;`, backticks, and `$()` (e.g. `"11:22:33:44:55:66;
+  touch /tmp/pwned_qos_test #"`, `` "`touch /tmp/pwned_qos_test2`" ``,
+  `"$(touch /tmp/pwned_qos_test3)"`) are all rejected with a clean `400` by
+  `is_valid_mac`'s regex before any uci call runs, and none of the target
+  files were created on the VM.
 
 ### Real connectivity test — what it actually means in this topology
 

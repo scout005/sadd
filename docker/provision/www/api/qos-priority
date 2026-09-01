@@ -1,0 +1,250 @@
+#!/usr/bin/lua
+-- /api/qos-priority — GET (list) + POST (create, idempotent per MAC). Real
+-- per-device traffic-marking for the Traffic & QoS screen's "Priority
+-- devices" list. Confirmed live before writing this handler
+-- (docker/facts.md Section 15): a uci firewall rule with target=MARK,
+-- set_mark=0x2a, src=lan, dest=wan lands in the real mangle_forward nft
+-- chain — marking the device's actual forwarded traffic, not just traffic
+-- addressed to the router (the same src=lan/dest=wan distinction
+-- device-pause's own investigation established for REJECT rules applies
+-- identically here for MARK).
+--
+-- GET response shape: [{"mac":"AA:BB:CC:DD:EE:FF"}, ...] — no display name
+-- stored here; the frontend cross-references a fresh /api/devices fetch by
+-- MAC to show a name, falling back to the raw MAC for a device that isn't
+-- currently DHCP-leased (honest, not a bug — a prioritized device isn't
+-- guaranteed to always be online).
+--
+-- POST body: {"mac": "<mac>"} — creates the rule if it doesn't already
+-- exist for this MAC; if it already does, this is a no-op success (POSTing
+-- the same MAC twice is idempotent, not an error or a duplicate rule).
+--
+-- No DELETE — the mockup has no remove affordance for these rows (same
+-- choice /api/vlans made for its own read-mostly list). Rules created here
+-- can only be removed by hand over SSH in this wave; documented as a known
+-- limitation, not silently glossed over.
+--
+-- 0x2a (decimal 42) is an arbitrary, fixed mark value — there's no second
+-- priority tier or QoS queueing discipline (tc/SQM) consuming this mark in
+-- this wave, so its exact numeric value has no behavioral meaning yet; it
+-- exists so the real mechanism (a device's traffic being genuinely,
+-- kernel-verifiably marked) can be demonstrated and later built upon.
+--
+-- Security note: unlike wireguard-clients' toggle path (which accepted a
+-- client-supplied section id and, before a code-review fix, concatenated it
+-- unquoted into shell commands — a real command-injection bug), this
+-- endpoint NEVER accepts a client-supplied section id. The only
+-- attacker-controlled input is `mac`, which is strictly regex-validated
+-- (is_valid_mac) BEFORE it's used to derive the section id or touch any uci
+-- command, and every use of it in a shell command also goes through
+-- shell_quote() as defense in depth.
+
+local function run(cmd)
+  local p = io.popen(cmd .. " 2>/dev/null")
+  if not p then return "" end
+  local out = p:read("*a") or ""
+  p:close()
+  return (out:gsub("%s+$", ""))
+end
+
+local function shell_quote(s)
+  s = tostring(s or "")
+  s = s:gsub('[\1-\9\11-\31]', '')
+  s = s:gsub('[\n\r]', ' ')
+  return "'" .. s:gsub("'", "'\\''") .. "'"
+end
+
+local function json_escape(s)
+  if s == nil then return "" end
+  s = tostring(s)
+  s = s:gsub('[\\"\n\r\t]', {
+    ['\\'] = '\\\\', ['"'] = '\\"', ['\n'] = '\\n', ['\r'] = '\\r', ['\t'] = '\\t',
+  })
+  s = s:gsub('[\1-\31]', '')
+  return s
+end
+
+local function is_valid_mac(v)
+  if type(v) ~= "string" then return false end
+  return v:match("^%x%x:%x%x:%x%x:%x%x:%x%x:%x%x$") ~= nil
+end
+
+local function mac_to_rule_name(mac) return "qospriority-" .. mac:lower():gsub(":", "") end
+local function mac_to_section_id(mac) return "qospriority_" .. mac:lower():gsub(":", "") end -- underscore: uci section ids can't contain '-' (confirmed live, Wave 5 facts.md Section 14)
+
+local function list_priority_sections()
+  local output = run("uci show firewall")
+  local order, is_rule, fields = {}, {}, {}
+  for line in output:gmatch("[^\n]+") do
+    local lhs, rhs = line:match("^(.-)=(.*)$")
+    if lhs and rhs then
+      local rest = lhs:match("^firewall%.(.+)$")
+      if rest then
+        local dot = rest:find("%.")
+        if dot then
+          local id, field = rest:sub(1, dot - 1), rest:sub(dot + 1)
+          if is_rule[id] then
+            local val = rhs:match("^'(.-)'$")
+            fields[id][field] = val or rhs
+          end
+        else
+          local id = rest
+          local typ = rhs:match("^'?(.-)'?$")
+          if typ == "rule" and not is_rule[id] then
+            is_rule[id] = true; order[#order + 1] = id; fields[id] = {}
+          end
+        end
+      end
+    end
+  end
+  return order, fields
+end
+
+local function find_priority_rule(rule_name)
+  local order, fields = list_priority_sections()
+  for _, id in ipairs(order) do
+    if fields[id].name == rule_name then return id, fields[id] end
+  end
+  return nil, nil
+end
+
+local function section_type(id) return run("uci get firewall." .. id) end
+
+local function read_request_body()
+  local len = tonumber(os.getenv("CONTENT_LENGTH") or "")
+  if len and len > 0 then return io.read(len) or "" end
+  return io.read("*a") or ""
+end
+
+local function json_parse_flat_object(s)
+  local obj = {}
+  if type(s) ~= "string" then return obj end
+  local i, len = 1, #s
+  local function skip_ws() while i <= len and s:sub(i, i):match("%s") do i = i + 1 end end
+  local function parse_string()
+    i = i + 1
+    local buf = {}
+    local escapes = { ['"']='"', ['\\']='\\', ['/']='/', ['n']='\n', ['r']='\r', ['t']='\t', ['b']='\b', ['f']='\f' }
+    while i <= len do
+      local c = s:sub(i, i)
+      if c == '"' then i = i + 1; return table.concat(buf)
+      elseif c == '\\' then
+        local nc = s:sub(i + 1, i + 1)
+        if nc == 'u' then i = i + 6
+        elseif escapes[nc] then buf[#buf+1] = escapes[nc]; i = i + 2
+        else buf[#buf+1] = nc; i = i + 2 end
+      else buf[#buf+1] = c; i = i + 1 end
+    end
+    return table.concat(buf)
+  end
+  skip_ws()
+  if s:sub(i, i) ~= '{' then return obj end
+  i = i + 1
+  skip_ws()
+  if s:sub(i, i) == '}' then return obj end
+  while i <= len do
+    skip_ws()
+    if s:sub(i, i) ~= '"' then break end
+    local key = parse_string()
+    skip_ws()
+    if s:sub(i, i) ~= ':' then break end
+    i = i + 1
+    skip_ws()
+    local val
+    if s:sub(i, i) == '"' then val = parse_string()
+    else
+      local start = i
+      while i <= len and not s:sub(i, i):match('[,}%s]') do i = i + 1 end
+      val = s:sub(start, i - 1)
+    end
+    obj[key] = val
+    skip_ws()
+    if s:sub(i, i) == ',' then i = i + 1
+    elseif s:sub(i, i) == '}' then i = i + 1; break
+    else break end
+  end
+  return obj
+end
+
+local function send_headers(status)
+  local reasons = { [400]="Bad Request", [405]="Method Not Allowed", [500]="Internal Server Error" }
+  if status and status ~= 200 then
+    print("Status: " .. status .. " " .. (reasons[status] or "Error"))
+  end
+  print("Content-Type: application/json\n")
+end
+
+local method = os.getenv("REQUEST_METHOD") or "GET"
+
+if method == "GET" then
+  local order, fields = list_priority_sections()
+  local rows = {}
+  for _, id in ipairs(order) do
+    local name = fields[id].name or ""
+    local mac = fields[id].src_mac
+    if name:match("^qospriority%-") and mac then
+      rows[#rows + 1] = string.format('{"mac":"%s"}', json_escape(mac))
+    end
+  end
+  send_headers(200)
+  print("[" .. table.concat(rows, ",") .. "]")
+
+elseif method == "POST" then
+  local body = read_request_body()
+  local req = json_parse_flat_object(body)
+  local mac = req.mac
+
+  if not is_valid_mac(mac) then
+    send_headers(400)
+    print('{"ok":false,"error":"missing or invalid required field: mac (must be AA:BB:CC:DD:EE:FF form)"}')
+  else
+    local rule_name = mac_to_rule_name(mac)
+    local existing_id = find_priority_rule(rule_name)
+
+    if existing_id then
+      -- Idempotent: already exists, nothing to do.
+      send_headers(200)
+      print(string.format('{"ok":true,"mac":"%s"}', json_escape(mac)))
+    else
+      local section_id = mac_to_section_id(mac)
+      local anon = run("uci add firewall rule")
+      local create_failed = anon == "" or anon:find("[^%w_]")
+      if not create_failed then
+        run("uci rename firewall." .. anon .. "=" .. section_id)
+        create_failed = section_type(section_id) ~= "rule"
+      end
+      if not create_failed then
+        run("uci set firewall." .. section_id .. ".name=" .. shell_quote(rule_name))
+        run("uci set firewall." .. section_id .. ".src=" .. shell_quote("lan"))
+        run("uci set firewall." .. section_id .. ".src_mac=" .. shell_quote(mac))
+        run("uci set firewall." .. section_id .. ".dest=" .. shell_quote("wan"))
+        run("uci set firewall." .. section_id .. ".target=" .. shell_quote("MARK"))
+        run("uci set firewall." .. section_id .. ".set_mark=" .. shell_quote("0x2a"))
+      end
+
+      local readback_ok = false
+      if not create_failed then
+        local _, readback_fields = find_priority_rule(rule_name)
+        readback_ok = readback_fields
+          and readback_fields.src_mac == mac
+          and readback_fields.dest == "wan"
+          and readback_fields.target == "MARK"
+      end
+
+      if not readback_ok then
+        run("uci revert firewall")
+        send_headers(500)
+        print('{"ok":false,"error":"failed to verify the priority rule write; reverted"}')
+      else
+        run("uci commit firewall")
+        run("fw4 reload")
+        send_headers(200)
+        print(string.format('{"ok":true,"mac":"%s"}', json_escape(mac)))
+      end
+    end
+  end
+
+else
+  send_headers(405)
+  print(string.format('{"ok":false,"error":"unsupported method: %s"}', json_escape(tostring(method))))
+end
