@@ -1,8 +1,17 @@
 #!/bin/sh
-# Deploys docker/provision/www/lib/devpause-sweep.sh (the tracked source of
+# Deploys docker/provision/lib/devpause-sweep.sh (the tracked source of
 # truth for the per-device pause auto-expiry sweep) onto a running OpenWrt
 # VM as /usr/bin/devpause-sweep.sh, seeds a cron entry that runs it every
 # minute, and verifies crond is genuinely running afterward.
+#
+# Deliberately NOT under docker/provision/www/ (code review finding): that
+# whole subtree gets generically copied onto the VM's web-servable
+# /www/cgi-bin/ by 02-copy-www.sh, and this script is a plain cron job, not
+# an HTTP-servable CGI endpoint — living under www/ would make a normal
+# re-run of step 2 also deposit an unrequested, unexecutable second copy at
+# /www/cgi-bin/lib/devpause-sweep.sh, sitting under uhttpd's docroot for no
+# reason. docker/provision/lib/ (a sibling of the numbered scripts, not of
+# www/) has no such exposure.
 #
 # This is the baseline-state half of the Per-Device Controls feature: real
 # device-pause CREATION is /cgi-bin/api/device-pause's job (a later task,
@@ -38,7 +47,7 @@ SSH_TARGET="root@${OPENWRT_HOST}"
 ssh_run() { ssh ${SSH_OPTS} -p "${OPENWRT_PORT}" "${SSH_TARGET}" "$1"; }
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-SRC_FILE="${SCRIPT_DIR}/www/lib/devpause-sweep.sh"
+SRC_FILE="${SCRIPT_DIR}/lib/devpause-sweep.sh"
 
 echo "=== 13-provision-devpause-api.sh ==="
 
@@ -59,7 +68,7 @@ echo "Making it executable (core.filemode=false means git doesn't track +x — s
 ssh_run "chmod +x /usr/bin/devpause-sweep.sh && ls -la /usr/bin/devpause-sweep.sh"
 
 echo "Seeding /etc/crontabs/root with a every-minute entry (idempotent — grep -qF guards against a duplicate line on re-run)..."
-ssh_run "mkdir -p /etc/crontabs; grep -qF '/usr/bin/devpause-sweep.sh' /etc/crontabs/root 2>/dev/null || echo '* * * * * /usr/bin/devpause-sweep.sh' >> /etc/crontabs/root; cat /etc/crontabs/root"
+ssh_run "mkdir -p /etc/crontabs && (grep -qF '/usr/bin/devpause-sweep.sh' /etc/crontabs/root 2>/dev/null || echo '* * * * * /usr/bin/devpause-sweep.sh' >> /etc/crontabs/root) && cat /etc/crontabs/root"
 
 echo "Enabling and starting cron..."
 ssh_run "/etc/init.d/cron enable && /etc/init.d/cron start"

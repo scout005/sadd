@@ -256,7 +256,7 @@ bash docker/provision/11-provision-wireguard-api.sh
 bash docker/provision/12-provision-ssh-key-api.sh
 
 # 13. Deploy the per-device pause auto-expiry sweep: copies
-#     docker/provision/www/lib/devpause-sweep.sh onto the VM as
+#     docker/provision/lib/devpause-sweep.sh onto the VM as
 #     /usr/bin/devpause-sweep.sh, seeds /etc/crontabs/root with an
 #     every-minute cron entry for it (idempotent — grep -qF guards against
 #     duplicating the line on re-run), enables and starts cron, then
@@ -736,7 +736,7 @@ specifically, as a sibling of `luci`, not a replacement for it.
   "stateless endpoint" shape and 08-11's "create baseline uci config"
   shape, this step provisions a standalone cron job, not a `/cgi-bin/api/*`
   HTTP endpoint (there is no `/api/device-pause` yet — that's a later task).
-  `scp -O`'s `docker/provision/www/lib/devpause-sweep.sh` onto the VM as
+  `scp -O`'s `docker/provision/lib/devpause-sweep.sh` onto the VM as
   `/usr/bin/devpause-sweep.sh` and chmods it executable, then seeds
   `/etc/crontabs/root` with `* * * * * /usr/bin/devpause-sweep.sh`
   (idempotent — `grep -qF` before appending, confirmed live by running the
@@ -755,11 +755,20 @@ specifically, as a sibling of `luci`, not a replacement for it.
   loudly only if still not running after that. Confirmed idempotent live by
   running the script twice in a row (second run skips nothing but leaves
   the crontab at exactly one matching line and crond still running).
-- `docker/provision/www/lib/devpause-sweep.sh` — the tracked source of
-  truth for `/usr/bin/devpause-sweep.sh`, run every minute by the cron
-  entry `13-provision-devpause-api.sh` seeds. Finds every uci `firewall`
-  rule section this project created for a per-device pause (`name` starting
-  with `devpause-`, extracted with POSIX `sed`/`grep` only — busybox ash,
+  Deliberately kept under `docker/provision/lib/`, NOT
+  `docker/provision/www/lib/` (a code-review finding on the first version
+  of this task): `02-copy-www.sh` generically copies everything under
+  `docker/provision/www/` onto the VM's web-servable `/www/cgi-bin/`, so a
+  `www/`-nested source would make a normal re-run of step 2 also deposit an
+  unrequested, non-executable second copy at
+  `/www/cgi-bin/lib/devpause-sweep.sh` for no reason — confirmed live after
+  the fix that re-running `02-copy-www.sh` creates no `/www/cgi-bin/lib/`
+  path at all.
+- `docker/provision/lib/devpause-sweep.sh` — the tracked source of truth
+  for `/usr/bin/devpause-sweep.sh`, run every minute by the cron entry
+  `13-provision-devpause-api.sh` seeds. Finds uci `firewall` rule sections
+  this project created for a per-device pause (`name` starting with
+  `devpause-`, extracted with POSIX `sed`/`grep` only — busybox ash,
   matching every other script in this directory's tooling assumptions, not
   bash/gawk), reads each one's custom `paused_until` (epoch-seconds) uci
   option — uci tolerates arbitrary option names on a rule section, and fw4
@@ -767,18 +776,56 @@ specifically, as a sibling of `luci`, not a replacement for it.
   ... specifies unknown option 'paused_until'` warning on `fw4 reload`, not
   a failure) — and `uci -q delete`s any section whose `paused_until` has
   already passed, `uci commit firewall`ing and `fw4 reload`ing once at the
-  end only if at least one section was actually removed. Every deletion is
-  also `logger -t devpause-sweep`'d for auditability. This script only ever
-  DELETES expired pause rules; real pause CREATION is
-  `/cgi-bin/api/device-pause`'s job (a later task, not yet built). Confirmed
-  live end-to-end: a hand-crafted `devpause-aabbccddeeff` rule with
-  `paused_until` 5 seconds in the past was genuinely removed by the next
-  real cron tick (`uci show firewall | grep devpause-aabbccddeeff` went
-  from a match to no match, `exit=1`, within 65 seconds, no manual
+  end only if at least one section was actually removed (both failures are
+  now explicitly `logger`'d rather than silently swallowed — a code-review
+  fix). Every deletion is also `logger -t devpause-sweep`'d for
+  auditability. This script only ever DELETES expired pause rules; real
+  pause CREATION is `/cgi-bin/api/device-pause`'s job (a later task, not
+  yet built).
+  **Multi-expiry-per-tick fix (code review):** this VM's `firewall` rules
+  are anonymous sections addressed positionally
+  (`firewall.@rule[N]`, confirmed live in `docker/facts.md` Section 13/14 —
+  the same shape device-pause creation uses). The first version of this
+  script collected every expired section's id in ONE upfront `uci show`
+  snapshot, then deleted them in that same order — but deleting a
+  lower-indexed `@rule[N]` immediately renumbers every higher-indexed
+  section by one in the live staged uci state, so every id after the first
+  delete in a batch pass could address whatever section shifted into that
+  vacated slot instead of the rule actually intended, whenever >=2 pauses
+  expired in the same minute. Fixed by having `find_one_expired_id()`
+  re-run a completely fresh `uci show firewall` scan on every single call,
+  with the main loop calling it again immediately after each delete and
+  repeating until a fresh scan finds nothing left to expire — never acting
+  on a stale batch of ids.
+  Confirmed live end-to-end, including the multi-expiry scenario the fix
+  specifically targets: a single hand-crafted `devpause-aabbccddeeff` rule
+  with `paused_until` 5 seconds in the past was genuinely removed by the
+  next real cron tick (`uci show firewall | grep devpause-aabbccddeeff`
+  went from a match to no match, `exit=1`, within 65 seconds, no manual
   intervention), while a sibling `devpause-112233445566` rule with
   `paused_until` 300 seconds in the future survived that same sweep cycle
-  untouched — real per-minute auto-expiry, not a client-side timer that
-  only pretends the block ends.
+  untouched. Separately, after the ordering fix, the exact scenario the fix
+  targets was reproduced and proven live: THREE simultaneously expired
+  rules (`devpause-aaaaaaaaaaaa`, `devpause-bbbbbbbbbbbb`,
+  `devpause-cccccccccccc`, `paused_until` a few seconds in the past) plus a
+  fourth, non-expired `devpause-dddddddddddd` (`paused_until` 300 seconds
+  in the future) were created back-to-back at positions `@rule[9]`-`[12]`
+  and left for one real cron tick. Afterward, `uci show firewall | grep
+  devpause-` showed exactly one line left —
+  `firewall.@rule[9].name='devpause-dddddddddddd'` — proving all three
+  expired rules were removed in that single pass, not just the first
+  (which is what the pre-fix batched-snapshot ordering bug would have
+  left behind), while the still-future rule survived even though repeated
+  deletions shifted it down to reuse the very `@rule[9]` address three
+  now-removed rules had each occupied in turn — real proof `paused_until`
+  is re-read fresh at each address rather than acted on from a stale
+  snapshot. `logread` corroborates from the same cron invocation (pid
+  11962): three separate `devpause-sweep: removing expired pause:
+  firewall.@rule[9] (paused_until=1788262016, now=1788262080)` lines, all
+  timestamped `Tue Sep 1 11:28:00 2026` — one per deletion, each correctly
+  reporting the rule occupying `@rule[9]` at that moment, confirming the
+  fresh-rescan loop cleared every same-tick expiry in one pass rather than
+  one per minute.
 
 ### Real connectivity test — what it actually means in this topology
 
