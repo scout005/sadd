@@ -47,6 +47,20 @@
 -- rather than a single-option SET, using an id/field-parsing approach
 -- adapted from firewall-rules' list_redirect_sections(), generalized to
 -- `rule` sections.
+--
+-- Stable-id rename (code review finding, fixed before this endpoint's first
+-- release): `firewall-rules`' own header comment documents why a freshly
+-- `uci add`ed anonymous section must be immediately `uci rename`d to a
+-- stable name before any further `uci set`/`get`/`delete` addresses it —
+-- `@rule[-1]`/`@rule[N]`-style positional addressing can resolve to the
+-- WRONG section if anything else mutates firewall's staged config between
+-- calls (each `run()` is a separate process invocation, so there's a real
+-- window here, not a single atomic transaction). This endpoint follows that
+-- same precedent: `rule_name` (already a unique, stable, deterministic
+-- per-MAC name — e.g. `devpause-aabbccddeeff`) doubles as the rename target,
+-- with the rename itself verified (must read back as type `rule`) before any
+-- field is set, exactly mirroring firewall-rules' `section_type(id) ~=
+-- "redirect"` check.
 
 local function run(cmd)
   local p = io.popen(cmd .. " 2>/dev/null")
@@ -70,6 +84,22 @@ end
 
 local function mac_to_rule_name(mac)
   return "devpause-" .. mac:lower():gsub(":", "")
+end
+
+-- The stable uci SECTION identifier a rename target uses — distinct from
+-- rule_name (the `.name` OPTION's value, above). uci section identifiers
+-- only accept [A-Za-z0-9_]+ (confirmed live: `uci rename firewall.<anon>=
+-- devpause-<mac>` "succeeds" with exit 0, but the section is then
+-- unreachable under that name — `uci get` on it fails "Invalid argument" —
+-- because a hyphen isn't a valid identifier character; the readback
+-- verification below catches this cleanly as a failed write rather than
+-- silently corrupting anything, which is exactly how this was caught before
+-- ever shipping). rule_name's hyphenated form is kept as-is for the `.name`
+-- option's VALUE, since devpause-sweep.sh's `grep "\.name='devpause-"` scan
+-- depends on that exact literal prefix — only the section id itself needs
+-- underscores.
+local function mac_to_section_id(mac)
+  return "devpause_" .. mac:lower():gsub(":", "")
 end
 
 -- Parses `uci show firewall` into id -> {name=..., paused_until=...} for
@@ -115,6 +145,15 @@ local function find_pause_rule(rule_name)
     if fields[id].name == rule_name then return id, fields[id] end
   end
   return nil, nil
+end
+
+-- Returns a section's uci type ("rule", etc.), or "" if it doesn't exist —
+-- adapted verbatim from firewall-rules' section_type(). run() already merges
+-- stderr into stdout, so a nonexistent id just returns uci's own "Entry not
+-- found" text here rather than "rule", which the equality check below
+-- handles correctly without a separate /dev/null redirect.
+local function section_type(id)
+  return run("uci get firewall." .. id)
 end
 
 -- Canonical table-based json_escape (adapted verbatim from
@@ -225,7 +264,12 @@ if method == "GET" then
     local _, fields = find_pause_rule(mac_to_rule_name(mac))
     send_headers(200)
     if fields and fields.paused_until then
-      local remaining = tonumber(fields.paused_until) - os.time()
+      -- tonumber(...) or 0 guards against a non-numeric paused_until (never
+      -- written by this endpoint itself, but defensive against hand-edited
+      -- config) throwing mid-response, after send_headers(200) has already
+      -- printed — same defensive-parsing discipline as devpause-sweep.sh's
+      -- own guarded numeric compare on this exact field.
+      local remaining = (tonumber(fields.paused_until) or 0) - os.time()
       if remaining and remaining > 0 then
         print(string.format('{"paused":true,"remainingSeconds":%d}', remaining))
       else
@@ -250,33 +294,59 @@ elseif method == "POST" then
     print('{"ok":false,"error":"missing or invalid required field: minutes (integer, 1-1440)"}')
   else
     local rule_name = mac_to_rule_name(mac)
+    local section_id = mac_to_section_id(mac)
     local expires_at = os.time() + (minutes * 60)
 
     -- Replace any existing pause rule for this MAC (extend/shorten), rather
-    -- than accumulating duplicates.
+    -- than accumulating duplicates. Looked up by the `.name` field value
+    -- (rule_name), addressed for deletion by whatever section id that
+    -- lookup actually returns — not assumed to already be section_id, since
+    -- an existing rule could in principle still be a stale positional id
+    -- (e.g. one created before this rename fix existed).
     local existing_id = find_pause_rule(rule_name)
-    if existing_id then run("uci -q delete firewall." .. existing_id) end
+    if existing_id then run("uci -q delete firewall." .. shell_quote(existing_id)) end
 
-    run("uci add firewall rule")
-    run("uci set firewall.@rule[-1].name=" .. shell_quote(rule_name))
-    run("uci set firewall.@rule[-1].src=" .. shell_quote("lan"))
-    run("uci set firewall.@rule[-1].src_mac=" .. shell_quote(mac))
-    run("uci set firewall.@rule[-1].dest=" .. shell_quote("wan"))
-    run("uci set firewall.@rule[-1].target=" .. shell_quote("REJECT"))
-    run("uci set firewall.@rule[-1].proto=" .. shell_quote("all"))
-    run("uci set firewall.@rule[-1].paused_until=" .. shell_quote(tostring(expires_at)))
+    local create_failed = false
+    local create_error = nil
 
-    local _, readback_fields = find_pause_rule(rule_name)
-    local readback_ok = readback_fields
-      and readback_fields.src_mac == mac
-      and readback_fields.dest == "wan"
-      and readback_fields.target == "REJECT"
-      and readback_fields.paused_until == tostring(expires_at)
+    local anon = run("uci add firewall rule")
+    if anon == "" or anon:find("[^%w_]") then
+      create_failed = true
+      create_error = "uci add firewall rule failed"
+    else
+      run("uci rename firewall." .. anon .. "=" .. section_id)
+      -- Verify the rename actually took (mirrors firewall-rules' identical
+      -- check): if it silently failed, every uci set below would target a
+      -- section that no longer exists under this name and silently no-op —
+      -- this catches that before any field write is even attempted.
+      if section_type(section_id) ~= "rule" then
+        create_failed = true
+        create_error = "uci rename to " .. section_id .. " failed: section not found under new name"
+      else
+        run("uci set firewall." .. section_id .. ".name=" .. shell_quote(rule_name))
+        run("uci set firewall." .. section_id .. ".src=" .. shell_quote("lan"))
+        run("uci set firewall." .. section_id .. ".src_mac=" .. shell_quote(mac))
+        run("uci set firewall." .. section_id .. ".dest=" .. shell_quote("wan"))
+        run("uci set firewall." .. section_id .. ".target=" .. shell_quote("REJECT"))
+        run("uci set firewall." .. section_id .. ".proto=" .. shell_quote("all"))
+        run("uci set firewall." .. section_id .. ".paused_until=" .. shell_quote(tostring(expires_at)))
+      end
+    end
+
+    local readback_ok = false
+    if not create_failed then
+      local _, readback_fields = find_pause_rule(rule_name)
+      readback_ok = readback_fields
+        and readback_fields.src_mac == mac
+        and readback_fields.dest == "wan"
+        and readback_fields.target == "REJECT"
+        and readback_fields.paused_until == tostring(expires_at)
+    end
 
     if not readback_ok then
       run("uci revert firewall")
       send_headers(500)
-      print('{"ok":false,"error":"failed to verify the pause rule write; reverted"}')
+      print(string.format('{"ok":false,"error":"%s"}', json_escape(create_error or "failed to verify the pause rule write; reverted")))
     else
       run("uci commit firewall")
       run("fw4 reload")
@@ -286,7 +356,6 @@ elseif method == "POST" then
   end
 
 else
-  local safe_method = tostring(method):gsub('[\\"%c]', '')
   send_headers(405)
-  print(string.format('{"ok":false,"error":"unsupported method: %s"}', safe_method))
+  print(string.format('{"ok":false,"error":"unsupported method: %s"}', json_escape(tostring(method))))
 end
