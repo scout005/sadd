@@ -10,7 +10,7 @@
 -- POST body: {"domain": "<domain>"} -> {"ok": true, "domain": "<domain>"}
 --
 -- === File ownership — same critical rule as safe-search ===
--- Manages its OWN files (custom-<safe-id>.conf, one per added domain)
+-- Manages its OWN files (custom-<domain>.conf, one per added domain)
 -- inside /etc/dnsmasq.blocklist.d — the same directory Ad Blocking
 -- (blocklist.conf) and Safe Search (safesearch.conf) already use, never
 -- touching either of those files or the confdir uci option.
@@ -26,13 +26,18 @@
 -- === Domain validation ===
 -- A reasonably strict domain-shape check (dot-separated alphanumeric/hyphen
 -- labels, at least one dot, no leading/trailing hyphen per label) — this is
--- validated BEFORE it's used to derive a filename or interpolated into any
--- shell command, and every shell interpolation also goes through
--- shell_quote() as defense in depth (the same double-layered discipline
--- device-pause/qos-priority/device-bedtime already established — a validated
--- domain can only ever contain filename-safe, shell-safe characters, so this
--- endpoint never accepts a value that could reach a shell command unquoted
--- and unvalidated).
+-- validated BEFORE it's used to derive a filename. This endpoint has NO
+-- shell interpolation of user input at all: the domain only ever reaches
+-- io.open()/f:write(), never io.popen()/run(), so no shell-quoting is
+-- needed here (unlike device-pause/qos-priority/device-bedtime, which do
+-- interpolate user input into shell commands and so need shell_quote()).
+-- Validation exists purely to (1) keep the domain filesystem-safe as a
+-- "custom-<domain>.conf" filename component — the allowed charset
+-- (alnum/dot/hyphen) and the per-label alnum-boundary rule together rule
+-- out "/", "..", and a leading/trailing dot, so a validated domain can
+-- never escape BLOCKLIST_DIR or collide with another domain's filename —
+-- and (2) keep the written "address=/domain/0.0.0.0" dnsmasq directive
+-- well-formed.
 --
 -- === Write-then-verify-then-restart ordering ===
 -- Same discipline as safe-search's POST handler (fixed in commit ecfbdd5
@@ -54,13 +59,6 @@ local function run(cmd)
   local out = p:read("*a") or ""
   p:close()
   return (out:gsub("%s+$", ""))
-end
-
-local function shell_quote(s)
-  s = tostring(s or "")
-  s = s:gsub('[\1-\9\11-\31]', '')
-  s = s:gsub('[\n\r]', ' ')
-  return "'" .. s:gsub("'", "'\\''") .. "'"
 end
 
 local function json_escape(s)
@@ -119,8 +117,17 @@ local function is_valid_domain(v)
   return not is_ipv4_shaped(v)
 end
 
+-- Uses the validated domain directly, with no character substitution.
+-- is_valid_domain() restricts the charset to alnum/dot/hyphen and requires
+-- every label to start and end with an alnum character, so a bare "/" or
+-- ".." (which would produce an empty label) can never pass validation —
+-- the domain is already a safe, unambiguous filename component. This also
+-- makes the mapping collision-free by construction: two different domain
+-- strings can never produce the same filename (unlike the previous
+-- gsub("[%.%-]", "_") scheme, which collapsed both "." and "-" to "_" and
+-- let e.g. "foo-bar.com" and "foo.bar.com" collide on the same file).
 local function domain_to_filename(domain)
-  return BLOCKLIST_DIR .. "/custom-" .. domain:lower():gsub("[%.%-]", "_") .. ".conf"
+  return BLOCKLIST_DIR .. "/custom-" .. domain:lower() .. ".conf"
 end
 
 -- Scans the blocklist directory for this project's own custom-*.conf files
