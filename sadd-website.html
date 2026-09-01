@@ -1417,7 +1417,13 @@ html.large-text .scr-title{font-size:1.15em;}
   //      this file. No delete affordance exists in the mockup for these rows, so none is
   //      built (mirrors Network & VLANs' precedent). ----
   function renderWireguardClientRow(c){
-    const name = c.name ? escapeHtml(c.name) : c.publicKey.slice(0, 12) + '…';
+    // Fallback (no name on record) is escaped just like every other field here — a real
+    // pubkey is base64-safe today, but this file's discipline is "escape every
+    // externally-sourced value, no exceptions" (code review finding: this previously
+    // skipped escaping here, the one place in the function that did). Also guarded
+    // against a missing publicKey so one malformed row can't throw and blank the whole
+    // list via data.map's per-row call.
+    const name = c.name ? escapeHtml(c.name) : escapeHtml((c.publicKey || '').slice(0, 12) + '…');
     return '<div class="rule-row" data-client-id="'+escapeHtml(c.id)+'"><div class="rr-main"><strong>'+name+'</strong></div><span class="mono-badge" style="width:140px;text-align:center;">'+escapeHtml(c.added||'')+'</span><div class="switch'+(c.enabled?' on':'')+'" style="width:38px;height:22px;" data-wireguard-client-switch="'+escapeHtml(c.id)+'"></div></div>';
   }
 
@@ -1429,10 +1435,23 @@ html.large-text .scr-title{font-size:1.15em;}
     const addToggleBtn = document.getElementById('wireguardAddToggleBtn');
     if(!listEl) return;
     if(Array.isArray(data)){
+      // real data (even an empty array) replaces the static demo rows entirely — same
+      // contract as every other list screen in this file.
       listEl.innerHTML = data.map(renderWireguardClientRow).join('');
       if(addToggleBtn) addToggleBtn.disabled = false;
-    } else if(addToggleBtn){
-      addToggleBtn.disabled = true;
+    } else {
+      // unreachable/error: leave the static demo rows in place (innerHTML untouched
+      // above), add the same .api-fallback-notice idiom Devices/Firewall/Logs/VLANs use
+      // for their own list containers — code review finding: this previously disabled
+      // the Add button with no other indication, leaving the two demo rows looking
+      // exactly like live data.
+      if(addToggleBtn) addToggleBtn.disabled = true;
+      if(!listEl.querySelector('.api-fallback-notice')){
+        const notice = document.createElement('div');
+        notice.className = 'api-fallback-notice';
+        notice.textContent = "Can't reach router — showing demo data";
+        listEl.insertAdjacentElement('afterbegin', notice);
+      }
     }
   }
 
@@ -1487,6 +1506,7 @@ html.large-text .scr-title{font-size:1.15em;}
   // reference before the await, render() always replaces appContent on navigation.
   async function handleWireguardClientToggle(sw, id){
     if(sw.dataset.pending === 'true') return;
+    const row = sw.closest('.rule-row');
     const wasOn = sw.classList.contains('on');
     const nextOn = !wasOn;
     sw.dataset.pending = 'true';
@@ -1496,11 +1516,33 @@ html.large-text .scr-title{font-size:1.15em;}
       method: 'POST',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({id, enabled: nextOn})
-    }, 6000);
+    }, 6000); // 6000ms, not the shared 1500ms default — this toggle runs ifdown/ifup wg0 on
+      // the backend, the same real interface-bring-up cost as the hero switch's own toggle
+      // (handleWireguardSwitchClick), which uses the identical budget for the same reason.
     sw.dataset.pending = 'false';
     sw.classList.remove('pending');
     if(result === null || !result.ok){
+      // revert — no false-success left showing after a real or network failure. Unlike
+      // the hero switch (which has syncFallbackNotice's single anchor to work with), each
+      // client row has no dedicated notice slot, so this reuses
+      // handleDevicePauseChipClick's pattern instead: a fresh .api-fallback-notice
+      // inserted right after the row, with its own auto-dismiss timer tracked/cleared on
+      // the element itself (dataset.removeTimer) so a rapid second click on the same row
+      // can't have an earlier click's stale timer clobber this one's message early.
       sw.classList.toggle('on', wasOn);
+      if(row){
+        let notice = row.nextElementSibling;
+        if(!notice || !notice.classList || !notice.classList.contains('api-fallback-notice')){
+          notice = document.createElement('div');
+          notice.className = 'api-fallback-notice';
+          row.insertAdjacentElement('afterend', notice);
+        }
+        if(notice.dataset.removeTimer) clearTimeout(Number(notice.dataset.removeTimer));
+        const msg = (result && result.data && result.data.error) ? result.data.error
+          : (result === null ? "Can't reach router — client not changed." : ('Request failed (status '+result.status+') — client not changed.'));
+        setEscapedText(notice, msg);
+        notice.dataset.removeTimer = setTimeout(()=>{ if(notice.parentElement) notice.remove(); }, 4000);
+      }
     }
   }
 
@@ -1973,6 +2015,12 @@ html.large-text .scr-title{font-size:1.15em;}
     if(wgAddToggleBtn){
       const form = document.getElementById('wireguardAddForm');
       if(form) form.style.display = form.style.display === 'none' ? 'block' : 'none';
+      // Hide any previous client's config (private key included) when reopening the form
+      // for a new client — code review finding: a prior client's key otherwise stayed
+      // visible, unrelated to the freshly-reopened empty form, until overwritten by the
+      // next successful submit.
+      const configEl = document.getElementById('wireguardClientConfig');
+      if(configEl && form && form.style.display === 'block'){ configEl.style.display = 'none'; configEl.innerHTML = ''; }
       return;
     }
     const wgAddCancel = e.target.closest('[data-wireguard-add-cancel]');
