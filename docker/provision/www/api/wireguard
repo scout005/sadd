@@ -1,0 +1,219 @@
+#!/usr/bin/lua
+-- /api/wireguard — GET + POST. Real WireGuard-server-backed status/toggle for
+-- the VPN Server (WireGuard) screen. Reads/writes the baseline config created
+-- by docker/provision/11-provision-wireguard-api.sh (see that script and
+-- docker/facts.md Sections 13-14 for the confirmed live investigation this
+-- endpoint is built on).
+--
+-- GET response shape:
+--   {"running": true|false, "port": 51820, "publicKey": "<base64>", "subnet": "10.9.0.0/24"}
+--
+-- === running ===
+-- `ubus call network.interface.wg0 status` (same real-liveness-signal idea as
+-- Network & VLANs' /api/vlans reading `ip link show` — not a cached/assumed
+-- value) reporting `"up": true` -> true. Anything else (down, no such
+-- interface, ubus failure) -> false.
+--
+-- === port / publicKey ===
+-- Always read live from `wg show wg0` (not from uci, which stores the
+-- *private* key, never printed by this endpoint) — `listening port: N` and
+-- `public key: <b64>` lines. If wg0 doesn't exist (e.g. mid-toggle-off),
+-- these fall back to the port/subnet this VM was provisioned with (51820,
+-- 10.9.0.0/24) and an empty publicKey string, rather than crashing.
+--
+-- === subnet ===
+-- Hardcoded '10.9.0.0/24' — this is the one baseline value
+-- 11-provision-wireguard-api.sh always provisions network.wg0.addresses as
+-- (10.9.0.1/24), never user-editable through this screen in this wave (no
+-- "add a peer"/"change subnet" UI exists yet) — same "narrow read-only
+-- constant, not because it's technically unreadable but because there's
+-- nothing else to disagree with it" reasoning as VLANs' hardcoded subnet
+-- display would use if it needed one.
+--
+-- === POST (real on/off toggle) ===
+--
+-- POST body: {"enabled": true|false} — writes network.wg0.disabled
+-- accordingly and reports the new running state.
+--
+-- Both directions confirmed live against this running VM before writing this
+-- handler (docker/facts.md Section 14):
+--   enabled:true  -> uci set network.wg0.disabled=0 ; commit ; ifup wg0
+--   enabled:false -> uci set network.wg0.disabled=1 ; commit ; ifdown wg0
+-- Confirmed both ways that the real kernel interface actually appears/
+-- disappears (`ip link show wg0`), not just that the uci option flips.
+--
+-- Body parsing / write discipline: same hand-rolled json_parse_flat_object +
+-- literal "true"/"false" string validation, and the same
+-- write-then-readback-verify-then-commit-or-revert discipline, as
+-- `wifi`/`adblock`'s POST handlers — adapted verbatim, see those files'
+-- header comments for the full rationale.
+--
+-- Invalid/missing input is rejected with 400 and touches no config at all.
+-- Unsupported methods (anything but GET/POST) get 405.
+
+local EXPECTED_PORT = 51820
+local EXPECTED_SUBNET = "10.9.0.0/24"
+
+local function run(cmd)
+  local p = io.popen(cmd .. " 2>/dev/null")
+  if not p then return "" end
+  local out = p:read("*a") or ""
+  p:close()
+  return (out:gsub("%s+$", ""))
+end
+
+local function uci_get(path)
+  local out = run("uci get " .. path)
+  if out == "" or out:match("^uci:") then return nil end
+  return out
+end
+
+local function is_running()
+  local out = run("ubus call network.interface.wg0 status")
+  return out:find('"up": true', 1, true) ~= nil
+end
+
+local function wg_port_and_pubkey()
+  local out = run("wg show wg0")
+  if out == "" then return EXPECTED_PORT, "" end
+  local port = out:match("listening port: (%d+)") or tostring(EXPECTED_PORT)
+  local pubkey = out:match("public key: (%S+)") or ""
+  return tonumber(port) or EXPECTED_PORT, pubkey
+end
+
+local function json_escape(s)
+  s = tostring(s or "")
+  return s:gsub('[%c"\\]', function(c)
+    if c == '"' then return '\\"' end
+    if c == '\\' then return '\\\\' end
+    return string.format('\\u%04x', c:byte())
+  end)
+end
+
+local function shell_quote(s)
+  s = tostring(s or "")
+  s = s:gsub('[\1-\9\11-\31]', '')
+  s = s:gsub('[\n\r]', ' ')
+  return "'" .. s:gsub("'", "'\\''") .. "'"
+end
+
+local function read_request_body()
+  local len = tonumber(os.getenv("CONTENT_LENGTH") or "")
+  if len and len > 0 then return io.read(len) or "" end
+  return io.read("*a") or ""
+end
+
+-- === Narrow, defensive flat-JSON-object parser === (adapted verbatim from
+-- wifi/adblock's json_parse_flat_object — see those files for the full
+-- rationale on the deliberate true/"true" ambiguity this accepts.)
+local function json_parse_flat_object(s)
+  local obj = {}
+  if type(s) ~= "string" then return obj end
+  local i, len = 1, #s
+  local function skip_ws() while i <= len and s:sub(i, i):match("%s") do i = i + 1 end end
+  local function parse_string()
+    i = i + 1
+    local buf = {}
+    local escapes = { ['"']='"', ['\\']='\\', ['/']='/', ['n']='\n', ['r']='\r', ['t']='\t', ['b']='\b', ['f']='\f' }
+    while i <= len do
+      local c = s:sub(i, i)
+      if c == '"' then i = i + 1; return table.concat(buf)
+      elseif c == '\\' then
+        local nc = s:sub(i + 1, i + 1)
+        if nc == 'u' then i = i + 6
+        elseif escapes[nc] then buf[#buf+1] = escapes[nc]; i = i + 2
+        else buf[#buf+1] = nc; i = i + 2 end
+      else buf[#buf+1] = c; i = i + 1 end
+    end
+    return table.concat(buf)
+  end
+  skip_ws()
+  if s:sub(i, i) ~= '{' then return obj end
+  i = i + 1
+  skip_ws()
+  if s:sub(i, i) == '}' then return obj end
+  while i <= len do
+    skip_ws()
+    if s:sub(i, i) ~= '"' then break end
+    local key = parse_string()
+    skip_ws()
+    if s:sub(i, i) ~= ':' then break end
+    i = i + 1
+    skip_ws()
+    local val
+    if s:sub(i, i) == '"' then val = parse_string()
+    else
+      local start = i
+      while i <= len and not s:sub(i, i):match('[,}%s]') do i = i + 1 end
+      val = s:sub(start, i - 1)
+    end
+    obj[key] = val
+    skip_ws()
+    if s:sub(i, i) == ',' then i = i + 1
+    elseif s:sub(i, i) == '}' then i = i + 1; break
+    else break end
+  end
+  return obj
+end
+
+local function parse_enabled(body)
+  local req = json_parse_flat_object(body)
+  local v = req.enabled
+  if v == "true" then return true end
+  if v == "false" then return false end
+  return nil
+end
+
+local function send_headers(status)
+  local reasons = { [400]="Bad Request", [405]="Method Not Allowed", [500]="Internal Server Error" }
+  if status and status ~= 200 then
+    print("Status: " .. status .. " " .. (reasons[status] or "Error"))
+  end
+  print("Content-Type: application/json\n")
+end
+
+local method = os.getenv("REQUEST_METHOD") or "GET"
+
+if method == "GET" then
+  send_headers(200)
+  local port, pubkey = wg_port_and_pubkey()
+  print(string.format(
+    '{"running":%s,"port":%d,"publicKey":"%s","subnet":"%s"}',
+    is_running() and "true" or "false", port, json_escape(pubkey), EXPECTED_SUBNET
+  ))
+
+elseif method == "POST" then
+  local body = read_request_body()
+  local enabled_req = parse_enabled(body)
+
+  if enabled_req == nil then
+    send_headers(400)
+    print('{"ok":false,"error":"missing or invalid required field: enabled (must be a JSON boolean true or false)"}')
+  else
+    run("uci set network.wg0.disabled=" .. shell_quote(enabled_req and "0" or "1"))
+
+    local readback = uci_get("network.wg0.disabled")
+    local readback_ok
+    if enabled_req then
+      readback_ok = (readback == "0")
+    else
+      readback_ok = (readback == "1")
+    end
+
+    if not readback_ok then
+      run("uci revert network")
+      send_headers(500)
+      print('{"ok":false,"error":"failed to verify network.wg0.disabled write; reverted"}')
+    else
+      run("uci commit network")
+      if enabled_req then run("ifup wg0") else run("ifdown wg0") end
+      send_headers(200)
+      print(string.format('{"ok":true,"running":%s}', enabled_req and "true" or "false"))
+    end
+  end
+
+else
+  local safe_method = tostring(method):gsub('[\\"%c]', '')
+  send_headers(405)
+  print(string.format('{"ok":false,"error":"unsupported method: %s"}', safe_method))
+end

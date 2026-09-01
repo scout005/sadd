@@ -56,12 +56,13 @@
 #   bash docker/provision/11-provision-wireguard-api.sh
 #
 # Optional overrides (defaults match docker/docker-compose.yml's port map):
-#   OPENWRT_HOST=localhost OPENWRT_PORT=2223 bash docker/provision/11-provision-wireguard-api.sh
+#   OPENWRT_HOST=localhost OPENWRT_PORT=2223 OPENWRT_HTTP_PORT=8081 bash docker/provision/11-provision-wireguard-api.sh
 set -e
 
 SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
 OPENWRT_HOST="${OPENWRT_HOST:-localhost}"
 OPENWRT_PORT="${OPENWRT_PORT:-2223}"
+OPENWRT_HTTP_PORT="${OPENWRT_HTTP_PORT:-8081}"
 SSH_TARGET="root@${OPENWRT_HOST}"
 
 ssh_run() { ssh ${SSH_OPTS} -p "${OPENWRT_PORT}" "${SSH_TARGET}" "$1"; }
@@ -217,5 +218,30 @@ fi
 
 echo "Real public key: $(wg show wg0 public-key)"
 REMOTE_SCRIPT
+
+# --- Deploy the /api/wireguard endpoint ---
+echo "Deploying /api/wireguard..."
+# shellcheck disable=SC2086
+scp -O ${SSH_OPTS} -P "${OPENWRT_PORT}" \
+  "$(dirname "$0")/www/api/wireguard" \
+  "${SSH_TARGET}:/www/cgi-bin/api/wireguard"
+ssh_run "chmod +x /www/cgi-bin/api/wireguard"
+
+# curl (not wget, which is all this VM has — see 08/09/10's own verify
+# blocks) runs on the HOST against the mapped HTTP port, same as every
+# other endpoint's deploy script.
+echo "Verifying: curl http://${OPENWRT_HOST}:${OPENWRT_HTTP_PORT}/cgi-bin/api/wireguard ..."
+BODY="$(curl -sf "http://${OPENWRT_HOST}:${OPENWRT_HTTP_PORT}/cgi-bin/api/wireguard")"
+echo "${BODY}"
+
+case "${BODY}" in
+  \{*\})
+    echo "OK: /api/wireguard responded with what looks like a JSON object."
+    ;;
+  *)
+    echo "ERROR: response does not look like a JSON object." >&2
+    exit 1
+    ;;
+esac
 
 echo "=== 11-provision-wireguard-api.sh done ==="

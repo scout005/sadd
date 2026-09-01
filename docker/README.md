@@ -236,9 +236,11 @@ bash docker/provision/10-provision-vlans-api.sh
 #     WireGuard interface is the thing being guaranteed, not just uci state.
 #     The private key is generated once (`wg genkey` into
 #     /etc/wireguard-privkey) and reused across re-runs, so the derived
-#     public key stays stable across idempotent re-provisioning. Does not
-#     yet deploy an `/api/wireguard` endpoint — that's a later task; this
-#     step only guarantees the real server-side interface exists.
+#     public key stays stable across idempotent re-provisioning. Also
+#     deploys and curl-verifies the /api/wireguard endpoint (real
+#     ubus/`wg show`-backed running/port/publicKey status for the VPN
+#     Server screen, plus a real on/off toggle over `network.wg0.disabled`)
+#     onto the VM.
 bash docker/provision/11-provision-wireguard-api.sh
 
 # 12. Verify.
@@ -253,6 +255,7 @@ curl -s http://localhost:8081/cgi-bin/api/logs  # -> JSON array (newest-first, c
 curl -s http://localhost:8081/cgi-bin/api/wifi  # -> JSON object of real UCI wireless state, e.g. {"ssid":"Smith Family","guestEnabled":false}
 curl -s http://localhost:8081/cgi-bin/api/adblock  # -> JSON object of real dnsmasq-blocklist state, e.g. {"enabled":true,"blockedThisWeek":4} — blockedThisWeek increases by exactly 1 per subsequent real blocked lookup (e.g. `ssh root@localhost -p 2223 nslookup doubleclick.net 127.0.0.1`), confirmed live
 curl -s http://localhost:8081/cgi-bin/api/vlans  # -> JSON array of all 5 real networks, e.g. [{"name":"Main Network","subnet":"192.168.1.0/24","active":true},{"name":"Kids","subnet":"192.168.2.0/24","active":true},{"name":"IoT / Smart Home","subnet":"192.168.3.0/24","active":true},{"name":"Guests","subnet":"192.168.4.0/24","active":true},{"name":"Quarantine","subnet":"192.168.5.0/24","active":true}] — `active` reflects genuinely live kernel state: `ssh root@localhost -p 2223 ip link set br-lan.2 down` flips Kids' `active` to `false` immediately, confirmed live
+curl -s http://localhost:8081/cgi-bin/api/wireguard  # -> JSON object of real WireGuard server state, e.g. {"running":true,"port":51820,"publicKey":"n4W57HtezCeRGFeKQ/PM19i2YrsN3OFNbgQETg/6x28=","subnet":"10.9.0.0/24"} — `running`/`publicKey` reflect genuinely live kernel state: `POST -d '{"enabled":false}'` makes `ip link show wg0` report "can't find device", `POST -d '{"enabled":true}'` brings the real interface back with the same public key, confirmed live
 ```
 
 **Step 3 in detail — overwriting the stock landing page is intentional:**
@@ -623,9 +626,31 @@ specifically, as a sibling of `luci`, not a replacement for it.
   retry needed), the second run skips package install and uci config
   creation entirely and still independently re-verifies kernel liveness —
   and the derived public key was confirmed identical across both runs,
-  proving `/etc/wireguard-privkey` reuse works. Does not yet deploy an
-  `/api/wireguard` endpoint — that's a later task; this step only
-  guarantees the real server-side interface exists.
+  proving `/etc/wireguard-privkey` reuse works. Also `scp -O`'s (and
+  curl-verifies) `docker/provision/www/api/wireguard` onto the VM's
+  `/www/cgi-bin/api/wireguard`. Same dedicated-step rationale as
+  08-10's own endpoint deploys.
+- `docker/provision/www/api/wireguard` — the tracked source of truth for
+  the `/api/wireguard` endpoint: `GET` returns
+  `{"running": <bool>, "port": <int>, "publicKey": "<string>", "subnet":
+  "<string>"}` — `running` from `ubus call network.interface.wg0 status`
+  (real kernel-liveness signal, same idea as `/api/vlans`'s `ip link show`
+  check), `port`/`publicKey` always read live from `wg show wg0` (never
+  from uci, which only ever stores the *private* key) with a fallback to
+  the provisioned port (51820) and an empty publicKey when wg0 doesn't
+  exist (e.g. mid-toggle-off), and `subnet` a hardcoded `10.9.0.0/24` — the
+  one baseline value `11-provision-wireguard-api.sh` always provisions,
+  not yet user-editable through this screen. `POST` reads a JSON body
+  `{"enabled": <bool>}` and writes `network.wg0.disabled` (`0` for
+  enabled, `1` for disabled), using the same hand-rolled
+  `json_parse_flat_object` + literal `"true"`/`"false"` string validation
+  and write-then-readback-verify-then-commit-or-revert discipline as
+  `wifi`/`adblock`'s POST handlers. Both toggle directions confirmed live
+  against this running VM: `enabled:false` runs `ifdown wg0` and makes
+  `ip link show wg0` genuinely report "can't find device"; `enabled:true`
+  runs `ifup wg0` and brings the real interface back with the same
+  public key as before (private key persists in
+  `/etc/wireguard-privkey` regardless of the toggle).
 
 ### Real connectivity test — what it actually means in this topology
 
@@ -740,9 +765,10 @@ device.
 - **No authentication on `/cgi-bin/api/*`**, and `docker-compose.yml` binds
   port 8081 to all interfaces, not just `localhost` — anyone reachable on
   the local network can add/delete real firewall rules, flip the real guest
-  Wi-Fi network on/off, or flip real ad blocking on/off, with a plain `curl`
-  (three independent write-capable endpoints as of Wave 4:
-  `/api/firewall-rules`, `/api/wifi`, `/api/adblock`). Acceptable only
+  Wi-Fi network on/off, flip real ad blocking on/off, or flip the real
+  WireGuard server on/off, with a plain `curl` (four independent
+  write-capable endpoints: `/api/firewall-rules`, `/api/wifi`,
+  `/api/adblock`, `/api/wireguard`). Acceptable only
   because this is an explicitly local, single-user dev/test tool — not
   something to carry into a later wave or real deployment as-is. The
   **read-only** endpoints (`/api/devices`, `/api/logs`, `/api/system-info`,
