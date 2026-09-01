@@ -3,17 +3,21 @@
 A real OpenWrt 23.05.5 (x86-64) instance, booted with KVM-accelerated QEMU,
 reachable from the host for LuCI, SSH, and a small `/api/*` backend the
 frontend prototype talks to (thirteen screens/sections wired to it so far,
-across six completed waves — Devices/Firewall & Ports, About/Diagnostics &
+across seven completed waves — Devices/Firewall & Ports, About/Diagnostics &
 Logs, Settings/Guest Wi-Fi, Ad Blocking/Network & VLANs, Developer & API
-Access/VPN Server (WireGuard)/Per-Device Controls, and, as of Wave 6, VPN
-Server (WireGuard)'s Client devices list + Traffic & QoS). See
+Access/VPN Server (WireGuard)/Per-Device Controls, VPN Server (WireGuard)'s
+Client devices list + Traffic & QoS (Wave 6), and, as of Wave 7, a second
+real write control — Bedtime scheduling — on Per-Device Controls, the same
+screen Wave 5 already wired up; no new screen/section count increment, since
+that screen was already counted). See
 `docs/superpowers/specs/2026-08-30-openwrt-integration-pilot-design.md` for
 the full design/roadmap and `docs/superpowers/plans/2026-08-30-openwrt-integration-wave1.md`,
 `docs/superpowers/plans/2026-08-31-openwrt-integration-wave2.md`,
 `docs/superpowers/plans/2026-08-31-openwrt-integration-wave3.md`,
 `docs/superpowers/plans/2026-09-01-openwrt-integration-wave4.md`,
-`docs/superpowers/plans/2026-09-01-openwrt-integration-wave5.md`, and
-`docs/superpowers/plans/2026-09-01-openwrt-integration-wave6.md` for the
+`docs/superpowers/plans/2026-09-01-openwrt-integration-wave5.md`,
+`docs/superpowers/plans/2026-09-01-openwrt-integration-wave6.md`, and
+`docs/superpowers/plans/2026-09-01-openwrt-integration-wave7.md` for the
 implementation plans this environment supports.
 
 ## Quick start
@@ -300,7 +304,8 @@ bash docker/provision/13-provision-devpause-api.sh
 #     here can currently only be removed by hand over SSH).
 bash docker/provision/14-provision-qos-priority-api.sh
 
-# 15. Deploy the per-device Bedtime enforcement sweep: copies
+# 15. Deploy the per-device Bedtime enforcement sweep, then the
+#     /api/device-bedtime endpoint itself: copies
 #     docker/provision/lib/bedtime-sweep.sh onto the VM as
 #     /usr/bin/bedtime-sweep.sh, seeds /etc/crontabs/root with an
 #     every-5-minutes cron entry for it (idempotent — grep -qF guards
@@ -311,11 +316,12 @@ bash docker/provision/14-provision-qos-priority-api.sh
 #     sweep reconciles every existing `bedtime-<mac>` uci firewall rule's
 #     `enabled` option to match whether the current UTC hour falls in the
 #     fixed 21:00-07:00 window, but never creates or deletes a rule itself
-#     — real device-bedtime rule CREATION (`/cgi-bin/api/device-bedtime`)
-#     is deployed by a later step in this plan, once that endpoint exists.
-#     Safe and correctly ordered to run before that endpoint exists, same
-#     "provision the enforcement half first" precedent step 13 established
-#     for devpause-sweep.sh.
+#     — real device-bedtime rule CREATION is
+#     /cgi-bin/api/device-bedtime's job, which this same step then deploys
+#     (and curl-verifies GET returns the correct "no schedule configured"
+#     shape for a MAC with no active Bedtime rule) — same
+#     sweep-half-then-endpoint-half shape and single-numbered-step folding
+#     step 13 established for devpause-sweep.sh + /api/device-pause.
 bash docker/provision/15-provision-bedtime-api.sh
 
 # 16. Verify.
@@ -339,6 +345,9 @@ curl -s "http://localhost:8081/cgi-bin/api/device-pause?mac=11:22:33:44:55:66"  
 curl -s -X POST -d '{"mac":"11:22:33:44:55:66","minutes":15}' http://localhost:8081/cgi-bin/api/device-pause  # -> real per-MAC block, e.g. {"ok":true,"paused":true,"remainingSeconds":900} — confirmed live: `uci show firewall | grep devpause-112233445566` shows a real `rule` section with `src='lan'`, `src_mac='11:22:33:44:55:66'`, `dest='wan'`, `target='REJECT'`; a subsequent GET for the same mac reports `paused:true` with a real, ticking-down `remainingSeconds`; and — proven via a genuine 65+ second wait for a real cron tick, not simulated — a rule whose `paused_until` has passed is actually removed by `/usr/bin/devpause-sweep.sh` (confirmed both for a single expired rule and for three rules expiring in the same minute, see the `devpause-sweep.sh` file note below for the exact live multi-expiry proof)
 curl -s http://localhost:8081/cgi-bin/api/qos-priority  # -> `[]` on a fresh VM
 curl -s -X POST -d '{"mac":"11:22:33:44:55:66"}' http://localhost:8081/cgi-bin/api/qos-priority  # -> {"ok":true,"mac":"11:22:33:44:55:66"} — confirmed live: `uci show firewall | grep qospriority_112233445566` shows a real `rule` section with `src='lan'`, `src_mac='11:22:33:44:55:66'`, `dest='wan'`, `target='MARK'`, `set_mark='0x2a'`; a subsequent GET returns `[{"mac":"11:22:33:44:55:66"}]`; `ssh root@localhost -p 2223 "nft list ruleset"` shows the real `mangle_forward` chain entries (`ether saddr 11:22:33:44:55:66 ... meta mark set 0x0000002a`, one for tcp and one for udp) — genuinely marking the device's forwarded traffic, not just config; a second identical POST is idempotent (`uci show firewall | grep -c qospriority_112233445566` stays at exactly 7 lines = 1 section, not 2)
+curl -s "http://localhost:8081/cgi-bin/api/device-bedtime?mac=11:22:33:44:55:66"  # -> {"enabled":false,"active":false} for a MAC with no Bedtime schedule configured
+curl -s -X POST -d '{"mac":"11:22:33:44:55:66","enabled":true}' http://localhost:8081/cgi-bin/api/device-bedtime  # -> real per-MAC recurring schedule, e.g. {"ok":true,"enabled":true,"active":false} (active reflects the real current UTC hour, computed fresh on create, not a stale default) — confirmed live: `uci show firewall | grep bedtime_112233445566` shows a real `rule` section with `src='lan'`, `src_mac='11:22:33:44:55:66'`, `dest='wan'`, `target='REJECT'`, `proto='all'`; a subsequent GET returns the same `{"enabled":true,...}` state; running `/usr/bin/bedtime-sweep.sh` by hand with the VM's clock temporarily set to an in-window UTC hour (e.g. 23:00) flips the rule's `enabled` uci option to `1` and its `REJECT` entries genuinely appear in `nft list ruleset`; setting the clock to an out-of-window hour and re-running the sweep flips it back to `0` and the entries genuinely disappear (VM clock restored to real time immediately after)
+curl -s -X POST -d '{"mac":"11:22:33:44:55:66","enabled":false}' http://localhost:8081/cgi-bin/api/device-bedtime  # -> {"ok":true,"enabled":false,"active":false} — confirmed live: `uci show firewall | grep bedtime_112233445566` goes from a match to no match, a real removal (verified by readback after delete+commit+reload, not just an unconditional 200); a second identical POST (already absent) is an idempotent no-op success
 ```
 
 **Step 3 in detail — overwriting the stock landing page is intentional:**
@@ -1026,21 +1035,31 @@ specifically, as a sibling of `luci`, not a replacement for it.
   `"$(touch /tmp/pwned_qos_test3)"`) are all rejected with a clean `400` by
   `is_valid_mac`'s regex before any uci call runs, and none of the target
   files were created on the VM.
-- `docker/provision/15-provision-bedtime-api.sh` — deploys only the
-  baseline-state (sweep) half of the Bedtime feature, matching
-  `13-provision-devpause-api.sh`'s own sweep-half shape: `scp -O`'s
+- `docker/provision/15-provision-bedtime-api.sh` — does two things, in
+  order, matching `13-provision-devpause-api.sh`'s own sweep-then-endpoint
+  shape exactly. First, the baseline-state (sweep) half: `scp -O`'s
   `docker/provision/lib/bedtime-sweep.sh` onto the VM as
   `/usr/bin/bedtime-sweep.sh` and chmods it executable, then seeds
   `/etc/crontabs/root` with `*/5 * * * * /usr/bin/bedtime-sweep.sh`
   (idempotent, `grep -qF`-guarded), enables and starts cron, and verifies
   `pgrep crond` reports a real PID rather than trusting the init script's
   own exit code (same `/etc/init.d/cron start` empty-crontab-directory trap
-  as step 13, documented in `docker/facts.md` Section 13). Unlike step 13,
-  this script does not also deploy an endpoint yet — real device-bedtime
-  rule CREATION (`/cgi-bin/api/device-bedtime`) is a separate task in this
-  same plan, not yet built when this script was written; the sweep is
-  provably safe to run standalone before that endpoint exists (nothing for
-  it to reconcile until something starts creating `bedtime-<mac>` rules).
+  as step 13, documented in `docker/facts.md` Section 13) — written and
+  provably safe to run standalone before any bedtime rule exists yet
+  (nothing for the sweep to reconcile until something starts creating
+  `bedtime-<mac>` rules). Second, once the sweep is deployed and crond
+  confirmed running, this same script copies (and chmods, and
+  curl-verifies) `docker/provision/www/api/device-bedtime` onto the VM's
+  `/www/cgi-bin/api/device-bedtime` — same dedicated-step rationale as
+  `04-provision-devices-api.sh`, folded into this one numbered step rather
+  than a separate `16-...` script since the sweep and the endpoint it
+  services are one feature (the endpoint didn't exist yet when this
+  script's sweep half was first written and committed — a later commit in
+  this same wave added the endpoint-deploy half onto this file, mirroring
+  step 13's own devpause-sweep.sh + `/api/device-pause` precedent exactly).
+  The verify step here is a real, safe `GET` (never mutates anything):
+  confirms the response for a MAC with no Bedtime schedule configured
+  reads exactly `{"enabled":false,"active":false}`.
 - `docker/provision/lib/bedtime-sweep.sh` — the tracked source of truth for
   `/usr/bin/bedtime-sweep.sh`, run every 5 minutes by the cron entry
   `15-provision-bedtime-api.sh` seeds. Finds every uci `firewall` rule
@@ -1072,6 +1091,78 @@ specifically, as a sibling of `luci`, not a replacement for it.
   in-window hour), the sweep flipped `enabled` from `'0'` back to `'1'` and
   the same `REJECT` entries reappeared in `nft list ruleset` — the VM's
   clock was restored to the real current time immediately afterward.
+- `docker/provision/www/api/device-bedtime` — the tracked source of truth
+  for the `/api/device-bedtime` endpoint: `GET
+  /cgi-bin/api/device-bedtime?mac=<mac>` returns `{"enabled": <bool>,
+  "active": <bool>}` — `enabled` is whether a Bedtime schedule is
+  configured for this device at all (a `bedtime-<mac>` uci rule section
+  exists), `active` is whether it's blocking right now (that section's own
+  `enabled` uci option reads `"1"`); both `false` if no rule exists for
+  this MAC. `POST /cgi-bin/api/device-bedtime` (body `{"mac": "<mac>",
+  "enabled": true|false}`) creates or removes the schedule: `enabled:true`
+  on a MAC with no existing rule creates a real `rule` section (`src='lan'`,
+  `src_mac=<mac>`, `dest='wan'`, `target='REJECT'`, `proto='all'`) with its
+  `enabled` uci option computed from the CURRENT UTC hour at creation time
+  (`currently_in_window()`, `os.date("!*t").hour`) rather than left at some
+  default — the schedule takes effect immediately if it's already
+  nighttime when the user turns Bedtime on, rather than waiting for the
+  next 5-minute sweep tick to notice; `enabled:true` on a MAC that already
+  has a schedule is an idempotent no-op that reports the schedule's real
+  current state. `enabled:false` removes the rule if present (idempotent
+  no-op success if already absent). Same stable-id-rename
+  (`bedtime_<mac-no-colons>`, underscored — uci section identifiers can't
+  contain hyphens, the hyphenated `bedtime-<mac>` form is kept for the
+  `.name` OPTION value `bedtime-sweep.sh`'s own scan depends on matching
+  literally) and write-then-readback-verify-then-commit-or-revert
+  discipline, strict MAC validation, and canonical `json_escape()` as every
+  other write endpoint in this directory. Never accepts a client-supplied
+  section id (same by-construction avoidance of `wireguard-clients`' own
+  found-and-fixed command-injection bug class that `qos-priority` already
+  established). **Timezone honesty, same disclosure as `bedtime-sweep.sh`
+  itself:** this VM has no configured timezone (`docker/facts.md` Section
+  16), so "active right now" reflects a fixed UTC 21:00-07:00 window, not
+  any real-world local time.
+  **Two rounds of code-review fixes went into this endpoint before it
+  shipped (commits `d1b7a9c`, `3c4095a`):**
+  1. **Stale-response race with the independently-scheduled sweep.**
+     `bedtime-sweep.sh` runs every 5 minutes via cron and legitimately
+     mutates this exact same section's `enabled` option via its own `uci
+     commit firewall` (which commits the ENTIRE firewall delta, not just
+     its own change) — a sweep tick landing between this endpoint's own
+     pre-commit readback and its own `uci commit` could previously make
+     the create response report a stale `active` value for up to 5
+     minutes. Fixed: the create path now does one final fresh `uci` read
+     AFTER its own `uci commit firewall` and derives BOTH `enabled` and
+     `active` from that same fresh read, not a pre-commit local variable —
+     closing a further narrow window where a genuinely concurrent DELETE
+     for the same MAC (a double-submit/two-tab scenario) could otherwise
+     have left the response claiming `enabled:true` for a rule that had
+     just been removed by the other request.
+  2. **Unverified delete path.** The delete path's `uci -q delete`'s exit
+     status was previously discarded entirely, so a failed delete (lock
+     contention, transient uci error) was indistinguishable from a real
+     removal — this endpoint would unconditionally report
+     `{"enabled":false,...}` even if the rule was still sitting there fully
+     committed and possibly still actively blocking the device. Fixed: the
+     delete path now does a readback after delete+commit+reload and returns
+     a real `Status: 500` if the rule is still findable, instead of an
+     unconditional false-success `200`.
+  3. **Missing `proto='all'`.** The endpoint originally omitted `proto`
+     entirely on rule creation, which — per `docker/facts.md` Section 15's
+     own finding for a similarly proto-less rule — likely defaults to
+     matching only tcp+udp, silently leaving ICMP (and anything else)
+     unblocked during Bedtime. Fixed by setting `proto='all'` explicitly,
+     matching `device-pause`'s own confirmed-correct precedent
+     (`docker/facts.md` Section 14); the readback check verifies it too.
+  Re-verified live against the VM after both rounds: create (`active`
+  matches a fresh `uci get` of the real committed `enabled` value),
+  idempotent create, sweep-agreement (a manual `bedtime-sweep.sh` run
+  leaves state unchanged and the API stays in sync with it), delete with
+  genuine removal from both `uci` and the real `nft` ruleset, idempotent
+  delete-on-absent, all `400`/`405` paths, and injection-resistance via
+  MAC-shaped payloads containing `;`, backticks, and `$()` on both `GET`
+  and `POST` (clean `400`s, no shell execution) — all test rules cleaned
+  up afterward, no pending uci changes left on the VM.
 
 ### Real connectivity test — what it actually means in this topology
 
@@ -1188,11 +1279,13 @@ device.
   the local network can add/delete real firewall rules, flip the real guest
   Wi-Fi network on/off, flip real ad blocking on/off, flip the real
   WireGuard server on/off, pause/unpause a real device's internet access,
-  create or toggle a real WireGuard client peer, or mark a real device's
-  traffic for priority, with a plain `curl` (eight independent
-  write-capable endpoints: `/api/firewall-rules`, `/api/wifi`,
-  `/api/adblock`, `/api/wireguard`, `/api/ssh-key`, `/api/device-pause`,
-  and, as of Wave 6, `/api/wireguard-clients` and `/api/qos-priority` —
+  create or toggle a real WireGuard client peer, mark a real device's
+  traffic for priority, or create/remove a real recurring Bedtime schedule
+  for a device, with a plain `curl` (nine independent write-capable
+  endpoints, verified by method dispatch, not assumed:
+  `/api/firewall-rules`, `/api/wifi`, `/api/adblock`, `/api/wireguard`,
+  `/api/ssh-key`, `/api/device-pause`, `/api/wireguard-clients`,
+  `/api/qos-priority` (Wave 6), and, as of Wave 7, `/api/device-bedtime` —
   `/api/ssh-key` is a little different in kind from the rest: it doesn't
   mutate any persisted uci config the way they do, but a plain
   unauthenticated `POST` still immediately rotates this VM's real SSH host
@@ -1203,15 +1296,18 @@ device.
   The **read-only** endpoints (`/api/devices`, `/api/logs`, `/api/system-info`,
   as of Wave 4 `/api/vlans`, as of Wave 5 `/api/device-pause`'s own
   `GET` — which discloses whether a specific MAC is currently paused and,
-  if so, for how much longer — and, as of Wave 6, `/api/wireguard-clients`'
+  if so, for how much longer — as of Wave 6 `/api/wireguard-clients`'
   own `GET` (discloses every configured client's name/public key/enabled
   state) and `/api/qos-priority`'s own `GET` (discloses which MACs are
-  currently marked for priority)) are equally unauthenticated — anyone on
-  the local network can silently read real device/MAC/IP presence, real log
-  lines, real hardware/uptime info, real VLAN topology, real per-device
-  pause status, real WireGuard client identity/key data, and real
-  priority-marking status with a plain `curl`. Disclosure rather than
-  mutation, but the same "local, single-user dev tool only" caveat applies.
+  currently marked for priority), and, as of Wave 7, `/api/device-bedtime`'s
+  own `GET` (discloses whether a specific MAC currently has a Bedtime
+  schedule configured and whether it's actively blocking right now)) are
+  equally unauthenticated — anyone on the local network can silently read
+  real device/MAC/IP presence, real log lines, real hardware/uptime info,
+  real VLAN topology, real per-device pause status, real WireGuard client
+  identity/key data, real priority-marking status, and real Bedtime
+  schedule status with a plain `curl`. Disclosure rather than mutation, but
+  the same "local, single-user dev tool only" caveat applies.
 - **Per-device pause is a real firewall block, but not end-to-end
   WAN-testable** — `POST /api/device-pause` creates a genuine `uci`/`fw4`
   `rule` section (`src='lan'`, `src_mac=<device>`, `dest='wan'`,
@@ -1273,10 +1369,46 @@ device.
   qdisc, no SQM instance, nothing consumes `0x2a` for anything today. A
   device added to "Priority devices" is real, inspectable state, but has no
   behavioral effect on its own traffic yet. Wiring a real `tc`/SQM setup
-  keyed on this mark is its own future wave (see the design spec's Wave 7
-  "Bandwidth used today" entry, which needs the same missing piece), not
-  something this wave's narrow scope (proving the marking mechanism itself
-  is real) included.
+  keyed on this mark is its own future wave (see the design spec's Wave 8
+  "Bandwidth used today" entry, which needs the same missing piece — Wave 7
+  itself went to Per-Device Controls' Bedtime toggle instead, per
+  `docker/facts.md` Section 16's scoping), not something this wave's narrow
+  scope (proving the marking mechanism itself is real) included.
+- **Bedtime enforces a fixed UTC 21:00-07:00 window, not real local
+  time** — this VM has no configured timezone at all (`docker/facts.md`
+  Section 16: `date` shows UTC, `uci get system.@system[0].zonename`
+  returns "Entry not found"), and neither this environment nor the mockup
+  has any concept of "the family's own local time" to read a real schedule
+  from. `docker/provision/lib/bedtime-sweep.sh` and
+  `docker/provision/www/api/device-bedtime` both honestly disclose this in
+  their own header comments rather than silently pretending the schedule
+  means real local 9pm — the same category of honest approximation as
+  Wave 5's client-side "Until tomorrow" minutes-to-midnight computation and
+  WireGuard's fictional `smith-family.saddvpn.com` hostname.
+- **The Bedtime sweep runs on a 5-minute cadence, not instantly** — like
+  Wave 5's devpause cron sweep (60 seconds, the tightest interval OpenWrt's
+  `crond` supports), `bedtime-sweep.sh` is invoked once every 5 minutes by
+  cron, so a scheduled transition (e.g. the window opening or closing right
+  at the UTC hour boundary) can lag by up to that long before it's actually
+  reflected in the real firewall state — real, not simulated, but worth
+  being explicit about the granularity rather than implying a precision
+  the mechanism doesn't have. Confirmed live down to this exact mechanism
+  (see `docker/provision/lib/bedtime-sweep.sh`'s own file note above: a
+  manual clock change plus a manual sweep run, not a genuine multi-minute
+  wait, since a full live 5-minute-cadence wait wasn't independently
+  re-proven the way devpause-sweep.sh's 60-second cadence was in Wave 5).
+- **Turning Bedtime ON takes effect immediately; the *next* scheduled
+  transition still depends on the sweep's normal cadence** — unlike the
+  sweep's own reconciliation loop, `POST /cgi-bin/api/device-bedtime`
+  (`enabled:true`) computes the CURRENT UTC hour itself at creation time
+  and sets the new rule's `enabled` uci option accordingly, so a device is
+  genuinely blocked right away if Bedtime is turned on while it's already
+  nighttime — it does not wait for the next 5-minute sweep tick to notice.
+  Once the schedule exists, though, its *next* transition (e.g. the 07:00
+  UTC unblock, or the following 21:00 UTC re-block) is enforced only by
+  `bedtime-sweep.sh`'s normal cadence, same as every other configured
+  device's schedule — turning Bedtime on does not grant that one device any
+  faster-than-5-minutes enforcement going forward.
 - The global search feature (built earlier this session, unrelated to this
   work) can't highlight search results on the Devices, Firewall & Ports
   (port-forwarding rules only), and Diagnostics & Logs screens when the
