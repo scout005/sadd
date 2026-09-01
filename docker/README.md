@@ -300,7 +300,25 @@ bash docker/provision/13-provision-devpause-api.sh
 #     here can currently only be removed by hand over SSH).
 bash docker/provision/14-provision-qos-priority-api.sh
 
-# 15. Verify.
+# 15. Deploy the per-device Bedtime enforcement sweep: copies
+#     docker/provision/lib/bedtime-sweep.sh onto the VM as
+#     /usr/bin/bedtime-sweep.sh, seeds /etc/crontabs/root with an
+#     every-5-minutes cron entry for it (idempotent — grep -qF guards
+#     against duplicating the line on re-run), enables and starts cron,
+#     then verifies crond is genuinely running via `pgrep crond` rather
+#     than trusting the init script's own exit code (same discipline as
+#     step 13). This is the baseline-state half of the Bedtime feature: the
+#     sweep reconciles every existing `bedtime-<mac>` uci firewall rule's
+#     `enabled` option to match whether the current UTC hour falls in the
+#     fixed 21:00-07:00 window, but never creates or deletes a rule itself
+#     — real device-bedtime rule CREATION (`/cgi-bin/api/device-bedtime`)
+#     is deployed by a later step in this plan, once that endpoint exists.
+#     Safe and correctly ordered to run before that endpoint exists, same
+#     "provision the enforcement half first" precedent step 13 established
+#     for devpause-sweep.sh.
+bash docker/provision/15-provision-bedtime-api.sh
+
+# 16. Verify.
 curl -s http://localhost:8081/cgi-bin/api/ping     # -> {"ok":true}
 curl -sI http://localhost:8081/cgi-bin/api/ping    # -> Content-Type: application/json among the headers
 curl -sI http://localhost:8081/                    # -> 200 OK, serving sadd-website.html
@@ -1008,6 +1026,52 @@ specifically, as a sibling of `luci`, not a replacement for it.
   `"$(touch /tmp/pwned_qos_test3)"`) are all rejected with a clean `400` by
   `is_valid_mac`'s regex before any uci call runs, and none of the target
   files were created on the VM.
+- `docker/provision/15-provision-bedtime-api.sh` — deploys only the
+  baseline-state (sweep) half of the Bedtime feature, matching
+  `13-provision-devpause-api.sh`'s own sweep-half shape: `scp -O`'s
+  `docker/provision/lib/bedtime-sweep.sh` onto the VM as
+  `/usr/bin/bedtime-sweep.sh` and chmods it executable, then seeds
+  `/etc/crontabs/root` with `*/5 * * * * /usr/bin/bedtime-sweep.sh`
+  (idempotent, `grep -qF`-guarded), enables and starts cron, and verifies
+  `pgrep crond` reports a real PID rather than trusting the init script's
+  own exit code (same `/etc/init.d/cron start` empty-crontab-directory trap
+  as step 13, documented in `docker/facts.md` Section 13). Unlike step 13,
+  this script does not also deploy an endpoint yet — real device-bedtime
+  rule CREATION (`/cgi-bin/api/device-bedtime`) is a separate task in this
+  same plan, not yet built when this script was written; the sweep is
+  provably safe to run standalone before that endpoint exists (nothing for
+  it to reconcile until something starts creating `bedtime-<mac>` rules).
+- `docker/provision/lib/bedtime-sweep.sh` — the tracked source of truth for
+  `/usr/bin/bedtime-sweep.sh`, run every 5 minutes by the cron entry
+  `15-provision-bedtime-api.sh` seeds. Finds every uci `firewall` rule
+  section whose `.name` starts with `bedtime-` and sets that section's own
+  `enabled` uci option to `1` if the current UTC hour is `>=21` or `<7`,
+  else `0` — never creating or deleting a rule, only toggling whether fw4
+  emits an already-existing one (`enabled='0'` + `fw4 reload` makes the
+  rule genuinely absent from `nft list ruleset`; `enabled='1'` brings it
+  back, confirmed live). This VM has no configured timezone at all
+  (`docker/facts.md` Section 16: `date` shows UTC, `uci get
+  system.@system[0].zonename` returns "Entry not found"), so a fixed UTC
+  window is this feature's honest, disclosed approximation of "the
+  family's bedtime hours" rather than a real per-family local schedule.
+  Deliberately never wraps the zero-padded `date -u +%H` output in `$(( ))`
+  arithmetic expansion — confirmed live before this script was written that
+  doing so misparses a value like `"08"` as invalid octal on this VM's
+  busybox ash, and that ash's usual `10#$HOUR` base-10-prefix workaround
+  also fails here (`ash: arithmetic syntax error`); POSIX `test`/`[`'s
+  `-ge`/`-lt` compare the zero-padded string correctly with no such
+  reinterpretation. No top-level `set -e`, same reasoning as
+  `devpause-sweep.sh`: one section's uci get/set failing shouldn't cancel
+  the sweep for every other section that tick; `uci commit`/`fw4 reload`
+  failures are explicitly logged via `logger -t bedtime-sweep` rather than
+  silently swallowed. Confirmed live in both directions against a real
+  `bedtime-aabbccddeeff` test rule: with the VM's real UTC hour
+  out-of-window (17:00 UTC), the sweep flipped a pre-existing `enabled='1'`
+  rule to `'0'` and the rule's `REJECT` entries genuinely disappeared from
+  `nft list ruleset`; with the VM's clock temporarily set to 23:00 UTC (an
+  in-window hour), the sweep flipped `enabled` from `'0'` back to `'1'` and
+  the same `REJECT` entries reappeared in `nft list ruleset` — the VM's
+  clock was restored to the real current time immediately afterward.
 
 ### Real connectivity test — what it actually means in this topology
 
