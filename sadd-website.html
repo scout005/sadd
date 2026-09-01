@@ -688,13 +688,22 @@ html.large-text .scr-title{font-size:1.15em;}
   //      real, actionable validation message behind a misleading offline message.
   //      This variant is used only by the Firewall & Ports add/delete wiring below;
   //      fetchRouterApi itself is left untouched since nothing else needs this.
-  async function fetchRouterApiWithStatus(path, opts){
+  //      `timeoutMs` is an optional third parameter (default 1500, unchanged from every
+  //      existing caller's behavior) added for the Ad Blocking write path: a real,
+  //      repeatedly-measured `POST /cgi-bin/api/adblock` against the live VM consistently
+  //      takes ~3.3s (its handler runs `/etc/init.d/dnsmasq restart`, genuinely slower
+  //      than Guest Wi-Fi's `wifi reload` against a phantom radio), so the shared
+  //      1500ms budget aborts a request that was actually going to succeed — a real,
+  //      reproducible false-failure/false-revert, not a hypothetical. Every other caller
+  //      (Guest Wi-Fi, Firewall & Ports) omits this argument and keeps the original
+  //      1500ms behavior exactly.
+  async function fetchRouterApiWithStatus(path, opts, timeoutMs){
     // Same file:// guard as fetchRouterApi above, and for the same reason — see its
     // comment for the exact confirmed browser-console message this avoids.
     if(location.protocol === 'file:') return null;
     try{
       const ctrl = new AbortController();
-      const t = setTimeout(()=>ctrl.abort(), 1500);
+      const t = setTimeout(()=>ctrl.abort(), timeoutMs || 1500);
       const res = await fetch(path, {...opts, signal: ctrl.signal});
       clearTimeout(t);
       let data = null;
@@ -1183,18 +1192,50 @@ html.large-text .scr-title{font-size:1.15em;}
     }
   }
 
-  // ---- Ad Blocking screen: read-side only for this task — the stat text
-  //      (id="adblockStat", the <p class="dash-date">) and the toggle-hero's .switch
-  //      (id="adblockSwitch") visual state become real, GET-backed by
-  //      /cgi-bin/api/adblock; everything else on this screen (blocklist-tier radio
-  //      cards, device exceptions, "This week" bar chart, mini-log top-3 domains,
-  //      "Always allow" list, "report broken site" button) stays static, explicitly out
-  //      of scope — write capability (the switch actually flipping ad blocking on/off) is
-  //      a later task, matching the design spec's narrow Wave 4 scope note. The static
-  //      markup's hardcoded "On · 1,204 ads blocked this week" / class="switch on" are
-  //      just placeholders shown before the real state loads (same "static demo data
-  //      first, real data overlays on top, no blank flash" pattern as every other screen
-  //      in this file). ----
+  // ---- Ad Blocking screen: the stat text (id="adblockStat", the <p class="dash-date">)
+  //      and the toggle-hero's .switch (id="adblockSwitch") are now REAL, GET/POST-backed
+  //      by /cgi-bin/api/adblock (read side landed in Wave 4 Task 2, write side — the
+  //      switch actually flipping ad blocking on/off — lands here in Task 4); everything
+  //      else on this screen (blocklist-tier radio cards, device exceptions, "This week"
+  //      bar chart, mini-log top-3 domains, "Always allow" list, "report broken site"
+  //      button) stays static, explicitly out of scope, matching the design spec's narrow
+  //      Wave 4 scope note. The static markup's hardcoded "On · 1,204 ads blocked this
+  //      week" / class="switch on" are just placeholders shown before the real state
+  //      loads (same "static demo data first, real data overlays on top, no blank flash"
+  //      pattern as every other screen in this file). ----
+
+  // Applies on/off visual state to the Ad Blocking switch AND its stat text together, so
+  // the two never disagree about what state is shown — used by both renderAdblockScreen
+  // (initial real-data load) and handleAdblockSwitchClick (optimistic flip + revert-on-
+  // failure) below. Unlike setGuestSwitchVisual's description text, this stat text also
+  // carries a blockedThisWeek COUNT that isn't part of what's being toggled — `count` is
+  // an explicit parameter (not read back from data.blockedThisWeek here) precisely so a
+  // click handler mid-flight can keep re-displaying the last-known real count against a
+  // flipping on/off word, instead of it going blank/zero during the optimistic/pending
+  // window. The count is also stashed on statEl.dataset.count as a plain, un-formatted
+  // string so a later click can recover "the last real count" without re-parsing
+  // (possibly comma-formatted, e.g. the static placeholder's "1,204") text back out of
+  // the DOM.
+  function setAdblockSwitchVisual(sw, statEl, on, count){
+    sw.classList.toggle('on', on);
+    sw.setAttribute('aria-checked', on ? 'true' : 'false');
+    if(statEl){
+      statEl.dataset.count = count;
+      setEscapedText(statEl, (on ? 'On' : 'Off') + ' · ' + count + ' ads blocked this week');
+    }
+  }
+
+  // Recovers "the last real/displayed count" for handleAdblockSwitchClick to preserve
+  // across an optimistic flip or a revert. Prefers statEl.dataset.count (set by
+  // setAdblockSwitchVisual every time it runs); falls back to parsing it back out of the
+  // still-static placeholder text ("1,204 ads blocked this week") for the edge case where
+  // the switch is clicked before renderAdblockScreen's GET has resolved even once.
+  function currentAdblockCount(statEl){
+    if(statEl.dataset.count !== undefined) return statEl.dataset.count;
+    const m = statEl.textContent.match(/([\d,]+)\s+ads blocked this week/);
+    return m ? m[1] : '0';
+  }
+
   async function renderAdblockScreen(){
     // same stale-fetch-race guard as renderGuestScreen/renderSettingsScreen/
     // renderDevicesScreen/renderFirewallScreen/renderAboutScreen/renderLogsScreen:
@@ -1214,11 +1255,74 @@ html.large-text .scr-title{font-size:1.15em;}
       // real data replaces the static "On · 1,204 ads blocked this week" text and the
       // hardcoded "on" switch state — selected by id, not by string/regex-matching the
       // rendered HTML.
-      setEscapedText(statEl, (data.enabled ? 'On' : 'Off') + ' · ' + data.blockedThisWeek + ' ads blocked this week');
-      sw.classList.toggle('on', !!data.enabled);
-      sw.setAttribute('aria-checked', data.enabled ? 'true' : 'false');
+      setAdblockSwitchVisual(sw, statEl, !!data.enabled, data.blockedThisWeek);
     }
+    // The switch is deliberately left enabled even on failure (same reasoning as Guest
+    // Wi-Fi's renderGuestScreen) — a click still safely round-trips through
+    // fetchRouterApiWithStatus, which fails the exact same way and reverts cleanly (see
+    // handleAdblockSwitchClick), so there's no false-success risk in leaving it clickable
+    // here.
     syncFallbackNotice(heroEl, hasData, "Can't reach router — showing default ad blocking state");
+  }
+
+  // ---- Ad Blocking switch click: REAL write, POST /cgi-bin/api/adblock {enabled}.
+  //      Same optimistic-update design as handleGuestWifiSwitchClick: the switch (and its
+  //      stat text) flips to the new state immediately on click, disabled (`.pending`,
+  //      plus a dataset flag) only for the duration of the in-flight request purely to
+  //      prevent a rapid double-click from firing two conflicting POSTs, reverted to
+  //      exactly its prior state (switch AND stat text, including the preserved count) on
+  //      a confirmed failure (network error/timeout, OR a real 400/500), with a brief,
+  //      auto-dismissing (4s) error notice via syncFallbackNotice on failure. On success
+  //      the switch/stat simply stay in the new state already shown; the count portion
+  //      isn't touched either way since toggling on/off doesn't itself change
+  //      blockedThisWeek — it keeps showing the last real fetched value throughout, per
+  //      setAdblockSwitchVisual's contract above. ----
+  // Note: same as handleGuestWifiSwitchClick, this WRITE handler does not check a
+  // state.adblockRenderId-style token against a stale in-flight request, and the same
+  // reasoning applies identically here — not just "by analogy" but literally the same
+  // mechanism: sw/heroEl/statEl below are captured by reference before the await, and
+  // render() always does a full appContent.innerHTML replacement on navigation, so if the
+  // user navigates away and back while this POST is in flight, the eventual revert/notice
+  // only mutates the old, now-detached DOM subtree, never the freshly-rendered live
+  // adblock screen. Ad Blocking's extra blockedThisWeek count doesn't change this — it's
+  // captured by value (the `count` parameter/closure variable) at click time, same as
+  // wasOn/nextOn, so it's just as immune to a stale-render race as the boolean state is.
+  // If a future edit ever re-queries these elements by id INSIDE this function instead of
+  // using the already-captured references, this safety argument stops holding and a
+  // render-id guard (matching the read-path convention) would need to be added.
+  async function handleAdblockSwitchClick(sw){
+    if(sw.dataset.pending === 'true') return; // already mid-request — ignore extra clicks
+    const heroEl = sw.closest('.toggle-hero');
+    const statEl = document.getElementById('adblockStat');
+    const wasOn = sw.classList.contains('on');
+    const nextOn = !wasOn;
+    const count = statEl ? currentAdblockCount(statEl) : '0';
+    sw.dataset.pending = 'true';
+    sw.classList.add('pending');
+    setAdblockSwitchVisual(sw, statEl, nextOn, count); // optimistic flip, count preserved
+    // 6000ms, not the shared 1500ms default — see fetchRouterApiWithStatus's own comment:
+    // this endpoint's real handler runs `/etc/init.d/dnsmasq restart`, measured
+    // consistently at ~3.3s against the live VM, so the default budget would abort (and
+    // falsely revert) a request that was actually about to succeed.
+    const result = await fetchRouterApiWithStatus('/cgi-bin/api/adblock', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({enabled: nextOn})
+    }, 6000);
+    sw.dataset.pending = 'false';
+    sw.classList.remove('pending');
+    if(result === null || !result.ok){
+      // revert — no false-success left showing after a real or network failure; the
+      // count is put back exactly as it was too, since setAdblockSwitchVisual always
+      // writes both together.
+      setAdblockSwitchVisual(sw, statEl, wasOn, count);
+      const msg = (result && result.data && result.data.error) ? result.data.error
+        : (result === null ? "Can't reach router — ad blocking not changed." : ('Request failed (status '+result.status+') — ad blocking not changed.'));
+      if(heroEl){
+        const notice = syncFallbackNotice(heroEl, false, msg);
+        setTimeout(()=>notice.remove(), 4000);
+      }
+    }
   }
 
   // ---- Global search index (hand-authored; matchText verified verbatim against each screen) ----
@@ -1475,6 +1579,10 @@ html.large-text .scr-title{font-size:1.15em;}
       // this one element and every other screen's switches are completely unaffected.
       // See handleGuestWifiSwitchClick's own comment for the optimistic-update design.
       if(sw.id === 'guestWifiSwitch'){ handleGuestWifiSwitchClick(sw); return; }
+      // Ad Blocking's switch is likewise a REAL write control (POST /cgi-bin/api/adblock),
+      // intercepted the same way, before the generic branch below — see
+      // handleAdblockSwitchClick's own comment for the optimistic-update design.
+      if(sw.id === 'adblockSwitch'){ handleAdblockSwitchClick(sw); return; }
       sw.classList.toggle('on');
       sw.setAttribute('aria-checked', sw.classList.contains('on') ? 'true' : 'false');
       if(sw.id === 'largeTextSwitch') document.documentElement.classList.toggle('large-text', sw.classList.contains('on'));
