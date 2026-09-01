@@ -13,12 +13,16 @@
 # reason. docker/provision/lib/ (a sibling of the numbered scripts, not of
 # www/) has no such exposure.
 #
-# This is the baseline-state half of the Per-Device Controls feature: real
-# device-pause CREATION is /cgi-bin/api/device-pause's job (a later task,
-# not yet built here). This step only provisions the sweep that DELETES
-# expired pauses — a `devpause-<mac>` uci firewall rule whose custom
-# `paused_until` (epoch seconds) option has passed — so it's safe to run on
-# its own, well ahead of the endpoint that creates those rules existing.
+# This started as the baseline-state half of the Per-Device Controls
+# feature — real device-pause CREATION is /cgi-bin/api/device-pause's job,
+# not this script's; this file only provisions the sweep that DELETES
+# expired pauses (a `devpause-<mac>` uci firewall rule whose custom
+# `paused_until` (epoch seconds) option has passed). It was written and
+# proven safe to run before that endpoint existed — the sweep has nothing
+# to find/delete until something starts creating rules, so ordering doesn't
+# matter — and this script was later extended (see the deploy-and-verify
+# block further down) to also deploy that now-real endpoint, once it was
+# built, rather than needing a fourteenth numbered script just for that.
 #
 # Critical gotcha this script works around (confirmed live in
 # docker/facts.md Section 13, by reading /etc/init.d/cron directly):

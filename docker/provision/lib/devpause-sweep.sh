@@ -7,9 +7,9 @@
 # section, and fw4 silently ignores ones it doesn't recognize, confirmed live)
 # whose paused_until has passed, and removes it — real auto-expiry.
 #
-# Real device-pause creation is /cgi-bin/api/device-pause's job (a later
-# task, not yet built); this script only ever DELETES expired ones, never
-# creates them.
+# Real device-pause creation is /cgi-bin/api/device-pause's job (see
+# docker/provision/www/api/device-pause); this script only ever DELETES
+# expired ones, never creates them.
 #
 # Positional-addressing gotcha this script works around (code review
 # finding): this VM's uci firewall rules are anonymous sections addressed

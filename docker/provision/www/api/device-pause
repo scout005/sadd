@@ -39,8 +39,7 @@
 -- generous enough to cover the mockup's three chips: 15 min, 1 hr, and
 -- "Until tomorrow", which the frontend computes client-side as "minutes
 -- until next local midnight" and sends as a plain minutes value like any
--- other duration — see sadd-website.html's handleDevicePauseChipClick, a
--- later task, not yet built).
+-- other duration — see sadd-website.html's handleDevicePauseChipClick).
 --
 -- Write discipline: same write-then-readback-verify-then-commit-or-revert as
 -- every other write endpoint in this directory — adapted for a rule ADD
