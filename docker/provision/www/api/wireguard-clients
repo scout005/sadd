@@ -44,9 +44,14 @@
 -- Same write-then-readback-verify-then-commit-or-revert as every other write
 -- endpoint in this directory, adapted for a section ADD (create) and a
 -- single-option SET (toggle). The create path's readback checks every field
--- it writes (public_key, allowed_ips, route_allowed_ips, name) before commit
--- — a partial check that skipped some of these could commit a
--- silently-wrong client (e.g. a blank name) undetected.
+-- it writes (public_key, allowed_ips, route_allowed_ips, name, added) before
+-- commit — a partial check that skipped some of these could commit a
+-- silently-wrong client (e.g. a blank name) undetected. (An earlier version
+-- of this check omitted `added` despite this same comment already claiming
+-- "every field" — code review caught the mismatch; `added` is now included,
+-- and its value is computed once and reused for both the write and the
+-- readback comparison, not called twice, so the two calls can't disagree
+-- across a midnight boundary.)
 --
 -- === Client-supplied section id: validated before ANY uci command ===
 -- The toggle path's `id` is attacker-controlled input concatenated directly
@@ -311,24 +316,35 @@ elseif method == "POST" then
           create_failed = section_type(id) ~= "wireguard_wg0"
         end
 
+        -- Captured once and reused for both the write and the readback
+        -- comparison below (code review finding) — calling os.date("%b %d")
+        -- separately at write-time and verify-time would, in the extremely
+        -- rare case the two calls straddle midnight, make a genuinely
+        -- successful write look like a readback mismatch (false failure),
+        -- the opposite problem from the one this whole check exists to
+        -- catch.
+        local added = os.date("%b %d")
+
         if not create_failed then
           run("uci set network." .. id .. ".public_key=" .. shell_quote(pub))
           run("uci set network." .. id .. ".allowed_ips=" .. shell_quote(client_ip .. "/32"))
           run("uci set network." .. id .. ".route_allowed_ips=" .. shell_quote("1"))
           run("uci set network." .. id .. ".name=" .. shell_quote(name))
-          run("uci set network." .. id .. ".added=" .. shell_quote(os.date("%b %d")))
+          run("uci set network." .. id .. ".added=" .. shell_quote(added))
         end
 
         local readback_ok = false
         if not create_failed then
           local _, fields = list_client_sections()
           local f = fields[id]
-          -- Verify every field the writes above actually set — not just the
-          -- two most security-relevant ones. A silently-failed
-          -- `uci set network.<id>.name=...` (say) would otherwise commit a
-          -- client with a wrong/blank name undetected.
+          -- Verify every field the writes above actually set, including
+          -- `added` (code review finding: this was previously omitted
+          -- despite the header comment already claiming "every field" was
+          -- checked) — a silently-failed `uci set network.<id>.name=...` (or
+          -- any other field) would otherwise commit a client with a wrong/
+          -- blank value undetected.
           readback_ok = f and f.public_key == pub and f.allowed_ips == client_ip .. "/32"
-            and f.route_allowed_ips == "1" and f.name == name
+            and f.route_allowed_ips == "1" and f.name == name and f.added == added
 
           -- Cheap TOCTOU collision mitigation (see header comment's
           -- "Address assignment" section): if a second concurrent create
