@@ -871,3 +871,36 @@ fw4 reload
 Confirmed the resulting nft output lands in the correct chain depending on `dest`, exactly mirroring §14's device-pause finding: **without** `dest='wan'`, the MARK rule lands in `mangle_input` (hooked at `input` — only traffic addressed to the router itself gets marked, not what a "priority device" feature needs); **with** `dest='wan'`, it correctly lands in `mangle_forward` (hooked at `forward` — the device's actual routed/forwarded traffic gets marked, matching both TCP and UDP automatically, no separate rule needed per protocol). This is the same `src=lan, dest=wan` shape §14 already established as correct for a per-device rule, just with `target=MARK`/`set_mark` instead of `target=REJECT` — a genuinely new but low-risk variation on an already-proven pattern, real uci/fw4-managed state (survives any other `fw4 reload` triggered elsewhere in the app, unlike a raw nft rule would).
 
 **Scoping implications**: Traffic & QoS's "Priority devices" list (`.adv-row` entries, "+ Add priority device" button, no per-row remove/delete affordance in the mockup — matching Network & VLANs' precedent of a real, add-only-in-the-UI list rather than Firewall & Ports' full add+delete) can become real: add a device → real MARK rule created; list reads real state. The screen's "Gaming priority"/"Video call priority" toggles stay static (no single real config item either one would toggle — real QoS priority is normally tied to specific ports/protocols the mockup doesn't specify) and "Bandwidth used today" stays static (still needs real substantial traffic volume to be meaningful, per §13's original reasoning, unchanged). WireGuard's "Client devices" list and "+ Add client (generates QR code)" can become real for add+list+per-row-toggle (no delete affordance in the mockup either); QR-code generation itself, AmneziaWG, Site-to-site, third-party-VPN device routing, and the measured-throughput stat stay static, per Wave 5's own already-documented scope note.
+
+## 16. Wave 7 pre-investigation — real per-device Bedtime scheduling confirmed live; Bandwidth-used-today re-examined and still correctly deferred
+
+Confirmed live (2026-09-01, VM already provisioned through Wave 6), before writing the Wave 7 plan.
+
+**Every `fw4`-generated rule already carries a real, live nft counter — not a new finding requiring new mechanism, but worth recording**: a plain `uci firewall` `rule` section (any target, including `ACCEPT`) emits `counter packets N bytes N` in its nft output unconditionally — confirmed by creating a throwaway `ACCEPT` rule and finding a real, incrementing counter in `forward_lan` immediately. This means Traffic & QoS's "Bandwidth used today" percentage breakdown is not blocked by "no counter mechanism exists" — it's blocked by the same reasoning §13 already established: this VM only ever carries whatever trivial manual-test traffic a task happens to generate, so a real 3-way percentage breakdown (Living Room TV / Leo's Xbox / Everything else) would in practice show something like "one device: ~100%, everything else: ~0%" — real numbers, but not representative of the feature's actual purpose the way Ad Blocking's simple absolute blocked-count (also small, but a single honest number, not a comparative breakdown implying relative usage patterns that don't exist here) gets away with. Re-examined and still correctly deferred — no scope change from this investigation.
+
+**Real per-device recurring Bedtime schedule, confirmed live — reuses every primitive Waves 5-6 already proved, in a new but not fundamentally novel combination**:
+
+`uci firewall` rule sections support a genuine `enabled` option, independent of the section's existence, that `fw4` honors to skip emitting the rule entirely without deleting it:
+```
+uci add firewall rule
+uci set firewall.@rule[-1].name='bedtime-test-aabbcc'
+uci set firewall.@rule[-1].src='lan'
+uci set firewall.@rule[-1].src_mac='aa:bb:cc:dd:ee:88'
+uci set firewall.@rule[-1].dest='wan'
+uci set firewall.@rule[-1].target='REJECT'
+uci set firewall.@rule[-1].enabled='0'
+uci commit firewall
+fw4 reload
+```
+With `enabled='0'`, `fw4 reload` logs `[!] Section ... is disabled, ignoring section` and the rule genuinely does not appear in `nft list ruleset` (confirmed via a live grep count of 0). Flipping to `enabled='1'` + reload makes the exact same real `forward_lan` REJECT rule appear (confirmed via `nft list ruleset`), matching the mac and comment exactly. This is the mechanism a real "Bedtime" schedule needs: the rule SECTION persists (recording "this device has Bedtime configured") whether or not it's currently blocking, and a separate `enabled` flag — toggled by a cron sweep based on time-of-day — controls whether it's actively enforcing right now, without the churn of deleting/recreating the section twice a day.
+
+**This VM has no configured timezone — a real, honest limitation for a "9:00 PM–7:00 AM" schedule, not glossed over**:
+```
+$ date
+Tue Sep  1 16:53:56 UTC 2026
+$ uci get system.@system[0].zonename
+uci: Entry not found
+```
+The system clock is UTC with no `zonename`/local-timezone configured anywhere in this VM's `system` config. The mockup's "School nights 9:00 PM–7:00 AM" implies the family's own local time, which this environment has no concept of (no onboarding step anywhere in this project sets one, and there's no per-household timezone field in the mockup to read one from even if there were). A real Bedtime schedule built here can only honestly enforce a fixed UTC 21:00-07:00 window, not any particular real-world local time — this is the same category of honest approximation as "Until tomorrow" being computed client-side as minutes-to-midnight (Wave 5) or WireGuard's fictional `smith-family.saddvpn.com` hostname (Wave 5/6), and needs the same explicit disclosure in documentation, not silent pretending the schedule means real local 9pm.
+
+**Scoping implication**: Per-Device Controls' "Bedtime" toggle (currently fully static, deferred in Wave 5's own scoping note as tied to a "child profile" concept) turns out, on closer reading, to be entirely device-scoped in the mockup's own markup (it lives on the per-device screen, not the profile-level one) — it doesn't actually need any profile concept at all, only a real per-device recurring schedule, which the above confirms is buildable with already-proven primitives (a device-pause-shaped firewall rule, a devpause-sweep-shaped cron script, this time keyed on time-of-day membership rather than a fixed expiry timestamp). This is Wave 7's scope.
