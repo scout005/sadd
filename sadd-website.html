@@ -1254,11 +1254,15 @@ html.large-text .scr-title{font-size:1.15em;}
   //      on failure (there's no prior visual state to revert to — the button was never
   //      showing a fingerprint before the click). ----
   async function handleSshRotateClick(btn){
-    if(btn.dataset.pending === 'true') return;
+    if(btn.dataset.pending === 'true') return; // already mid-request — ignore extra clicks (the dispatch site's own !btn.disabled check makes this a belt-and-suspenders second guard, not the only one)
     const statusEl = document.getElementById('sshRotateStatus');
     btn.dataset.pending = 'true';
     btn.disabled = true;
     if(statusEl){ statusEl.style.display = 'inline'; setEscapedText(statusEl, 'Rotating…'); }
+    // 3000ms, not the shared 1500ms default: the real handler does rm+dropbear-restart+a
+    // defensive 1s sleep before it can read the new fingerprint back — comfortably inside
+    // 3s in testing, but not as slow as wireguard's ifup/ifdown (6000ms), so a shorter
+    // explicit budget than that sibling control's is deliberate here, not copy-pasted.
     const result = await fetchRouterApiWithStatus('/cgi-bin/api/ssh-key', { method: 'POST' }, 3000);
     btn.dataset.pending = 'false';
     btn.disabled = false;
@@ -1270,7 +1274,16 @@ html.large-text .scr-title{font-size:1.15em;}
           : (result === null ? "Can't reach router — key not rotated." : ('Request failed (status '+result.status+') — key not rotated.'));
         setEscapedText(statusEl, msg);
       }
-      setTimeout(()=>{ statusEl.style.display = 'none'; }, 6000);
+      // Track the hide-timer on the element itself (same "stash state on the DOM node"
+      // idiom as dataset.pending/dataset.count elsewhere in this file) and clear any timer
+      // a PRIOR click already scheduled before starting a new one. Without this, a second
+      // "Rotate now" click within 6s of the first result would let the first click's stale
+      // timer fire mid-second-click, hiding "Rotating…" (or the second result) early — this
+      // single persistent span isn't swapped for a fresh element per call the way
+      // syncFallbackNotice's notices are, so it needs its own explicit timer bookkeeping
+      // instead of relying on a stale timer's target simply being gone.
+      if(statusEl.dataset.hideTimer) clearTimeout(Number(statusEl.dataset.hideTimer));
+      statusEl.dataset.hideTimer = setTimeout(()=>{ statusEl.style.display = 'none'; }, 6000);
     }
   }
 
