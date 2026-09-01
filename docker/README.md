@@ -224,7 +224,24 @@ bash docker/provision/09-provision-adblock-api.sh
 #     an incomplete uci section, never left silently broken.
 bash docker/provision/10-provision-vlans-api.sh
 
-# 11. Verify.
+# 11. Install WireGuard support (wireguard-tools + the full 9-package
+#     transitive kmod dependency chain — this VM has NO WireGuard config or
+#     packages at all on a fresh boot; see docker/facts.md Section 14) and
+#     bring up a real, persisted `wg0` interface (proto=wireguard,
+#     listen_port=51820, addresses=10.9.0.1/24) via real `uci network`
+#     config + `ifup`. Idempotent AND self-healing, same
+#     verify-completeness/revert-and-retry-once discipline as steps 8-10 —
+#     but unlike those, its "already done" check is kernel-level first (a
+#     real `wg0` link up and `wg show wg0` succeeding), since a working
+#     WireGuard interface is the thing being guaranteed, not just uci state.
+#     The private key is generated once (`wg genkey` into
+#     /etc/wireguard-privkey) and reused across re-runs, so the derived
+#     public key stays stable across idempotent re-provisioning. Does not
+#     yet deploy an `/api/wireguard` endpoint — that's a later task; this
+#     step only guarantees the real server-side interface exists.
+bash docker/provision/11-provision-wireguard-api.sh
+
+# 12. Verify.
 curl -s http://localhost:8081/cgi-bin/api/ping     # -> {"ok":true}
 curl -sI http://localhost:8081/cgi-bin/api/ping    # -> Content-Type: application/json among the headers
 curl -sI http://localhost:8081/                    # -> 200 OK, serving sadd-website.html
