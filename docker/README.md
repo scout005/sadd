@@ -2,14 +2,16 @@
 
 A real OpenWrt 23.05.5 (x86-64) instance, booted with KVM-accelerated QEMU,
 reachable from the host for LuCI, SSH, and a small `/api/*` backend the
-frontend prototype talks to (eight screens/sections wired to it so far,
-across four completed waves — Devices/Firewall & Ports, About/Diagnostics &
-Logs, Settings/Guest Wi-Fi, Ad Blocking/Network & VLANs). See
+frontend prototype talks to (eleven screens/sections wired to it so far,
+across five completed waves — Devices/Firewall & Ports, About/Diagnostics &
+Logs, Settings/Guest Wi-Fi, Ad Blocking/Network & VLANs, Developer & API
+Access/VPN Server (WireGuard)/Per-Device Controls). See
 `docs/superpowers/specs/2026-08-30-openwrt-integration-pilot-design.md` for
 the full design/roadmap and `docs/superpowers/plans/2026-08-30-openwrt-integration-wave1.md`,
 `docs/superpowers/plans/2026-08-31-openwrt-integration-wave2.md`,
-`docs/superpowers/plans/2026-08-31-openwrt-integration-wave3.md`, and
-`docs/superpowers/plans/2026-09-01-openwrt-integration-wave4.md` for the
+`docs/superpowers/plans/2026-08-31-openwrt-integration-wave3.md`,
+`docs/superpowers/plans/2026-09-01-openwrt-integration-wave4.md`, and
+`docs/superpowers/plans/2026-09-01-openwrt-integration-wave5.md` for the
 implementation plans this environment supports.
 
 ## Quick start
@@ -255,7 +257,8 @@ bash docker/provision/11-provision-wireguard-api.sh
 #     rotates the VM's real SSH host keys.
 bash docker/provision/12-provision-ssh-key-api.sh
 
-# 13. Deploy the per-device pause auto-expiry sweep: copies
+# 13. Deploy the per-device pause auto-expiry sweep, then the
+#     /api/device-pause endpoint itself: copies
 #     docker/provision/lib/devpause-sweep.sh onto the VM as
 #     /usr/bin/devpause-sweep.sh, seeds /etc/crontabs/root with an
 #     every-minute cron entry for it (idempotent — grep -qF guards against
@@ -266,11 +269,13 @@ bash docker/provision/12-provision-ssh-key-api.sh
 #     when it runs — seeding the crontab first, before calling start, is
 #     what avoids that trap here). This is the baseline-state half of the
 #     Per-Device Controls feature: real pause CREATION is
-#     /cgi-bin/api/device-pause's job (a later task, not yet built) — this
-#     step only provisions the sweep that finds any `devpause-<mac>` uci
-#     firewall rule whose custom `paused_until` (epoch-seconds) option has
-#     passed, and deletes it, so it's safe to run well ahead of that
-#     endpoint existing.
+#     /cgi-bin/api/device-pause's job, which this same step then deploys
+#     (and curl-verifies GET returns the correct "not paused" shape for a
+#     MAC with no active pause) — the sweep only ever DELETES expired
+#     `devpause-<mac>` uci firewall rules whose custom `paused_until`
+#     (epoch-seconds) option has passed, so provisioning it first (before
+#     the endpoint that creates those rules) is still safe and correctly
+#     ordered.
 bash docker/provision/13-provision-devpause-api.sh
 
 # 14. Verify.
@@ -287,6 +292,8 @@ curl -s http://localhost:8081/cgi-bin/api/adblock  # -> JSON object of real dnsm
 curl -s http://localhost:8081/cgi-bin/api/vlans  # -> JSON array of all 5 real networks, e.g. [{"name":"Main Network","subnet":"192.168.1.0/24","active":true},{"name":"Kids","subnet":"192.168.2.0/24","active":true},{"name":"IoT / Smart Home","subnet":"192.168.3.0/24","active":true},{"name":"Guests","subnet":"192.168.4.0/24","active":true},{"name":"Quarantine","subnet":"192.168.5.0/24","active":true}] — `active` reflects genuinely live kernel state: `ssh root@localhost -p 2223 ip link set br-lan.2 down` flips Kids' `active` to `false` immediately, confirmed live
 curl -s http://localhost:8081/cgi-bin/api/wireguard  # -> JSON object of real WireGuard server state, e.g. {"running":true,"port":51820,"publicKey":"n4W57HtezCeRGFeKQ/PM19i2YrsN3OFNbgQETg/6x28=","subnet":"10.9.0.0/24"} — `running`/`publicKey` reflect genuinely live kernel state: `POST -d '{"enabled":false}'` makes `ip link show wg0` report "can't find device", `POST -d '{"enabled":true}'` brings the real interface back with the same public key, confirmed live
 curl -s -X POST http://localhost:8081/cgi-bin/api/ssh-key  # -> real dropbear RSA host-key rotation, e.g. {"ok":true,"fingerprint":"SHA256:6Kl/5/4foMm95Fv+cFOkg9KeqmAWqdvFjMqihufCN5k"} — confirmed live to genuinely change the real key each call: `ssh -p 2223 root@localhost "dropbearkey -y -f /etc/dropbear/dropbear_rsa_host_key | grep Fingerprint"` shows a different fingerprint before vs. after, matching the response's `fingerprint` field exactly, and a second POST changes it again to a third distinct value (not toggling between two); `curl -s http://localhost:8081/cgi-bin/api/ssh-key` (a GET) -> 405
+curl -s "http://localhost:8081/cgi-bin/api/device-pause?mac=11:22:33:44:55:66"  # -> {"paused":false,"remainingSeconds":0} for a MAC with no active pause rule
+curl -s -X POST -d '{"mac":"11:22:33:44:55:66","minutes":15}' http://localhost:8081/cgi-bin/api/device-pause  # -> real per-MAC block, e.g. {"ok":true,"paused":true,"remainingSeconds":900} — confirmed live: `uci show firewall | grep devpause-112233445566` shows a real `rule` section with `src='lan'`, `src_mac='11:22:33:44:55:66'`, `dest='wan'`, `target='REJECT'`; a subsequent GET for the same mac reports `paused:true` with a real, ticking-down `remainingSeconds`; and — proven via a genuine 65+ second wait for a real cron tick, not simulated — a rule whose `paused_until` has passed is actually removed by `/usr/bin/devpause-sweep.sh` (confirmed both for a single expired rule and for three rules expiring in the same minute, see the `devpause-sweep.sh` file note below for the exact live multi-expiry proof)
 ```
 
 **Step 3 in detail — overwriting the stock landing page is intentional:**
@@ -732,10 +739,10 @@ specifically, as a sibling of `luci`, not a replacement for it.
   "invalidates the old one immediately", which is accurate). Uses the same
   canonical table-based `json_escape()` as every other endpoint in this
   directory.
-- `docker/provision/13-provision-devpause-api.sh` — unlike 04-07/12's
-  "stateless endpoint" shape and 08-11's "create baseline uci config"
-  shape, this step provisions a standalone cron job, not a `/cgi-bin/api/*`
-  HTTP endpoint (there is no `/api/device-pause` yet — that's a later task).
+- `docker/provision/13-provision-devpause-api.sh` — does two things, in
+  order. First (unlike 04-07/12's "stateless endpoint" shape and 08-11's
+  "create baseline uci config" shape), it provisions a standalone cron job,
+  not a `/cgi-bin/api/*` HTTP endpoint.
   `scp -O`'s `docker/provision/lib/devpause-sweep.sh` onto the VM as
   `/usr/bin/devpause-sweep.sh` and chmods it executable, then seeds
   `/etc/crontabs/root` with `* * * * * /usr/bin/devpause-sweep.sh`
@@ -763,7 +770,45 @@ specifically, as a sibling of `luci`, not a replacement for it.
   unrequested, non-executable second copy at
   `/www/cgi-bin/lib/devpause-sweep.sh` for no reason — confirmed live after
   the fix that re-running `02-copy-www.sh` creates no `/www/cgi-bin/lib/`
-  path at all.
+  path at all. Second, once the sweep is deployed and crond confirmed
+  running, this script copies (and chmods, and curl-verifies)
+  `docker/provision/www/api/device-pause` onto the VM's
+  `/www/cgi-bin/api/device-pause` — same dedicated-step rationale as
+  `04-provision-devices-api.sh`, folded into this same numbered step rather
+  than a separate `14-...` script since the sweep and the endpoint it
+  services are one feature. The verify step here is a real, safe `GET`
+  (unlike `ssh-key`'s deliberately-inert 405-only check, since a `GET` here
+  never mutates anything): confirms the response for a MAC with no active
+  pause reads exactly `{"paused":false,"remainingSeconds":0}`.
+- `docker/provision/www/api/device-pause` — the tracked source of truth for
+  the `/api/device-pause` endpoint: `GET
+  /cgi-bin/api/device-pause?mac=<mac>` returns `{"paused":
+  <bool>,"remainingSeconds": <int>}` by looking up a `devpause-<mac>` uci
+  `firewall` rule section and comparing its `paused_until` (epoch seconds)
+  against `os.time()`. `POST /cgi-bin/api/device-pause` (body `{"mac":
+  "<mac>", "minutes": <int, 1-1440>}`) creates (or REPLACES, so a second
+  POST for the same MAC extends/shortens the pause rather than
+  accumulating duplicate rules) a real `rule` section with `src='lan'`,
+  `src_mac=<mac>`, `dest='wan'`, `target='REJECT'`, `proto='all'`, and the
+  custom `paused_until` option the sweep script reads — `dest='wan'` is
+  required (not `src='lan'` alone) to land the rule in the `forward_lan`
+  chain as a real reject of the device's outbound traffic, rather than only
+  `input_lan` (traffic addressed to the router itself), confirmed live in
+  `docker/facts.md` Section 14. Same stable-id-rename-before-any-further-
+  read/write discipline as `firewall-rules`/`vlans` (a positionally-
+  addressed `@rule[-1]`/`@rule[N]` section is not safe to keep addressing
+  across separate `uci` process invocations) — plus a fix, caught by this
+  endpoint's own pre-release verification, that a uci section IDENTIFIER
+  can't contain the hyphens `devpause-<mac>` (the rule's `.name` OPTION
+  value, which `devpause-sweep.sh`'s scan depends on matching literally)
+  uses, so the section is renamed to a separate underscored
+  `devpause_<mac>` id instead. Same write-then-readback-verify-then-commit-
+  or-revert discipline, MAC/minutes input validation (strict 6-octet
+  colon-hex; integer 1-1440), and canonical `json_escape()` as every other
+  write endpoint in this directory. This endpoint only ever creates or
+  replaces a pause rule — it never deletes an expired one itself (no
+  request happens to land at exactly the right moment); that's
+  `devpause-sweep.sh`'s job, described next.
 - `docker/provision/lib/devpause-sweep.sh` — the tracked source of truth
   for `/usr/bin/devpause-sweep.sh`, run every minute by the cron entry
   `13-provision-devpause-api.sh` seeds. Finds uci `firewall` rule sections
@@ -780,8 +825,8 @@ specifically, as a sibling of `luci`, not a replacement for it.
   now explicitly `logger`'d rather than silently swallowed — a code-review
   fix). Every deletion is also `logger -t devpause-sweep`'d for
   auditability. This script only ever DELETES expired pause rules; real
-  pause CREATION is `/cgi-bin/api/device-pause`'s job (a later task, not
-  yet built).
+  pause CREATION is `/cgi-bin/api/device-pause`'s job (deployed by this same
+  `13-provision-devpause-api.sh`, described above).
   **Multi-expiry-per-tick fix (code review):** this VM's `firewall` rules
   are anonymous sections addressed positionally
   (`firewall.@rule[N]`, confirmed live in `docker/facts.md` Section 13/14 —
@@ -940,22 +985,57 @@ device.
 - **No authentication on `/cgi-bin/api/*`**, and `docker-compose.yml` binds
   port 8081 to all interfaces, not just `localhost` — anyone reachable on
   the local network can add/delete real firewall rules, flip the real guest
-  Wi-Fi network on/off, flip real ad blocking on/off, or flip the real
-  WireGuard server on/off, with a plain `curl` (five independent
-  write-capable endpoints: `/api/firewall-rules`, `/api/wifi`,
-  `/api/adblock`, `/api/wireguard`, and `/api/ssh-key` — this last one is a
-  little different in kind from the other four: it doesn't mutate any
-  persisted uci config the way they do, but a plain unauthenticated `POST`
-  still immediately rotates this VM's real SSH host keys with no
-  confirmation, undo, or operator warning, so it belongs in this list too).
+  Wi-Fi network on/off, flip real ad blocking on/off, flip the real
+  WireGuard server on/off, or pause/unpause a real device's internet access,
+  with a plain `curl` (six independent write-capable endpoints:
+  `/api/firewall-rules`, `/api/wifi`, `/api/adblock`, `/api/wireguard`,
+  `/api/ssh-key`, and, as of Wave 5, `/api/device-pause` — `/api/ssh-key` is
+  a little different in kind from the rest: it doesn't mutate any persisted
+  uci config the way they do, but a plain unauthenticated `POST` still
+  immediately rotates this VM's real SSH host keys with no confirmation,
+  undo, or operator warning, so it belongs in this list too).
   Acceptable only because this is an explicitly local, single-user dev/test
   tool — not something to carry into a later wave or real deployment as-is.
   The **read-only** endpoints (`/api/devices`, `/api/logs`, `/api/system-info`,
-  and, as of Wave 4, `/api/vlans`) are equally unauthenticated — anyone on
-  the local network can silently read real device/MAC/IP presence, real log
-  lines, real hardware/uptime info, and real VLAN topology with a plain
-  `curl`. Disclosure rather than mutation, but the same "local, single-user
-  dev tool only" caveat applies.
+  as of Wave 4 `/api/vlans`, and as of Wave 5 `/api/device-pause`'s own
+  `GET` — which discloses whether a specific MAC is currently paused and,
+  if so, for how much longer) are equally unauthenticated — anyone on the
+  local network can silently read real device/MAC/IP presence, real log
+  lines, real hardware/uptime info, real VLAN topology, and real per-device
+  pause status with a plain `curl`. Disclosure rather than mutation, but the
+  same "local, single-user dev tool only" caveat applies.
+- **Per-device pause is a real firewall block, but not end-to-end
+  WAN-testable** — `POST /api/device-pause` creates a genuine `uci`/`fw4`
+  `rule` section (`src='lan'`, `src_mac=<device>`, `dest='wan'`,
+  `target='REJECT'`) that would actually reject that device's outbound
+  traffic on real hardware, but like every other WAN-dependent feature in
+  this project (see the firewall port-forwarding limitation above), this VM
+  has no real WAN interface to prove the full path against — the rule's
+  correctness was confirmed the same way port-forwarding's was: real,
+  correct config and a real chain placement, not a real dropped packet.
+- **"Until tomorrow" is a client-side approximation, not a schedule** — the
+  third Pause-internet chip sends `minutes-until-next-local-midnight`
+  (`minutesUntilNextMidnight()` in `sadd-website.html`) as a plain minutes
+  value like the other two chips; there's no per-family bedtime/schedule
+  concept behind it, just "how many minutes are left in today," computed in
+  the browser off the viewer's own clock.
+- **SSH key rotation's safety is specific to this project's own SSH
+  convention, not a general guarantee** — `/api/ssh-key`'s `POST` is safe to
+  call repeatedly here only because every SSH connection this project makes
+  always passes `-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null`
+  (no persisted `known_hosts` entry anywhere to conflict with a rotated
+  key). A real deployment using normal host-key pinning would see clients
+  hit a "host key changed" warning after every rotation — this project
+  doesn't simulate or warn about that client-side experience; only the
+  screen's own "invalidates the old one immediately" copy hints at it.
+- **The devpause cron sweep runs on a 60-second cadence, not instantly** —
+  `docker/provision/lib/devpause-sweep.sh` is invoked once a minute by cron
+  (the tightest interval OpenWrt's `crond` supports), so an expired pause is
+  real but can take up to roughly 60 seconds after its `paused_until` time
+  to actually be lifted, not the instant the countdown hits zero. Confirmed
+  live down to this exact granularity (see `docker/provision/lib/devpause-sweep.sh`'s
+  own file note above) — worth being explicit about rather than implying a
+  precision the mechanism doesn't have.
 - The global search feature (built earlier this session, unrelated to this
   work) can't highlight search results on the Devices, Firewall & Ports
   (port-forwarding rules only), and Diagnostics & Logs screens when the
