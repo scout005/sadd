@@ -340,7 +340,26 @@ bash docker/provision/15-provision-bedtime-api.sh
 #     endpoint.
 bash docker/provision/16-provision-safe-search-api.sh
 
-# 17. Verify.
+# 17. Deploy the /api/blocked-sites endpoint (real per-domain DNS blocking
+#     — a dedicated custom-<domain>.conf per added domain, reusing Ad
+#     Blocking's own address=/domain/0.0.0.0 literal mechanism — for the
+#     Parental Controls screen's "Custom blocked sites" list) and verify it
+#     responds with a JSON array. No baseline VM state needed beyond the
+#     /etc/dnsmasq.blocklist.d directory step 9 already provisions — this
+#     endpoint only ever creates/reads its own custom-*.conf files inside
+#     that same shared confdir directory, alongside (and never touching)
+#     Ad Blocking's blocklist.conf or Safe Search's safesearch.conf — so
+#     this step is deploy-and-verify only, same shape as steps 12, 14, and
+#     16. Domain-only: an IP-shaped input is rejected with its own distinct
+#     error message rather than silently treated as an invalid domain, since
+#     IP-based blocking needs a different (firewall-based, out-of-scope)
+#     mechanism. A dedicated, separate script from
+#     16-provision-safe-search-api.sh even though both endpoints share the
+#     same directory — every prior wave has kept one provisioning script per
+#     endpoint, and this wave keeps that convention.
+bash docker/provision/17-provision-blocked-sites-api.sh
+
+# 18. Verify.
 curl -s http://localhost:8081/cgi-bin/api/ping     # -> {"ok":true}
 curl -sI http://localhost:8081/cgi-bin/api/ping    # -> Content-Type: application/json among the headers
 curl -sI http://localhost:8081/                    # -> 200 OK, serving sadd-website.html
@@ -366,6 +385,8 @@ curl -s -X POST -d '{"mac":"11:22:33:44:55:66","enabled":true}' http://localhost
 curl -s -X POST -d '{"mac":"11:22:33:44:55:66","enabled":false}' http://localhost:8081/cgi-bin/api/device-bedtime  # -> {"ok":true,"enabled":false,"active":false} — confirmed live: `uci show firewall | grep bedtime_112233445566` goes from a match to no match, a real removal (verified by readback after delete+commit+reload, not just an unconditional 200); a second identical POST (already absent) is an idempotent no-op success
 curl -s http://localhost:8081/cgi-bin/api/safe-search  # -> {"enabled":false} on a fresh/never-toggled VM
 curl -s -X POST -d '{"enabled":true}' http://localhost:8081/cgi-bin/api/safe-search  # -> {"ok":true,"enabled":true} — confirmed live: `cat /etc/dnsmasq.blocklist.d/safesearch.conf` shows the 9 fixed `cname=` lines; `ssh root@localhost -p 2223 nslookup www.google.com 127.0.0.1` now shows a real `canonical name = forcesafesearch.google.com` line; throughout, `/etc/dnsmasq.blocklist.d/blocklist.conf` (Ad Blocking's own file) and `nslookup doubleclick.net 127.0.0.1` (still resolving to `0.0.0.0`) are completely unaffected — the two features' files coexist in the same confdir directory with zero interaction; `POST -d '{"enabled":false}'` removes `safesearch.conf` and the CNAME rewrite genuinely stops (`nslookup www.google.com` reverts to a plain `REFUSED`, no canonical name line); both directions are idempotent (a repeat POST for the current state is a no-op success, not an error)
+curl -s http://localhost:8081/cgi-bin/api/blocked-sites  # -> `[]` on a fresh/never-used VM
+curl -s -X POST -d '{"domain":"extra-homework-site.com"}' http://localhost:8081/cgi-bin/api/blocked-sites  # -> {"ok":true,"domain":"extra-homework-site.com"} — confirmed live: `cat /etc/dnsmasq.blocklist.d/custom-extra_homework_site_com.conf` shows `address=/extra-homework-site.com/0.0.0.0`; `ssh root@localhost -p 2223 nslookup extra-homework-site.com 127.0.0.1` now shows a real `Address: 0.0.0.0`; a subsequent GET returns `[{"domain":"extra-homework-site.com"}]`; throughout, `/etc/dnsmasq.blocklist.d/blocklist.conf` (Ad Blocking's own file) and `nslookup doubleclick.net 127.0.0.1` (still resolving to `0.0.0.0`) are completely unaffected — all three features' files coexist in the same confdir directory with zero interaction; a repeat POST for the same domain is idempotent (no-op success, exactly one `custom-*.conf` file for it, confirmed via `ls`); `POST -d '{"domain":"203.0.113.4"}'` is rejected with its own distinct error (`{"ok":false,"error":"IP-address blocking is not supported yet — only domain names (e.g. example.com)"}`), not the generic invalid-domain message; a malformed domain (empty string, `"not a domain"`) gets the generic 400; `GET`/`POST` are the only supported methods, any other verb (e.g. `DELETE`) -> 405
 ```
 
 **Step 3 in detail — overwriting the stock landing page is intentional:**
@@ -1243,6 +1264,80 @@ specifically, as a sibling of `luci`, not a replacement for it.
   127.0.0.1` kept resolving to `0.0.0.0` — Ad Blocking's own real config
   and real blocking behavior, completely undisturbed by every safe-search
   operation performed against the VM.
+- `docker/provision/17-provision-blocked-sites-api.sh` — deploy-and-verify
+  only, matching `12-provision-ssh-key-api.sh`'s, `14-provision-qos-priority-api.sh`'s,
+  and `16-provision-safe-search-api.sh`'s own endpoint-deploy shape: no
+  baseline VM state to create here beyond the `/etc/dnsmasq.blocklist.d`
+  directory step 9 already provisions (Wave 4) — this endpoint only ever
+  creates/reads its own `custom-<domain>.conf` files inside that
+  already-existing directory. `scp -O`'s `docker/provision/www/api/blocked-sites`
+  onto `/www/cgi-bin/api/blocked-sites`, chmods it executable, then verifies
+  with a real `curl -sf` `GET` — checked to be a valid JSON array shape
+  (`[...]`) rather than assuming a never-used VM, since this step can be
+  re-run against a VM that already has domains added by prior use. A
+  SEPARATE script from `16-provision-safe-search-api.sh` even though both
+  endpoints share the same `/etc/dnsmasq.blocklist.d` directory — every
+  prior wave has kept one provisioning script per endpoint, and this wave
+  keeps that convention.
+- `docker/provision/www/api/blocked-sites` — the tracked source of truth
+  for the `/api/blocked-sites` endpoint: `GET /cgi-bin/api/blocked-sites`
+  returns `[{"domain": <string>}, ...]`, one entry per `custom-*.conf` file
+  currently in `/etc/dnsmasq.blocklist.d`, with each domain read back from
+  that file's own `address=/domain/0.0.0.0` content (not decoded from the
+  filename, avoiding any lossy-filename-encoding concern). `POST
+  /cgi-bin/api/blocked-sites` (body `{"domain": "<domain>"}`) validates the
+  domain, writes a dedicated `custom-<safe-id>.conf` file for it (reusing Ad
+  Blocking's own literal `address=/domain/0.0.0.0` mechanism, confirmed live
+  in `docker/facts.md` Section 17 — adapted here to a dynamic, user-supplied
+  list instead of Ad Blocking's fixed 3-domain one), and restarts dnsmasq to
+  apply it. **File ownership:** manages its own `custom-*.conf` files inside
+  the same `/etc/dnsmasq.blocklist.d` confdir directory Ad Blocking
+  (`blocklist.conf`) and Safe Search (`safesearch.conf`) already use, never
+  touching either of those files or the `dhcp.@dnsmasq[0].confdir` uci
+  option — confirmed live all three coexist in the same confdir directory
+  with zero interaction. **Domain-only, not IP:** the screen's own input
+  placeholder ("e.g. example.com or 203.0.113.4") implies domain-or-IP
+  entry, but IP-based blocking needs a different (firewall-based) mechanism,
+  out of scope this wave — an IP-shaped input gets its own distinct error
+  message rather than being silently treated as an invalid domain.
+  **Domain validation** is a dot-separated-labels check (letters/digits/
+  hyphens per label, no leading/trailing hyphen, at least two labels)
+  validated before it's ever used to derive a filename or reach a shell
+  command; every shell interpolation also goes through `shell_quote()` as
+  defense in depth, the same double-layered discipline
+  device-pause/qos-priority/device-bedtime already established. Implemented
+  as an explicit character-allowlist-plus-per-label-loop rather than the
+  single regex the plan originally sketched: Lua patterns (unlike PCRE)
+  can't quantify a parenthesized capture group, so that single-pattern form
+  silently matched nothing at all — confirmed live on this VM's Lua 5.1 —
+  which would have rejected every domain, including valid ones; caught
+  before shipping by testing the validator directly against real domains on
+  the VM, not assumed to work from the plan's shown code. **Write-then-
+  verify-then-restart ordering:** same discipline as `safe-search`'s POST
+  handler (fixed in commit `ecfbdd5` after code review caught the original
+  write path restarting dnsmasq before readback verification, and deriving
+  `write_ok` from `io.open` succeeding alone rather than from `f:write()`'s
+  own return value) — `f:write()`'s return value is captured and used to
+  derive `write_ok`, and dnsmasq is only restarted after a readback
+  (`domain_already_blocked()`, which re-reads the file's actual content)
+  confirms the write genuinely landed; a failed readback removes the bad
+  file and returns `500` without ever restarting dnsmasq, so an unverified
+  write is never applied to the running resolver — this endpoint applies
+  that same fix from the start rather than repeating the bug the plan's
+  originally-shown code still had. POST is idempotent per domain (a second
+  POST for an already-blocked domain is a no-op success, not a duplicate
+  file). Confirmed live end-to-end against this running VM: `POST
+  {"domain":"extra-homework-site.com"}` makes a real `nslookup
+  extra-homework-site.com 127.0.0.1` resolve to `0.0.0.0`; throughout (and
+  after a second domain was added and both coexisted correctly in the GET
+  list), `cat /etc/dnsmasq.blocklist.d/blocklist.conf` kept showing Ad
+  Blocking's original, byte-identical 3 `address=` lines and `nslookup
+  doubleclick.net 127.0.0.1` kept resolving to `0.0.0.0` — Ad Blocking's own
+  real config and real blocking behavior, completely undisturbed; IP-shaped
+  input (`203.0.113.4`) got the distinct IP-specific 400, malformed input
+  (empty string, `"not a domain"`) got the generic invalid-domain 400, and
+  `DELETE` got a `405` — all confirmed live, and all test `custom-*.conf`
+  files removed from the VM afterward.
 
 ### Real connectivity test — what it actually means in this topology
 

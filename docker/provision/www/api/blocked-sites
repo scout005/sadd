@@ -1,0 +1,278 @@
+#!/usr/bin/lua
+-- /api/blocked-sites — GET (list) + POST (add, idempotent per domain). Real
+-- per-domain DNS blocking for the Parental Controls screen's "Custom
+-- blocked sites" list, reusing Ad Blocking's own literal mechanism
+-- (address=/domain/0.0.0.0) confirmed live in docker/facts.md Section 17 —
+-- adapted here to a dynamic, user-supplied list instead of Ad Blocking's own
+-- fixed 3-domain one.
+--
+-- GET response shape: [{"domain":"example.com"}, ...]
+-- POST body: {"domain": "<domain>"} -> {"ok": true, "domain": "<domain>"}
+--
+-- === File ownership — same critical rule as safe-search ===
+-- Manages its OWN files (custom-<safe-id>.conf, one per added domain)
+-- inside /etc/dnsmasq.blocklist.d — the same directory Ad Blocking
+-- (blocklist.conf) and Safe Search (safesearch.conf) already use, never
+-- touching either of those files or the confdir uci option.
+--
+-- === Domain-only, explicit rejection of IP-shaped input ===
+-- The screen's own input placeholder ("e.g. example.com or 203.0.113.4")
+-- implies domain-OR-IP entry, but IP-based blocking needs a different
+-- (firewall-based) mechanism — out of scope this wave. An IP-shaped input
+-- is rejected with ITS OWN distinct error message, not silently treated as
+-- an invalid domain, so a user isn't left guessing why "203.0.113.4" didn't
+-- work.
+--
+-- === Domain validation ===
+-- A reasonably strict domain-shape check (dot-separated alphanumeric/hyphen
+-- labels, at least one dot, no leading/trailing hyphen per label) — this is
+-- validated BEFORE it's used to derive a filename or interpolated into any
+-- shell command, and every shell interpolation also goes through
+-- shell_quote() as defense in depth (the same double-layered discipline
+-- device-pause/qos-priority/device-bedtime already established — a validated
+-- domain can only ever contain filename-safe, shell-safe characters, so this
+-- endpoint never accepts a value that could reach a shell command unquoted
+-- and unvalidated).
+--
+-- === Write-then-verify-then-restart ordering ===
+-- Same discipline as safe-search's POST handler (fixed in commit ecfbdd5
+-- after code review caught the original write path restarting dnsmasq
+-- before readback verification, and deriving write_ok from io.open alone
+-- rather than from f:write()'s own return value): f:write()'s return value
+-- is captured and used to derive write_ok, and dnsmasq is only restarted
+-- AFTER domain_already_blocked() confirms — by reading the file's actual
+-- content back, not just trusting the write call — that the new block file
+-- genuinely landed. If the readback fails, the bad file is removed and a
+-- 500 is returned WITHOUT ever restarting dnsmasq, so an unverified write
+-- is never applied to the running resolver.
+
+local BLOCKLIST_DIR = "/etc/dnsmasq.blocklist.d"
+
+local function run(cmd)
+  local p = io.popen(cmd .. " 2>/dev/null")
+  if not p then return "" end
+  local out = p:read("*a") or ""
+  p:close()
+  return (out:gsub("%s+$", ""))
+end
+
+local function shell_quote(s)
+  s = tostring(s or "")
+  s = s:gsub('[\1-\9\11-\31]', '')
+  s = s:gsub('[\n\r]', ' ')
+  return "'" .. s:gsub("'", "'\\''") .. "'"
+end
+
+local function json_escape(s)
+  if s == nil then return "" end
+  s = tostring(s)
+  s = s:gsub('[\\"\n\r\t]', {
+    ['\\'] = '\\\\', ['"'] = '\\"', ['\n'] = '\\n', ['\r'] = '\\r', ['\t'] = '\\t',
+  })
+  s = s:gsub('[\1-\31]', '')
+  return s
+end
+
+local function is_ipv4_shaped(v)
+  local a, b, c, d = v:match("^(%d+)%.(%d+)%.(%d+)%.(%d+)$")
+  if not a then return false end
+  for _, octet in ipairs({a, b, c, d}) do
+    local n = tonumber(octet)
+    if not n or n < 0 or n > 255 then return false end
+  end
+  return true
+end
+
+-- Dot-separated labels: letters/digits/hyphens, no leading/trailing hyphen
+-- per label, at least two labels (a real dot), reasonable overall length.
+--
+-- NOTE on shape (deviation from the plan's shown single-regex form):
+-- Lua patterns (unlike PCRE/regex) cannot quantify a parenthesized capture
+-- group — `(...)?` / `(...)+` around a group is not supported the way a
+-- real regex engine's would be, confirmed live on this VM's Lua 5.1: the
+-- plan's single `^[%w]([%w%-]*[%w])?(%.[%w]([%w%-]*[%w])?)+$` pattern
+-- silently matches NOTHING (not even a plain single letter), which would
+-- have made every domain — including genuinely valid ones — rejected as
+-- "invalid". Same validation semantics as described (dot-separated
+-- alnum/hyphen labels, no leading/trailing hyphen per label, at least two
+-- labels), implemented instead as an explicit character allowlist plus a
+-- per-label loop, which Lua patterns do support.
+local function is_valid_label(label)
+  if #label == 0 then return false end
+  if #label == 1 then return label:match("^%w$") ~= nil end
+  return label:match("^%w[%w%-]*%w$") ~= nil
+end
+
+local function is_valid_domain(v)
+  if type(v) ~= "string" then return false end
+  v = v:lower()
+  if #v == 0 or #v > 253 then return false end
+  if not v:match("^[%w%.%-]+$") then return false end
+  local labels = {}
+  for label in (v .. "."):gmatch("([^%.]*)%.") do
+    labels[#labels + 1] = label
+  end
+  if #labels < 2 then return false end
+  for _, label in ipairs(labels) do
+    if not is_valid_label(label) then return false end
+  end
+  return not is_ipv4_shaped(v)
+end
+
+local function domain_to_filename(domain)
+  return BLOCKLIST_DIR .. "/custom-" .. domain:lower():gsub("[%.%-]", "_") .. ".conf"
+end
+
+-- Scans the blocklist directory for this project's own custom-*.conf files
+-- (never blocklist.conf or safesearch.conf) and returns the list of domains
+-- by parsing each file's actual address=/domain/0.0.0.0 line — the domain
+-- is read back from FILE CONTENT, not decoded from the filename, avoiding
+-- any lossy-filename-encoding concern.
+local function list_custom_domains()
+  local files = run("ls " .. BLOCKLIST_DIR .. " 2>/dev/null")
+  local domains = {}
+  for filename in files:gmatch("[^\r\n]+") do
+    if filename:match("^custom%-.-%.conf$") then
+      local f = io.open(BLOCKLIST_DIR .. "/" .. filename, "r")
+      if f then
+        local content = f:read("*a")
+        f:close()
+        local domain = content:match("^address=/(.-)/0%.0%.0%.0")
+        if domain then domains[#domains + 1] = domain end
+      end
+    end
+  end
+  return domains
+end
+
+local function domain_already_blocked(domain)
+  for _, d in ipairs(list_custom_domains()) do
+    if d == domain then return true end
+  end
+  return false
+end
+
+local function read_request_body()
+  local len = tonumber(os.getenv("CONTENT_LENGTH") or "")
+  if len and len > 0 then return io.read(len) or "" end
+  return io.read("*a") or ""
+end
+
+local function json_parse_flat_object(s)
+  local obj = {}
+  if type(s) ~= "string" then return obj end
+  local i, len = 1, #s
+  local function skip_ws() while i <= len and s:sub(i, i):match("%s") do i = i + 1 end end
+  local function parse_string()
+    i = i + 1
+    local buf = {}
+    local escapes = { ['"']='"', ['\\']='\\', ['/']='/', ['n']='\n', ['r']='\r', ['t']='\t', ['b']='\b', ['f']='\f' }
+    while i <= len do
+      local c = s:sub(i, i)
+      if c == '"' then i = i + 1; return table.concat(buf)
+      elseif c == '\\' then
+        local nc = s:sub(i + 1, i + 1)
+        if nc == 'u' then i = i + 6
+        elseif escapes[nc] then buf[#buf+1] = escapes[nc]; i = i + 2
+        else buf[#buf+1] = nc; i = i + 2 end
+      else buf[#buf+1] = c; i = i + 1 end
+    end
+    return table.concat(buf)
+  end
+  skip_ws()
+  if s:sub(i, i) ~= '{' then return obj end
+  i = i + 1
+  skip_ws()
+  if s:sub(i, i) == '}' then return obj end
+  while i <= len do
+    skip_ws()
+    if s:sub(i, i) ~= '"' then break end
+    local key = parse_string()
+    skip_ws()
+    if s:sub(i, i) ~= ':' then break end
+    i = i + 1
+    skip_ws()
+    local val
+    if s:sub(i, i) == '"' then val = parse_string()
+    else
+      local start = i
+      while i <= len and not s:sub(i, i):match('[,}%s]') do i = i + 1 end
+      val = s:sub(start, i - 1)
+    end
+    obj[key] = val
+    skip_ws()
+    if s:sub(i, i) == ',' then i = i + 1
+    elseif s:sub(i, i) == '}' then i = i + 1; break
+    else break end
+  end
+  return obj
+end
+
+local function send_headers(status)
+  local reasons = { [400]="Bad Request", [405]="Method Not Allowed", [500]="Internal Server Error" }
+  if status and status ~= 200 then
+    print("Status: " .. status .. " " .. (reasons[status] or "Error"))
+  end
+  print("Content-Type: application/json\n")
+end
+
+local method = os.getenv("REQUEST_METHOD") or "GET"
+
+if method == "GET" then
+  local rows = {}
+  for _, d in ipairs(list_custom_domains()) do
+    rows[#rows + 1] = string.format('{"domain":"%s"}', json_escape(d))
+  end
+  send_headers(200)
+  print("[" .. table.concat(rows, ",") .. "]")
+
+elseif method == "POST" then
+  local body = read_request_body()
+  local req = json_parse_flat_object(body)
+  local domain = req.domain
+  if type(domain) == "string" then domain = domain:lower() end
+
+  if type(domain) == "string" and is_ipv4_shaped(domain) then
+    send_headers(400)
+    print('{"ok":false,"error":"IP-address blocking is not supported yet — only domain names (e.g. example.com)"}')
+  elseif not is_valid_domain(domain) then
+    send_headers(400)
+    print('{"ok":false,"error":"missing or invalid required field: domain (e.g. example.com)"}')
+  elseif domain_already_blocked(domain) then
+    -- Idempotent: already blocked, nothing to do.
+    send_headers(200)
+    print(string.format('{"ok":true,"domain":"%s"}', json_escape(domain)))
+  else
+    local path = domain_to_filename(domain)
+    local f = io.open(path, "w")
+    local write_ok = false
+    if f then
+      local ok = f:write("address=/" .. domain .. "/0.0.0.0\n")
+      f:close()
+      write_ok = ok and true or false
+    end
+    if not write_ok then
+      send_headers(500)
+      print('{"ok":false,"error":"failed to write block file for this domain"}')
+    else
+      -- Verify the write actually landed via readback BEFORE restarting
+      -- dnsmasq — same discipline as safe-search's (post-ecfbdd5) POST
+      -- handler and adblock's own write path: restart only happens once
+      -- the on-disk content is confirmed to match what was just written,
+      -- so a partial/failed write never gets applied to a running dnsmasq.
+      if domain_already_blocked(domain) then
+        run("/etc/init.d/dnsmasq restart")
+        send_headers(200)
+        print(string.format('{"ok":true,"domain":"%s"}', json_escape(domain)))
+      else
+        os.remove(path)
+        send_headers(500)
+        print('{"ok":false,"error":"block file write did not verify on readback; removed"}')
+      end
+    end
+  end
+
+else
+  send_headers(405)
+  print(string.format('{"ok":false,"error":"unsupported method: %s"}', json_escape(tostring(method))))
+end
