@@ -703,7 +703,7 @@ html.large-text .scr-title{font-size:1.15em;}
     if(location.protocol === 'file:') return null;
     try{
       const ctrl = new AbortController();
-      const t = setTimeout(()=>ctrl.abort(), timeoutMs || 1500);
+      const t = setTimeout(()=>ctrl.abort(), timeoutMs ?? 1500); // ?? not || — a future caller passing 0 (no timeout) must not be silently overridden to 1500
       const res = await fetch(path, {...opts, signal: ctrl.signal});
       clearTimeout(t);
       let data = null;
