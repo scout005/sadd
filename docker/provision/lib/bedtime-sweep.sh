@@ -54,9 +54,18 @@ CHANGED=0
 for id in $(uci show firewall | grep "\.name='bedtime-" | sed -n "s/^firewall\.\([^.]*\)\.name=.*/\1/p"); do
   current=$(uci -q get "firewall.${id}.enabled")
   if [ "$current" != "$WANT" ]; then
-    logger -t bedtime-sweep "firewall.${id}: enabled ${current:-<unset>} -> ${WANT} (UTC hour ${HOUR})"
-    uci set "firewall.${id}.enabled=${WANT}"
-    CHANGED=1
+    # uci set's own exit status is checked here (code review finding) — unlike the
+    # unconditional CHANGED=1 this replaced, a failed set (stuck lock, bad id, read-only
+    # overlay) is now explicitly logged rather than silently claimed as a transition that
+    # didn't actually happen. Self-heals either way on the next tick (current will still
+    # differ from WANT), but the log line should tell the truth about what happened this
+    # tick — same discipline the uci commit/fw4 reload checks below already apply.
+    if uci set "firewall.${id}.enabled=${WANT}"; then
+      logger -t bedtime-sweep "firewall.${id}: enabled ${current:-<unset>} -> ${WANT} (UTC hour ${HOUR})"
+      CHANGED=1
+    else
+      logger -t bedtime-sweep "ERROR: uci set failed for firewall.${id} (enabled -> ${WANT}); will retry next tick"
+    fi
   fi
 done
 
