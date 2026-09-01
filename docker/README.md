@@ -2,16 +2,18 @@
 
 A real OpenWrt 23.05.5 (x86-64) instance, booted with KVM-accelerated QEMU,
 reachable from the host for LuCI, SSH, and a small `/api/*` backend the
-frontend prototype talks to (eleven screens/sections wired to it so far,
-across five completed waves — Devices/Firewall & Ports, About/Diagnostics &
+frontend prototype talks to (thirteen screens/sections wired to it so far,
+across six completed waves — Devices/Firewall & Ports, About/Diagnostics &
 Logs, Settings/Guest Wi-Fi, Ad Blocking/Network & VLANs, Developer & API
-Access/VPN Server (WireGuard)/Per-Device Controls). See
+Access/VPN Server (WireGuard)/Per-Device Controls, and, as of Wave 6, VPN
+Server (WireGuard)'s Client devices list + Traffic & QoS). See
 `docs/superpowers/specs/2026-08-30-openwrt-integration-pilot-design.md` for
 the full design/roadmap and `docs/superpowers/plans/2026-08-30-openwrt-integration-wave1.md`,
 `docs/superpowers/plans/2026-08-31-openwrt-integration-wave2.md`,
 `docs/superpowers/plans/2026-08-31-openwrt-integration-wave3.md`,
-`docs/superpowers/plans/2026-09-01-openwrt-integration-wave4.md`, and
-`docs/superpowers/plans/2026-09-01-openwrt-integration-wave5.md` for the
+`docs/superpowers/plans/2026-09-01-openwrt-integration-wave4.md`,
+`docs/superpowers/plans/2026-09-01-openwrt-integration-wave5.md`, and
+`docs/superpowers/plans/2026-09-01-openwrt-integration-wave6.md` for the
 implementation plans this environment supports.
 
 ## Quick start
@@ -242,7 +244,13 @@ bash docker/provision/10-provision-vlans-api.sh
 #     deploys and curl-verifies the /api/wireguard endpoint (real
 #     ubus/`wg show`-backed running/port/publicKey status for the VPN
 #     Server screen, plus a real on/off toggle over `network.wg0.disabled`)
-#     onto the VM.
+#     onto the VM. As of Wave 6, this same step also deploys and
+#     curl-verifies the /api/wireguard-clients endpoint (real per-client
+#     WireGuard keypair generation, real `wireguard_wg0` uci peer sections,
+#     and a real per-client enable/disable toggle) for the VPN Server
+#     screen's "Client devices" list — folded into this step rather than a
+#     separate script, the same "one feature, one step" reasoning step 13
+#     already used for the devpause sweep + endpoint pair.
 bash docker/provision/11-provision-wireguard-api.sh
 
 # 12. Deploy the /api/ssh-key endpoint (real dropbear host-key rotation for
@@ -305,6 +313,9 @@ curl -s http://localhost:8081/cgi-bin/api/wifi  # -> JSON object of real UCI wir
 curl -s http://localhost:8081/cgi-bin/api/adblock  # -> JSON object of real dnsmasq-blocklist state, e.g. {"enabled":true,"blockedThisWeek":4} — blockedThisWeek increases by exactly 1 per subsequent real blocked lookup (e.g. `ssh root@localhost -p 2223 nslookup doubleclick.net 127.0.0.1`), confirmed live
 curl -s http://localhost:8081/cgi-bin/api/vlans  # -> JSON array of all 5 real networks, e.g. [{"name":"Main Network","subnet":"192.168.1.0/24","active":true},{"name":"Kids","subnet":"192.168.2.0/24","active":true},{"name":"IoT / Smart Home","subnet":"192.168.3.0/24","active":true},{"name":"Guests","subnet":"192.168.4.0/24","active":true},{"name":"Quarantine","subnet":"192.168.5.0/24","active":true}] — `active` reflects genuinely live kernel state: `ssh root@localhost -p 2223 ip link set br-lan.2 down` flips Kids' `active` to `false` immediately, confirmed live
 curl -s http://localhost:8081/cgi-bin/api/wireguard  # -> JSON object of real WireGuard server state, e.g. {"running":true,"port":51820,"publicKey":"n4W57HtezCeRGFeKQ/PM19i2YrsN3OFNbgQETg/6x28=","subnet":"10.9.0.0/24"} — `running`/`publicKey` reflect genuinely live kernel state: `POST -d '{"enabled":false}'` makes `ip link show wg0` report "can't find device", `POST -d '{"enabled":true}'` brings the real interface back with the same public key, confirmed live
+curl -s http://localhost:8081/cgi-bin/api/wireguard-clients  # -> `[]` on a fresh VM
+curl -s -X POST -d '{"name":"Docs Test Client"}' http://localhost:8081/cgi-bin/api/wireguard-clients  # -> real client creation, e.g. {"ok":true,"id":"wgc_1788280178_722a2f","publicKey":"ruXtbMRJhith76Hid+c+pjMH+59JYah86EZb2eMqFxo=","config":"[Interface]\nPrivateKey = 2AbL415PbaXFA7+hFT3g4xUpuC0p/2OtE4w0jMFyKUQ=\nAddress = 10.9.0.2/32\n\n[Peer]\nPublicKey = n4W57HtezCeRGFeKQ/PM19i2YrsN3OFNbgQETg/6x28=\nEndpoint = smith-family.saddvpn.com:51820\nAllowedIPs = 10.9.0.0/24\nPersistentKeepalive = 25\n"} — confirmed live: `uci show network | grep wgc_1788280178_722a2f` shows a real `wireguard_wg0` peer section with this exact `public_key`/`allowed_ips`; a subsequent GET returns `[{"id":"wgc_1788280178_722a2f","name":"Docs Test Client","publicKey":"ruXtbMRJhith76Hid+c+pjMH+59JYah86EZb2eMqFxo=","enabled":true,"added":"Sep 01"}]`; the response's `PrivateKey` line is the one-shot secret — it is never written to uci and never appears in a later GET
+curl -s -X POST -d '{"id":"wgc_1788280178_722a2f","enabled":false}' http://localhost:8081/cgi-bin/api/wireguard-clients  # -> {"ok":true,"enabled":false} — confirmed live: `ssh root@localhost -p 2223 "wg show wg0"` drops the peer from its listing entirely; `POST -d '{"id":"...","enabled":true}'` brings it back into `wg show wg0`'s output with the same public key and allowed-ips
 curl -s -X POST http://localhost:8081/cgi-bin/api/ssh-key  # -> real dropbear RSA host-key rotation, e.g. {"ok":true,"fingerprint":"SHA256:6Kl/5/4foMm95Fv+cFOkg9KeqmAWqdvFjMqihufCN5k"} — confirmed live to genuinely change the real key each call: `ssh -p 2223 root@localhost "dropbearkey -y -f /etc/dropbear/dropbear_rsa_host_key | grep Fingerprint"` shows a different fingerprint before vs. after, matching the response's `fingerprint` field exactly, and a second POST changes it again to a third distinct value (not toggling between two); `curl -s http://localhost:8081/cgi-bin/api/ssh-key` (a GET) -> 405
 curl -s "http://localhost:8081/cgi-bin/api/device-pause?mac=11:22:33:44:55:66"  # -> {"paused":false,"remainingSeconds":0} for a MAC with no active pause rule
 curl -s -X POST -d '{"mac":"11:22:33:44:55:66","minutes":15}' http://localhost:8081/cgi-bin/api/device-pause  # -> real per-MAC block, e.g. {"ok":true,"paused":true,"remainingSeconds":900} — confirmed live: `uci show firewall | grep devpause-112233445566` shows a real `rule` section with `src='lan'`, `src_mac='11:22:33:44:55:66'`, `dest='wan'`, `target='REJECT'`; a subsequent GET for the same mac reports `paused:true` with a real, ticking-down `remainingSeconds`; and — proven via a genuine 65+ second wait for a real cron tick, not simulated — a rule whose `paused_until` has passed is actually removed by `/usr/bin/devpause-sweep.sh` (confirmed both for a single expired rule and for three rules expiring in the same minute, see the `devpause-sweep.sh` file note below for the exact live multi-expiry proof)
@@ -683,7 +694,14 @@ specifically, as a sibling of `luci`, not a replacement for it.
   proving `/etc/wireguard-privkey` reuse works. Also `scp -O`'s (and
   curl-verifies) `docker/provision/www/api/wireguard` onto the VM's
   `/www/cgi-bin/api/wireguard`. Same dedicated-step rationale as
-  08-10's own endpoint deploys.
+  08-10's own endpoint deploys. **As of Wave 6**, also `scp -O`'s (and
+  chmods, and curl-verifies GET returns a JSON array)
+  `docker/provision/www/api/wireguard-clients` onto the VM's
+  `/www/cgi-bin/api/wireguard-clients`, for the VPN Server screen's
+  "Client devices" list — folded into this same step rather than a new
+  numbered script, since it extends the same `wg0` server this step
+  already brings up, the same "one feature, one step" reasoning step 13
+  applied to the devpause sweep + endpoint pair.
 - `docker/provision/www/api/wireguard` — the tracked source of truth for
   the `/api/wireguard` endpoint: `GET` returns
   `{"running": <bool>, "port": <int>, "publicKey": "<string>", "subnet":
@@ -705,6 +723,45 @@ specifically, as a sibling of `luci`, not a replacement for it.
   runs `ifup wg0` and brings the real interface back with the same
   public key as before (private key persists in
   `/etc/wireguard-privkey` regardless of the toggle).
+- `docker/provision/www/api/wireguard-clients` (Wave 6) — the tracked
+  source of truth for the `/api/wireguard-clients` endpoint, extending the
+  real `wg0` server `docker/provision/11-provision-wireguard-api.sh`
+  already provisions with real per-client peer management for the VPN
+  Server screen's "Client devices" list. `GET` returns
+  `[{"id","name","publicKey","enabled","added"}, ...]`, one entry per real
+  `wireguard_wg0` uci peer section. `POST` is dispatched by shape: a body
+  with `name` creates a new client — generates a real keypair (`wg genkey`
+  / `wg pubkey`), assigns the next unused `/32` in `10.9.0.2`-`10.9.0.254`
+  (scanning existing peers' `allowed_ips`), `uci add`s a
+  `wireguard_wg0` peer section, immediately `uci rename`s it to a stable
+  `wgc_<time>_<6 hex>` id (same firewall-rules/device-pause/vlans stable-id
+  precedent), and returns the client's WireGuard config text — **the
+  private key is returned exactly once in this response and is never
+  written to uci, logged, or retrievable again** (matches real-world
+  WireGuard practice: the server only ever needs each peer's *public* key).
+  A body with `id`+`enabled` instead toggles that peer's `disabled` uci
+  option and runs `ifdown wg0; ifup wg0`, confirmed live to genuinely
+  add/remove the peer from `wg show wg0`'s own output in both directions.
+  Same write-then-readback-verify-then-commit-or-revert discipline, and the
+  same canonical `json_escape()`, as every other write endpoint in this
+  directory. No `DELETE` — same read-mostly-list choice `/api/vlans` made;
+  a client created here can currently only be removed by hand over SSH.
+  **Security note — a real command-injection vulnerability was found and
+  fixed here during code review (commit `cfbb97d`):** the toggle path's
+  client-supplied `id` is concatenated directly into `uci get`/`uci set`
+  command strings (`shell_quote()` only escapes option *values*, not the
+  section-id position in the command itself), and the first version of
+  this endpoint accepted any non-empty string `id` with no further check —
+  a genuine shell-injection hole (a crafted `id` like `` `touch
+  /tmp/pwned` `` would have executed on the VM). Fixed by rejecting any
+  `id` containing a character outside `[A-Za-z0-9_]` (`id:find("[^%w_]")`)
+  *before* the id ever touches a uci command — mirroring the same
+  `[%w_]+`-only precedent `firewall-rules`' `DELETE` handler already
+  established for its own client-supplied section id, the only other place
+  in this codebase that accepts one. `qos-priority` (below) was built with
+  this lesson already in hand, and never accepts a client-supplied section
+  id at all, deriving its own ids internally from a strictly-validated MAC
+  instead.
 - `docker/provision/12-provision-ssh-key-api.sh` — copies (and chmods, and
   curl-verifies) `docker/provision/www/api/ssh-key` onto the VM's
   `/www/cgi-bin/api/ssh-key`. Unlike `08`-`11`, this step provisions no
@@ -1066,24 +1123,31 @@ device.
   port 8081 to all interfaces, not just `localhost` — anyone reachable on
   the local network can add/delete real firewall rules, flip the real guest
   Wi-Fi network on/off, flip real ad blocking on/off, flip the real
-  WireGuard server on/off, or pause/unpause a real device's internet access,
-  with a plain `curl` (six independent write-capable endpoints:
-  `/api/firewall-rules`, `/api/wifi`, `/api/adblock`, `/api/wireguard`,
-  `/api/ssh-key`, and, as of Wave 5, `/api/device-pause` — `/api/ssh-key` is
-  a little different in kind from the rest: it doesn't mutate any persisted
-  uci config the way they do, but a plain unauthenticated `POST` still
-  immediately rotates this VM's real SSH host keys with no confirmation,
-  undo, or operator warning, so it belongs in this list too).
+  WireGuard server on/off, pause/unpause a real device's internet access,
+  create or toggle a real WireGuard client peer, or mark a real device's
+  traffic for priority, with a plain `curl` (eight independent
+  write-capable endpoints: `/api/firewall-rules`, `/api/wifi`,
+  `/api/adblock`, `/api/wireguard`, `/api/ssh-key`, `/api/device-pause`,
+  and, as of Wave 6, `/api/wireguard-clients` and `/api/qos-priority` —
+  `/api/ssh-key` is a little different in kind from the rest: it doesn't
+  mutate any persisted uci config the way they do, but a plain
+  unauthenticated `POST` still immediately rotates this VM's real SSH host
+  keys with no confirmation, undo, or operator warning, so it belongs in
+  this list too).
   Acceptable only because this is an explicitly local, single-user dev/test
   tool — not something to carry into a later wave or real deployment as-is.
   The **read-only** endpoints (`/api/devices`, `/api/logs`, `/api/system-info`,
-  as of Wave 4 `/api/vlans`, and as of Wave 5 `/api/device-pause`'s own
+  as of Wave 4 `/api/vlans`, as of Wave 5 `/api/device-pause`'s own
   `GET` — which discloses whether a specific MAC is currently paused and,
-  if so, for how much longer) are equally unauthenticated — anyone on the
-  local network can silently read real device/MAC/IP presence, real log
-  lines, real hardware/uptime info, real VLAN topology, and real per-device
-  pause status with a plain `curl`. Disclosure rather than mutation, but the
-  same "local, single-user dev tool only" caveat applies.
+  if so, for how much longer — and, as of Wave 6, `/api/wireguard-clients`'
+  own `GET` (discloses every configured client's name/public key/enabled
+  state) and `/api/qos-priority`'s own `GET` (discloses which MACs are
+  currently marked for priority)) are equally unauthenticated — anyone on
+  the local network can silently read real device/MAC/IP presence, real log
+  lines, real hardware/uptime info, real VLAN topology, real per-device
+  pause status, real WireGuard client identity/key data, and real
+  priority-marking status with a plain `curl`. Disclosure rather than
+  mutation, but the same "local, single-user dev tool only" caveat applies.
 - **Per-device pause is a real firewall block, but not end-to-end
   WAN-testable** — `POST /api/device-pause` creates a genuine `uci`/`fw4`
   `rule` section (`src='lan'`, `src_mac=<device>`, `dest='wan'`,
@@ -1116,6 +1180,39 @@ device.
   live down to this exact granularity (see `docker/provision/lib/devpause-sweep.sh`'s
   own file note above) — worth being explicit about rather than implying a
   precision the mechanism doesn't have.
+- **A WireGuard client's private key is shown exactly once, never persisted
+  server-side** — `POST /api/wireguard-clients` (create) returns the new
+  client's full config text, private key included, in that one response
+  only; the endpoint never writes the private key to uci, never logs it,
+  and has no way to reconstruct or re-display it afterward. This is a real,
+  standard WireGuard operational fact (the server only ever needs to know a
+  peer's *public* key), not a bug — but it does mean that if the "New
+  client config" panel is dismissed in the UI without saving its contents
+  first, that config is genuinely gone; the only recovery is removing the
+  client (by hand over SSH — see the next bullet) and adding it again,
+  which issues a fresh keypair.
+- **Priority devices and WireGuard clients both have no remove/delete
+  affordance in the UI** — neither `/api/qos-priority` nor
+  `/api/wireguard-clients` exposes a `DELETE`, matching the same
+  read-mostly-list choice already made for `/api/vlans` in Wave 4: the
+  mockup itself has no remove control for either row type. A rule or client
+  created through either screen can currently only be removed by hand over
+  SSH (`uci delete firewall.qospriority_<mac>` / `uci delete
+  network.<wgc_id>`, then `uci commit` and the appropriate reload/`ifup`),
+  a known, documented limitation rather than a silently-missing feature.
+- **The QoS mark value (`0x2a`) has no consuming queueing discipline yet**
+  — `/api/qos-priority`'s `POST` creates a real, kernel-verifiable
+  `MARK`/`set_mark=0x2a` rule in the real `mangle_forward` nft chain (the
+  marking mechanism itself is genuinely real, confirmed live against `nft
+  list ruleset`), but nothing on this VM currently reads that mark to
+  actually prioritize the marked traffic's latency or bandwidth — no `tc`
+  qdisc, no SQM instance, nothing consumes `0x2a` for anything today. A
+  device added to "Priority devices" is real, inspectable state, but has no
+  behavioral effect on its own traffic yet. Wiring a real `tc`/SQM setup
+  keyed on this mark is its own future wave (see the design spec's Wave 7
+  "Bandwidth used today" entry, which needs the same missing piece), not
+  something this wave's narrow scope (proving the marking mechanism itself
+  is real) included.
 - The global search feature (built earlier this session, unrelated to this
   work) can't highlight search results on the Devices, Firewall & Ports
   (port-forwarding rules only), and Diagnostics & Logs screens when the
