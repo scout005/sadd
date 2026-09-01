@@ -1320,9 +1320,15 @@ html.large-text .scr-title{font-size:1.15em;}
   //      fully static, chips revert to their original cosmetic-only click behavior (see
   //      the generic .timer-chip branch in the click handler below, which this real path
   //      intercepts BEFORE, the same "specific id/state check before the generic branch"
-  //      idiom as guestWifiSwitch/adblockSwitch). Bedtime, the content-filter radio group,
-  //      and the blocked-apps list are explicitly out of scope for this wave (see the
-  //      design spec's Wave 5 note) and are never touched here. ----
+  //      idiom as guestWifiSwitch/adblockSwitch). The content-filter radio group and the
+  //      blocked-apps list are explicitly out of scope (see the design spec's Wave 5 note)
+  //      and are never touched here. (Bedtime was ALSO deferred by that same Wave 5 note,
+  //      under the same "child profile concept" reasoning — Wave 7 later found that
+  //      reasoning didn't actually apply to it, since Bedtime lives entirely on this
+  //      per-device screen in the mockup's own markup; see setDevcontrolsBedtimeVisual/
+  //      renderDevcontrolsBedtimeScreen/handleDevcontrolsBedtimeClick further down in this
+  //      file for its own real wiring, on the same "only overlay with a real
+  //      selectedDevice" contract this comment describes.) ----
   function formatRemaining(seconds){
     if(seconds >= 3600) return Math.round(seconds/3600) + ' hr';
     return Math.round(seconds/60) + ' min';
