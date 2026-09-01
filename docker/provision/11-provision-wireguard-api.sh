@@ -5,8 +5,23 @@
 # missing deps) and brings up a real, persisted `wg0` interface on the VM.
 #
 # Mirrors 08-provision-wifi-api.sh's "create baseline config from nothing"
-# shape (this VM has no WireGuard config of any kind on a fresh boot),
-# including its idempotent verify/create/revert/retry-once discipline.
+# shape (this VM has no WireGuard config of any kind on a fresh boot). The
+# baseline-config half below (see "Baseline network.wg0 config") runs its
+# whole verify/create/commit/retry sequence inside ONE remote SSH session,
+# the same way 08-provision-wifi-api.sh's wireless sections and
+# 10-provision-vlans-api.sh's network sections do: uci-completeness is
+# checked via `uci get` against the *uncommitted staged* config (uci itself
+# can read staged-but-uncommitted values, so this needs no commit to check),
+# `uci commit` only happens once that check passes, and only after commit is
+# the interface brought up and its kernel-level liveness independently
+# verified with its own retry — genuine verify-before-commit discipline,
+# not just a same-named claim. (An earlier version of this script did the
+# create+commit unconditionally, then verified from the *local* shell over
+# several separate SSH round-trips, which both committed before verifying
+# and left the local retry loop callable-but-unguarded against a hard
+# remote/SSH failure short-circuiting past it via this script's own
+# top-level `set -e` — this rewrite fixes both by moving the whole sequence
+# server-side, matching 08/10 exactly instead of only claiming to.)
 #
 # Known DRY concern (same note as 08-provision-wifi-api.sh's own header
 # comment, now applying a 4th time): the idempotent verify-completeness /
@@ -54,7 +69,9 @@ ssh_run() { ssh ${SSH_OPTS} -p "${OPENWRT_PORT}" "${SSH_TARGET}" "$1"; }
 echo "=== 11-provision-wireguard-api.sh ==="
 
 # --- Idempotency check: is a real, working wg0 already up? ---
-if ssh_run "ip link show wg0 2>/dev/null | grep -q 'state UNKNOWN\|POINTOPOINT'" && \
+# grep -E (POSIX ERE alternation) rather than BRE's GNU-only `\|` extension —
+# confirmed live against this VM's busybox grep both ways.
+if ssh_run "ip link show wg0 2>/dev/null | grep -Eq 'state UNKNOWN|POINTOPOINT'" && \
    ssh_run "wg show wg0 >/dev/null 2>&1"; then
   echo "wg0 already up with a real WireGuard interface — skipping package install and baseline config."
 else
@@ -89,52 +106,116 @@ else
   sleep 3
 fi
 
-# --- Baseline network.wg0 config: create if missing, verify via readback, retry once ---
-create_and_verify_wg0() {
-  ssh_run "
-    umask 077
-    if [ ! -f /etc/wireguard-privkey ]; then
-      wg genkey > /etc/wireguard-privkey
-    fi
-    PRIV=\$(cat /etc/wireguard-privkey)
-    uci -q delete network.wg0 2>/dev/null
-    uci set network.wg0=interface
-    uci set network.wg0.proto=wireguard
-    uci set network.wg0.private_key=\"\$PRIV\"
-    uci set network.wg0.listen_port=51820
-    uci set network.wg0.addresses='10.9.0.1/24'
-    uci commit network
-    ifup wg0
-  "
-  sleep 2
+# --- Baseline network.wg0 config: uci-completeness verify -> commit only on
+# success -> ifup -> independent kernel-liveness verify, all in ONE remote
+# SSH session (mirrors 08/10's actual shape exactly — see header comment).
+# A genuine remote failure here (including the final ERROR/exit 1 branches
+# below, after both layers have exhausted their one retry) makes this ssh
+# call itself return non-zero, which is meant to abort this script via its
+# own top-level `set -e` — same as 08/10's own outer ssh invocations, which
+# aren't guarded with `|| true` either, because by that point every
+# server-side retry has already been exhausted and stopping is correct.
+echo "Ensuring baseline network.wg0 config exists, is committed, and wg0 is really up (root@${OPENWRT_HOST}:${OPENWRT_PORT})..."
+# shellcheck disable=SC2086
+ssh ${SSH_OPTS} -p "${OPENWRT_PORT}" "${SSH_TARGET}" 'sh -s' <<'REMOTE_SCRIPT'
+set -e
+
+# === Layer 1: uci-completeness, checked BEFORE commit (mirrors
+# 08-provision-wifi-api.sh / 10-provision-vlans-api.sh's established
+# pattern) === wg_verify_uci reads back every option wg_create_uci is
+# supposed to have set and compares it against the expected value, entirely
+# against uci's own staged/uncommitted view (`uci get` sees uncommitted
+# changes fine) — a bare `uci get network.wg0` success only proves the
+# section exists, not that it's complete, and checking it this way means no
+# commit is needed just to run this check.
+wg_verify_uci() {
+  [ "$(uci -q get network.wg0.proto 2>/dev/null)" = "wireguard" ] || return 1
+  [ -n "$(uci -q get network.wg0.private_key 2>/dev/null)" ] || return 1
+  [ "$(uci -q get network.wg0.listen_port 2>/dev/null)" = "51820" ] || return 1
+  [ "$(uci -q get network.wg0.addresses 2>/dev/null)" = "10.9.0.1/24" ] || return 1
+  return 0
+}
+# Always re-sets every field via `uci set` (no delete-first) — an
+# already-existing section (even one committed with a wrong value by a
+# stray hand-edit) is corrected in place, same as 08/10's create_fn
+# functions never deleting their section first either.
+wg_create_uci() {
+  umask 077
+  if [ ! -f /etc/wireguard-privkey ]; then
+    wg genkey > /etc/wireguard-privkey
+  fi
+  PRIV="$(cat /etc/wireguard-privkey)"
+  uci set network.wg0=interface
+  uci set network.wg0.proto=wireguard
+  uci set network.wg0.private_key="$PRIV"
+  uci set network.wg0.listen_port=51820
+  uci set network.wg0.addresses='10.9.0.1/24'
 }
 
-verify_wg0() {
-  ssh_run "ubus call network.interface.wg0 status 2>/dev/null | grep -q '\"proto\": \"wireguard\"'" && \
-  ssh_run "ip link show wg0 2>/dev/null | grep -q 'POINTOPOINT'" && \
-  ssh_run "wg show wg0 2>/dev/null | grep -q 'listening port: 51820'"
-}
-
-if verify_wg0; then
-  echo "network.wg0 already correctly configured and up."
+if wg_verify_uci; then
+  echo "network.wg0 uci config already exists and is complete, skipping (idempotent)."
 else
-  echo "Creating baseline network.wg0 config (attempt 1)..."
-  create_and_verify_wg0
-  if verify_wg0; then
-    echo "network.wg0 verified up after attempt 1."
+  if uci get network.wg0 >/dev/null 2>&1; then
+    echo "network.wg0 exists but is INCOMPLETE (likely left behind by a prior run that failed partway through) - reverting uncommitted network changes and recreating..."
   else
-    echo "Verification failed after attempt 1 — reverting and retrying once..."
-    ssh_run "uci revert network; ip link del wg0 2>/dev/null || true"
-    sleep 1
-    create_and_verify_wg0
-    if verify_wg0; then
-      echo "network.wg0 verified up after retry."
+    echo "Creating network.wg0 uci config..."
+  fi
+  uci revert network
+  wg_create_uci || true
+
+  if wg_verify_uci; then
+    uci commit network
+    echo "network.wg0 uci config created, verified, and committed."
+  else
+    echo "network.wg0 uci config did not verify after the first attempt - reverting and retrying once..." >&2
+    uci revert network
+    wg_create_uci || true
+
+    if wg_verify_uci; then
+      uci commit network
+      echo "network.wg0 uci config created, verified, and committed on retry."
     else
-      echo "FATAL: network.wg0 still not verifiably up after a revert+retry. Investigate manually." >&2
+      echo "ERROR: failed to create a complete network.wg0 uci config after retry. Reverting uncommitted changes and aborting." >&2
+      uci revert network
       exit 1
     fi
   fi
 fi
 
-echo "Real public key: $(ssh_run "wg show wg0 public-key")"
+echo "uci network.wg0 config present and verified. Current state:"
+uci show network.wg0
+
+# === Layer 2: kernel-liveness, independent of layer 1 (a uci section can
+# read back "correct" and still have no live kernel interface behind it if
+# ifup raced or failed silently) — same two-layer split
+# 10-provision-vlans-api.sh uses for its own br-lan.N devices. ===
+wg_is_live() {
+  ubus call network.interface.wg0 status 2>/dev/null | grep -q '"proto": "wireguard"' || return 1
+  ip link show wg0 2>/dev/null | grep -q 'POINTOPOINT' || return 1
+  wg show wg0 2>/dev/null | grep -q 'listening port: 51820' || return 1
+  return 0
+}
+
+ifup wg0
+sleep 2
+
+if wg_is_live; then
+  echo "OK: wg0 shows a real, up kernel interface with the expected proto/port."
+else
+  echo "wg0 kernel interface not live after ifup - retrying once (ifdown, drop any leftover link, ifup again)..." >&2
+  ifdown wg0 2>/dev/null || true
+  ip link delete wg0 2>/dev/null || true
+  ifup wg0
+  sleep 2
+  if wg_is_live; then
+    echo "OK: wg0 came up after retry."
+  else
+    echo "ERROR: wg0 still not showing a live kernel interface after a retry. Investigate manually." >&2
+    exit 1
+  fi
+fi
+
+echo "Real public key: $(wg show wg0 public-key)"
+REMOTE_SCRIPT
+
 echo "=== 11-provision-wireguard-api.sh done ==="

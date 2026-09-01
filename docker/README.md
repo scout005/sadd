@@ -578,6 +578,54 @@ specifically, as a sibling of `luci`, not a replacement for it.
   response JSON (with the same defensive escaper as every other endpoint
   in this directory) rather than installing `lua-cjson`, for the same
   no-outbound-internet reason.
+- `docker/provision/11-provision-wireguard-api.sh` — unlike 08-10, this step
+  installs real opkg packages before touching any config (this VM has no
+  WireGuard packages OR config of any kind on a fresh boot): the full
+  9-package transitive kmod dependency chain plus `wireguard-tools`, all
+  from the target-specific/kernel-version-pinned feed (see
+  `docker/facts.md` Section 14 for exactly which two of opkg's own
+  first-round error messages hide a second, undeclared dependency layer),
+  downloaded on the host and `scp -O`'d to the VM's `/tmp/` (this VM has no
+  outbound route, same reason 01 runs on the host). After `opkg install`,
+  `modprobe wireguard` + `lsmod` are checked explicitly (opkg exiting 0
+  alone isn't proof the module actually probes — confirmed live: an
+  earlier partial install of just `kmod-wireguard`/`wireguard-tools`
+  "succeeded" per opkg while leaving the module unprobeable), then
+  `/etc/init.d/network restart` (a full daemon restart, not
+  `reload`/`ifup`) is required once so netifd re-scans
+  `/lib/netifd/proto/*.sh` and actually recognizes `proto=wireguard` — both
+  gotchas confirmed live and documented in `docker/facts.md` Section 14.
+  Then creates the baseline `network.wg0` interface (`proto=wireguard`,
+  `private_key` from `/etc/wireguard-privkey` — generated once via
+  `wg genkey` and reused on every re-run so the derived public key stays
+  stable across idempotent re-provisioning — `listen_port=51820`,
+  `addresses=10.9.0.1/24`). Idempotent AND self-healing, same two-layer
+  discipline as `10-provision-vlans-api.sh`, run entirely inside one remote
+  SSH session (not split across local round-trips): (1) uci-completeness —
+  every expected field is read back via `uci get` against uci's own
+  uncommitted staged view (no commit needed to check it) before
+  `uci commit` ever runs, so commit genuinely only happens after
+  verification passes, not before — one revert+retry on an incomplete
+  section, then a loud failure with a revert, same as 08/10; (2) kernel-
+  liveness — after `ifup wg0`, `ubus call network.interface.wg0 status`,
+  `ip link show wg0`, and `wg show wg0` are independently checked for a
+  real up interface, the `wireguard` proto, and the expected listening
+  port, since a uci section can read back correct with no live interface
+  behind it if `ifup` raced; not up is handled with one
+  `ifdown`+`ip link delete`+`ifup` retry, then a loud failure, never left
+  silently broken. The top-level idempotency check (skip package
+  install/config entirely) is kernel-level first — a real `wg0` link up
+  and `wg show wg0` succeeding — since a working interface, not just uci
+  state, is what's actually being guaranteed. Confirmed idempotent live by
+  tearing down `network.wg0` (uci delete + `ip link delete wg0`, packages
+  left installed) and running the script twice in a row: the first run
+  recreates and verifies everything from scratch on its first attempt (no
+  retry needed), the second run skips package install and uci config
+  creation entirely and still independently re-verifies kernel liveness —
+  and the derived public key was confirmed identical across both runs,
+  proving `/etc/wireguard-privkey` reuse works. Does not yet deploy an
+  `/api/wireguard` endpoint — that's a later task; this step only
+  guarantees the real server-side interface exists.
 
 ### Real connectivity test — what it actually means in this topology
 
