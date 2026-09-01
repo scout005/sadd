@@ -336,21 +336,31 @@ elseif method == "POST" then
     end
 
     -- Verify the write actually took effect via readback BEFORE committing
-    -- — same discipline as `wifi`/`firewall-rules`' POST handlers.
-    -- uci_get() returns nil on a failed/empty/absent lookup, which is
-    -- exactly the expected readback for the disable path.
-    local readback = uci_get("dhcp.@dnsmasq[0].confdir")
+    -- — same discipline as `wifi`/`firewall-rules`' POST handlers. On the
+    -- enable path this checks BOTH writes issued above (confdir AND
+    -- logqueries) — not just confdir — since GET's blockedThisWeek count
+    -- depends entirely on logqueries genuinely being '1' (otherwise
+    -- `logread` has no matching lines to count, silently stranding the
+    -- count at 0 even though confdir looks correct and blocking itself
+    -- works). Either field failing its readback fails the whole write, via
+    -- the same single `readback_ok` check and revert+500 path below — not
+    -- two separate failure paths. uci_get() returns nil on a
+    -- failed/empty/absent lookup, which is exactly the expected readback
+    -- for the disable path (logqueries isn't touched there at all — see
+    -- header comment).
+    local readback_confdir = uci_get("dhcp.@dnsmasq[0].confdir")
     local readback_ok
     if enabled_req then
-      readback_ok = (readback == EXPECTED_CONFDIR)
+      local readback_logqueries = uci_get("dhcp.@dnsmasq[0].logqueries")
+      readback_ok = (readback_confdir == EXPECTED_CONFDIR) and (readback_logqueries == "1")
     else
-      readback_ok = (readback == nil)
+      readback_ok = (readback_confdir == nil)
     end
 
     if not readback_ok then
       run("uci revert dhcp")
       send_headers(500)
-      print('{"ok":false,"error":"failed to verify dhcp.@dnsmasq[0].confdir write; reverted"}')
+      print('{"ok":false,"error":"failed to verify dhcp.@dnsmasq[0].confdir/logqueries write; reverted"}')
     else
       run("uci commit dhcp")
       -- Makes the change live — same sequence 09-provision-adblock-api.sh
