@@ -1774,6 +1774,17 @@ html.large-text .scr-title{font-size:1.15em;}
     const input = document.getElementById('searchInput');
     input.value = '';
     input.blur();
+    // Search is devcontrols' second entry point (its own index has a "Per-Device
+    // Controls" result) and, unlike every other navigation, can target the SAME screen
+    // the user is already on (search lives in the persistent app shell, reachable from
+    // devcontrols itself) — goTo()'s own selectedDevice-clearing guard only fires on a
+    // transition to a DIFFERENT screen, so it alone can't catch a devcontrols->
+    // devcontrols re-entry via search. This is the one non-device-click path that can
+    // ever reach devcontrols, so clearing unconditionally here (before goTo, regardless
+    // of item.screen) is safe and sufficient — it can never wipe out a legitimate real
+    // selection, since that's only ever set by the Devices-list click handler, never by
+    // a search result.
+    state.selectedDevice = null;
     goTo(item.screen);
     // defensive buffer in case goTo()/render() ever become async; both are synchronous
     // today so this delay isn't compensating for anything real, but removing it would
