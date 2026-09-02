@@ -1854,7 +1854,18 @@ device.
   the accumulation is correct regardless of whether any given reload
   succeeds — confirmed live for both directions (a simulated failed
   reload no longer double-counts; the pre-existing unrelated-reload
-  undercount still behaves exactly as before). Like the QoS mark value above, `/api/qos-bandwidth` only
+  undercount still behaves exactly as before). **A second, real
+  undercount widening the delta-tracking fix introduced** (found in
+  re-review of the fix itself, not the original bug, and disclosed
+  rather than silently accepted): since there's no unmark/`DELETE` path
+  for a `qos-priority` marking anywhere in this project, a removed-then-
+  re-added device's `.lastraw.txt` is never cleared, so its fresh nft
+  rule's genuinely-new post-remark traffic can be silently suppressed if
+  it falls below the stale value left from the earlier marking session —
+  still strictly within "undercount, never overcount" (the delta can
+  never exceed the raw counter), just a wider undercount surface than
+  the single-tick-gap scenario above, specific to the unmark-then-remark
+  workflow. Like the QoS mark value above, `/api/qos-bandwidth` only
   reports devices already marked priority via `/api/qos-priority` — a
   device that's never been marked priority has no bandwidth total tracked
   for it at all.

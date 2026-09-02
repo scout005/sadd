@@ -83,6 +83,22 @@
 # storage/counter-size consideration over a very long unbroken failure
 # streak, not a reason totals would ever be wrong.
 #
+# A second, real (found and confirmed live in re-review of the delta-
+# tracking fix itself, not the original bug) undercount widening: since
+# there's no unmark/DELETE path anywhere in this project for a
+# qos-priority marking (matching that endpoint's own established
+# limitation), a device's <mac>.lastraw.txt is never cleared when its uci
+# rule is manually removed over SSH. If that same MAC is later marked
+# priority again, its fresh nft rule genuinely starts its counter at 0,
+# but this script still compares against the STALE lastraw value from
+# the earlier marking session — silently suppressing however much of the
+# post-remark traffic falls below that stale number, on top of whatever
+# was already lost to the unmark itself. Still strictly within the
+# "undercount, never overcount" invariant (DELTA can never exceed
+# BYTES_NOW), just a wider undercount surface than the single-tick-gap
+# scenario above for the specific unmark-then-remark workflow — disclosed
+# here rather than silently accepted.
+#
 # Storage: /etc/qos-bandwidth/<mac-no-colons>-<YYYYMMDD>.txt, one plain
 # integer (accumulated bytes) per device per UTC calendar day, plus
 # /etc/qos-bandwidth/<mac-no-colons>.lastraw.txt, one plain integer (this
