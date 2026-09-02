@@ -1,0 +1,141 @@
+#!/usr/bin/lua
+-- /api/qos-bandwidth — GET only. Real per-device traffic totals for the
+-- Traffic & QoS screen's "Bandwidth used today" card, for devices already
+-- marked "priority" via /api/qos-priority (Wave 6). Reuses that endpoint's
+-- own qospriority-* uci enumeration to know which MACs to report, then
+-- reads each one's persisted daily total — a plain integer written by
+-- qos-bandwidth-sweep.sh (docker/provision/lib/), which runs every 5
+-- minutes and does all the real work (reading live nft counters,
+-- accumulating them, and reloading fw4 — the only mechanism confirmed to
+-- actually reset a counter on this VM, docker/facts.md Section 19). This
+-- endpoint itself never shells out to uci, io.popen, or nft at all — it
+-- is a pure read of small flat files the sweep already wrote, the
+-- simplest GET in this whole directory.
+--
+-- GET response shape: [{"mac":"AA:BB:CC:DD:EE:FF","bytesToday":<int>}, ...]
+-- One entry per device currently marked priority, REGARDLESS of whether
+-- its state file exists yet — a device marked seconds ago, before the
+-- first sweep tick has run, correctly reports bytesToday:0, not an error
+-- or a silent omission (the "no entry means not tracked" pitfall a naive
+-- file-glob-only implementation could fall into).
+--
+-- No POST — this is a derived, computed-only resource. There is nothing
+-- to write via this endpoint; marking a device priority in the first
+-- place still goes entirely through /api/qos-priority, unchanged by this
+-- endpoint's existence.
+--
+-- Storage read: /etc/qos-bandwidth/<mac-no-colons-lowercase>-<YYYYMMDD>.txt
+-- (UTC calendar date), matching exactly what qos-bandwidth-sweep.sh
+-- writes — see that script's own header comment for the full rationale
+-- (nft reset is a no-op here; fw4 reload IS the reset mechanism, but it's
+-- shared by every write endpoint in this project, hence the accumulate-
+-- every-5-minutes design instead of trusting the raw counter for a full
+-- day).
+--
+-- Honest, disclosed limitation (see docker/README.md Known Limitations
+-- and docs/superpowers/specs/2026-09-02-qos-bandwidth-today-design.md):
+-- an unrelated write endpoint's own fw4 reload between two sweep ticks
+-- zeroes the raw nft counter before the sweep can read and accumulate
+-- it, silently undercounting (never overcounting) that window's traffic.
+-- Real, proven live during Task 1's own testing, not just asserted.
+
+local STATE_DIR = "/etc/qos-bandwidth"
+
+local function run(cmd)
+  local p = io.popen(cmd .. " 2>/dev/null")
+  if not p then return "" end
+  local out = p:read("*a") or ""
+  p:close()
+  return (out:gsub("%s+$", ""))
+end
+
+local function json_escape(s)
+  if s == nil then return "" end
+  s = tostring(s)
+  s = s:gsub('[\\"\n\r\t]', {
+    ['\\'] = '\\\\', ['"'] = '\\"', ['\n'] = '\\n', ['\r'] = '\\r', ['\t'] = '\\t',
+  })
+  s = s:gsub('[\1-\31]', '')
+  return s
+end
+
+local function send_headers(status)
+  local reasons = { [400]="Bad Request", [405]="Method Not Allowed", [500]="Internal Server Error" }
+  if status and status ~= 200 then
+    print("Status: " .. status .. " " .. (reasons[status] or "Error"))
+  end
+  print("Content-Type: application/json\n")
+end
+
+-- Same uci-firewall-enumeration approach as /api/qos-priority's own
+-- list_priority_sections() — copied here (not required elsewhere, but
+-- this endpoint needs its own list of qospriority-* MACs, and this
+-- project's established convention is each endpoint carries its own
+-- copy of shared logic rather than a cross-file import mechanism that
+-- doesn't exist in this plain-CGI setup).
+local function list_priority_macs()
+  local output = run("uci show firewall")
+  local order, is_rule, fields = {}, {}, {}
+  for line in output:gmatch("[^\n]+") do
+    local lhs, rhs = line:match("^(.-)=(.*)$")
+    if lhs and rhs then
+      local rest = lhs:match("^firewall%.(.+)$")
+      if rest then
+        local dot = rest:find("%.")
+        if dot then
+          local id, field = rest:sub(1, dot - 1), rest:sub(dot + 1)
+          if is_rule[id] then
+            local val = rhs:match("^'(.-)'$")
+            fields[id][field] = val or rhs
+          end
+        else
+          local id = rest
+          local typ = rhs:match("^'?(.-)'?$")
+          if typ == "rule" and not is_rule[id] then
+            is_rule[id] = true; order[#order + 1] = id; fields[id] = {}
+          end
+        end
+      end
+    end
+  end
+  local macs = {}
+  for _, id in ipairs(order) do
+    local name = fields[id].name or ""
+    local mac = fields[id].src_mac
+    -- Load-bearing prefix check, same reasoning as qos-priority's own GET
+    -- handler: device-pause's rules are ALSO rule-type sections with
+    -- src_mac set, and would incorrectly show up here without this check.
+    if name:match("^qospriority%-") and mac then
+      macs[#macs + 1] = mac
+    end
+  end
+  return macs
+end
+
+local function read_bytes_today(mac)
+  local mac_nocolon = mac:lower():gsub(":", "")
+  local today = run("date -u +%Y%m%d")
+  local path = STATE_DIR .. "/" .. mac_nocolon .. "-" .. today .. ".txt"
+  local f = io.open(path, "r")
+  if not f then return 0 end
+  local content = f:read("*a") or ""
+  f:close()
+  local n = tonumber((content:gsub("%s+$", "")))
+  if not n then return 0 end
+  return math.floor(n)
+end
+
+local method = os.getenv("REQUEST_METHOD") or "GET"
+
+if method == "GET" then
+  local macs = list_priority_macs()
+  local rows = {}
+  for _, mac in ipairs(macs) do
+    rows[#rows + 1] = string.format('{"mac":"%s","bytesToday":%d}', json_escape(mac), read_bytes_today(mac))
+  end
+  send_headers(200)
+  print("[" .. table.concat(rows, ",") .. "]")
+else
+  send_headers(405)
+  print(string.format('{"ok":false,"error":"unsupported method: %s"}', json_escape(tostring(method))))
+end
