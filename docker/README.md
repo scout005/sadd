@@ -359,7 +359,41 @@ bash docker/provision/16-provision-safe-search-api.sh
 #     endpoint, and this wave keeps that convention.
 bash docker/provision/17-provision-blocked-sites-api.sh
 
-# 18. Verify.
+# 18. Deploy the per-device bandwidth accumulation sweep, then the
+#     /api/qos-bandwidth endpoint itself: copies
+#     docker/provision/lib/qos-bandwidth-sweep.sh onto the VM as
+#     /usr/bin/qos-bandwidth-sweep.sh, seeds /etc/crontabs/root with an
+#     every-5-minutes cron entry for it (idempotent — grep -qF guards
+#     against duplicating the line on re-run), enables and starts cron,
+#     then verifies crond is genuinely running via `pgrep crond` rather
+#     than trusting the init script's own exit code (same discipline as
+#     steps 13 and 15). This is the baseline-state half of the Traffic &
+#     QoS screen's "Bandwidth used today" card: for every device currently
+#     marked priority via /api/qos-priority, the sweep reads that device's
+#     real nft mangle_forward byte counter and accumulates it onto a
+#     persisted per-device-per-UTC-day running total, because `nft reset`
+#     does not work on this VM (confirmed live, docker/facts.md Section 19
+#     — every documented reset form left a known non-zero counter
+#     completely unchanged) while `fw4 reload` DOES reliably zero every
+#     counter, but only as a side effect every write endpoint in this
+#     project already triggers routinely — so a raw counter can't be
+#     trusted to hold a full day's traffic, and polling+accumulating every
+#     5 minutes is what survives that. Once the sweep is deployed and
+#     crond confirmed running, this same script copies (and chmods, and
+#     curl-verifies) docker/provision/www/api/qos-bandwidth onto the VM's
+#     /www/cgi-bin/api/qos-bandwidth — same sweep-half-then-endpoint-half
+#     shape and single-numbered-step folding steps 13 and 15 established.
+#     GET returns [{"mac":"...","bytesToday":<int>}, ...], one entry per
+#     currently priority-marked device, regardless of whether its state
+#     file exists yet (a device marked seconds ago correctly reports
+#     bytesToday:0, not an error or a silent omission). The verify step
+#     here checks the response is a genuine JSON array shape, same as
+#     steps 14 and 17, since this step can be re-run against a VM that
+#     already has priority-marked devices and accumulated totals from
+#     prior use.
+bash docker/provision/18-provision-qos-bandwidth-api.sh
+
+# 19. Verify.
 curl -s http://localhost:8081/cgi-bin/api/ping     # -> {"ok":true}
 curl -sI http://localhost:8081/cgi-bin/api/ping    # -> Content-Type: application/json among the headers
 curl -sI http://localhost:8081/                    # -> 200 OK, serving sadd-website.html
@@ -387,6 +421,39 @@ curl -s http://localhost:8081/cgi-bin/api/safe-search  # -> {"enabled":false} on
 curl -s -X POST -d '{"enabled":true}' http://localhost:8081/cgi-bin/api/safe-search  # -> {"ok":true,"enabled":true} — confirmed live: `cat /etc/dnsmasq.blocklist.d/safesearch.conf` shows the 9 fixed `cname=` lines; `ssh root@localhost -p 2223 nslookup www.google.com 127.0.0.1` now shows a real `canonical name = forcesafesearch.google.com` line; throughout, `/etc/dnsmasq.blocklist.d/blocklist.conf` (Ad Blocking's own file) and `nslookup doubleclick.net 127.0.0.1` (still resolving to `0.0.0.0`) are completely unaffected — the two features' files coexist in the same confdir directory with zero interaction; `POST -d '{"enabled":false}'` removes `safesearch.conf` and the CNAME rewrite genuinely stops (`nslookup www.google.com` reverts to a plain `REFUSED`, no canonical name line); both directions are idempotent (a repeat POST for the current state is a no-op success, not an error)
 curl -s http://localhost:8081/cgi-bin/api/blocked-sites  # -> `[]` on a fresh/never-used VM
 curl -s -X POST -d '{"domain":"extra-homework-site.com"}' http://localhost:8081/cgi-bin/api/blocked-sites  # -> {"ok":true,"domain":"extra-homework-site.com"} — confirmed live: `cat /etc/dnsmasq.blocklist.d/custom-extra-homework-site.com.conf` shows `address=/extra-homework-site.com/0.0.0.0`; `ssh root@localhost -p 2223 nslookup extra-homework-site.com 127.0.0.1` now shows a real `Address: 0.0.0.0`; a subsequent GET returns `[{"domain":"extra-homework-site.com"}]`; throughout, `/etc/dnsmasq.blocklist.d/blocklist.conf` (Ad Blocking's own file) and `nslookup doubleclick.net 127.0.0.1` (still resolving to `0.0.0.0`) are completely unaffected — all three features' files coexist in the same confdir directory with zero interaction; a repeat POST for the same domain is idempotent (no-op success, exactly one `custom-*.conf` file for it, confirmed via `ls`); `POST -d '{"domain":"203.0.113.4"}'` is rejected with its own distinct error (`{"ok":false,"error":"IP-address blocking is not supported yet — only domain names (e.g. example.com)"}`), not the generic invalid-domain message; a malformed domain (empty string, `"not a domain"`) gets the generic 400; `GET`/`POST` are the only supported methods, any other verb (e.g. `DELETE`) -> 405
+curl -s http://localhost:8081/cgi-bin/api/qos-bandwidth  # -> `[]` on a fresh VM, or on one with no priority-marked devices
+```
+
+**Worked example — `/api/qos-bandwidth`, confirmed live end-to-end (a real 5-minute cron wait wasn't used; the state file the sweep writes was seeded directly over SSH, then the sweep itself was run by hand once to prove it reads that seeded value and genuinely re-derives from live `nft` state rather than clobbering it):**
+```
+$ curl -s -X POST -d '{"mac":"11:22:33:44:55:66"}' http://localhost:8081/cgi-bin/api/qos-priority
+{"ok":true,"mac":"11:22:33:44:55:66"}
+
+$ curl -s http://localhost:8081/cgi-bin/api/qos-bandwidth
+[{"mac":"11:22:33:44:55:66","bytesToday":0}]
+# ^ correctly 0 — the device was marked seconds ago, before the first sweep tick
+
+$ ssh root@localhost -p 2223 \
+  "TODAY=\$(date -u +%Y%m%d); echo 123456 > /etc/qos-bandwidth/112233445566-\$TODAY.txt"
+
+$ curl -s http://localhost:8081/cgi-bin/api/qos-bandwidth
+[{"mac":"11:22:33:44:55:66","bytesToday":123456}]
+# ^ the endpoint is a plain read of the sweep's own state file — no sweep tick needed to see this
+
+$ ssh root@localhost -p 2223 /usr/bin/qos-bandwidth-sweep.sh
+$ curl -s http://localhost:8081/cgi-bin/api/qos-bandwidth
+[{"mac":"11:22:33:44:55:66","bytesToday":123456}]
+# ^ unchanged, as expected: this idle VM's mangle_forward counter for this MAC was still 0
+#   (no real traffic crossed it), so the sweep added 0 onto the seeded 123456 and rewrote
+#   the same total — proving it reads-then-adds rather than overwriting the file outright
+
+# cleanup — remove the test priority rule and the seeded state file, back to a clean VM:
+$ ssh root@localhost -p 2223 \
+  "uci delete firewall.qospriority_112233445566 && uci commit firewall && fw4 reload; rm -f /etc/qos-bandwidth/112233445566-*.txt"
+$ curl -s http://localhost:8081/cgi-bin/api/qos-priority
+[]
+$ curl -s http://localhost:8081/cgi-bin/api/qos-bandwidth
+[]
 ```
 
 **Step 3 in detail — overwriting the stock landing page is intentional:**
@@ -1360,6 +1427,104 @@ specifically, as a sibling of `luci`, not a replacement for it.
   (empty string, `"not a domain"`) got the generic invalid-domain 400, and
   `DELETE` got a `405` — all confirmed live, and all test `custom-*.conf`
   files removed from the VM afterward.
+- `docker/provision/18-provision-qos-bandwidth-api.sh` — does two things,
+  in order, matching `13-provision-devpause-api.sh`'s and
+  `15-provision-bedtime-api.sh`'s own sweep-then-endpoint shape exactly.
+  First, the baseline-state (sweep) half: `scp -O`'s
+  `docker/provision/lib/qos-bandwidth-sweep.sh` onto the VM as
+  `/usr/bin/qos-bandwidth-sweep.sh` and chmods it executable, ensures
+  `/etc/qos-bandwidth/` exists, then seeds `/etc/crontabs/root` with
+  `*/5 * * * * /usr/bin/qos-bandwidth-sweep.sh` (idempotent, `grep -qF`-
+  guarded), enables and starts cron, and verifies `pgrep crond` reports a
+  real PID rather than trusting the init script's own exit code (same
+  `/etc/init.d/cron start` empty-crontab-directory trap as steps 13 and 15,
+  documented in `docker/facts.md` Section 13). Second, once the sweep is
+  deployed and crond confirmed running, this same script copies (and
+  chmods, and curl-verifies) `docker/provision/www/api/qos-bandwidth` onto
+  the VM's `/www/cgi-bin/api/qos-bandwidth` — verified with a real
+  `curl -s` `GET` checked to be a genuine JSON array shape (`[...]`) rather
+  than string-matching one specific empty/non-empty body, same reasoning
+  as step 14's `/api/qos-priority` verify, since this step can be re-run
+  against a VM that already has priority-marked devices and accumulated
+  bandwidth totals from prior use.
+- `docker/provision/lib/qos-bandwidth-sweep.sh` — the tracked source of
+  truth for `/usr/bin/qos-bandwidth-sweep.sh`, run every 5 minutes by the
+  cron entry `18-provision-qos-bandwidth-api.sh` seeds. For every uci
+  `firewall` rule section whose `.name` starts with `qospriority-` (the
+  same enumeration `/api/qos-priority` and `/api/qos-bandwidth` themselves
+  use), reads that device's real `nft` `mangle_forward` byte counter (tcp
+  + udp summed — a single `qos-priority` uci rule with no explicit `proto`
+  expands into two separate `nft` rules, one per protocol) and accumulates
+  it onto a persisted per-device-per-UTC-day running total at
+  `/etc/qos-bandwidth/<mac-no-colons>-<YYYYMMDD>.txt`. **Why accumulate
+  instead of trusting the raw counter to hold a full day's traffic:**
+  `nft reset` does not work on this VM — confirmed live, `docker/facts.md`
+  Section 19: every documented reset form (`nft reset counter`, `nft reset
+  rule`, deleting and recreating the rule) left a known non-zero counter
+  completely unchanged. `fw4 reload` DOES reliably zero every counter in
+  the table, but only as a side effect of fully regenerating the whole
+  ruleset from uci config from scratch — and `fw4 reload` is called by
+  every existing write endpoint in this project (`device-pause`,
+  `qos-priority` itself, `device-bedtime`, `firewall-rules`, etc.), not
+  just a purpose-built reset, so the raw counter can be zeroed by something
+  totally unrelated at any moment, not just at a controlled daily boundary.
+  Polling every 5 minutes and adding whatever's accumulated since the last
+  tick onto a persisted total survives that, at the cost of a real,
+  disclosed limitation (see "Known limitations" below): if an unrelated
+  `fw4 reload` happens between two sweep ticks, whatever traffic
+  accumulated in that gap is lost — an undercount, never an overcount, for
+  that one device that day. The sweep itself then calls `fw4 reload` once
+  at the end of every tick — the only working reset mechanism on this VM —
+  to zero every counter for the next window; this is safe to call even
+  when zero devices are currently priority-marked, since `fw4 reload` is
+  idempotent and every other sweep/endpoint here already calls it
+  routinely. No top-level `set -e`, same reasoning as `devpause-sweep.sh`
+  and `bedtime-sweep.sh`: one device's read/write failing shouldn't cancel
+  the sweep for every other device that tick; failures are logged via
+  `logger -t qos-bandwidth-sweep` rather than silently swallowed. Byte
+  totals are defensively stripped of any leading zeros before reaching
+  `$(( ))` arithmetic (a corrupted/manually-edited state file could have
+  one, risking the same octal-misinterpretation bug class
+  `bedtime-sweep.sh` found in `docker/facts.md` Section 16), even though
+  this project's own arithmetic values should never naturally produce one.
+  Confirmed live: seeding `/etc/qos-bandwidth/112233445566-<today>.txt`
+  with `123456` by hand over SSH, then running the sweep manually, left
+  the file's value unchanged at `123456` on this idle VM (its real
+  `mangle_forward` counter for that MAC was genuinely `0`, so the sweep
+  correctly added `0` onto the seeded total rather than overwriting or
+  zeroing it) — proving the script reads-then-adds against real `nft`
+  state rather than just trusting or discarding whatever was already on
+  disk.
+- `docker/provision/www/api/qos-bandwidth` — the tracked source of truth
+  for the `/api/qos-bandwidth` endpoint, GET-only, for the Traffic & QoS
+  screen's "Bandwidth used today" card. `GET /cgi-bin/api/qos-bandwidth`
+  returns `[{"mac":"AA:BB:CC:DD:EE:FF","bytesToday":<int>}, ...]`, one
+  entry per device currently marked priority via `/api/qos-priority`
+  (reusing that endpoint's own `qospriority-*` uci enumeration, copied
+  here the same "each endpoint carries its own copy" convention
+  `qos-priority`'s own GET handler established), regardless of whether its
+  state file exists yet — a device marked seconds ago, before the first
+  sweep tick has run, correctly reports `bytesToday:0`, not an error or a
+  silent omission, confirmed live above. This endpoint itself never shells
+  out to `nft` at all and never accumulates anything — it only reads
+  the small flat file `qos-bandwidth-sweep.sh` already wrote for "today"
+  (UTC calendar date), with its only two `io.popen()` shell-outs per
+  request being `uci show firewall` (to find which MACs are currently
+  priority-marked) and a single `date -u +%Y%m%d`, hoisted to once per
+  request rather than once per MAC (a code-review fix — the original
+  version called `date` once per MAC per request, less efficient and
+  overstating the endpoint's own "pure file read with zero shell-outs"
+  header claim, both corrected). No `POST` — this is a derived,
+  computed-only resource; marking a device priority in the first place
+  still goes entirely through `/api/qos-priority`, unchanged by this
+  endpoint's existence. **Honest, disclosed limitation** (see "Known
+  limitations" below): an unrelated write endpoint's own `fw4 reload`
+  between two sweep ticks zeroes the raw `nft` counter before the sweep
+  can read and accumulate it, silently undercounting (never overcounting)
+  that window's traffic — real, proven live during this task's own
+  testing (seeding a state file and confirming the endpoint reads it back
+  unchanged, and confirming a manual sweep run correctly adds `0` rather
+  than corrupting or resetting a pre-existing total), not just asserted.
 
 ### Real connectivity test — what it actually means in this topology
 
@@ -1633,6 +1798,25 @@ device.
   `bedtime-sweep.sh`'s normal cadence, same as every other configured
   device's schedule — turning Bedtime on does not grant that one device any
   faster-than-5-minutes enforcement going forward.
+- **"Bandwidth used today" can silently undercount, never overcount** —
+  `qos-bandwidth-sweep.sh` accumulates each priority-marked device's real
+  `nft mangle_forward` byte counter onto a persisted per-day total every 5
+  minutes, because `nft reset` does not work on this VM (`docker/facts.md`
+  Section 19: every documented reset form left a known non-zero counter
+  completely unchanged) and `fw4 reload` — the only mechanism that DOES
+  reliably zero every counter — is called by every write endpoint in this
+  project (`device-pause`, `qos-priority`, `device-bedtime`,
+  `firewall-rules`, etc.), not just this sweep. If an unrelated `fw4
+  reload` happens between two sweep ticks, whatever traffic accumulated in
+  that gap is lost before the sweep can read and add it — the counter is
+  already back to zero by the next tick. Rare in practice (write actions
+  aren't constant) and disclosed directly in both
+  `docker/provision/lib/qos-bandwidth-sweep.sh`'s and
+  `docker/provision/www/api/qos-bandwidth`'s own header comments, not
+  glossed over. Like the QoS mark value above, `/api/qos-bandwidth` only
+  reports devices already marked priority via `/api/qos-priority` — a
+  device that's never been marked priority has no bandwidth total tracked
+  for it at all.
 - The global search feature (built earlier this session, unrelated to this
   work) can't highlight search results on the Devices, Firewall & Ports
   (port-forwarding rules only), and Diagnostics & Logs screens when the
