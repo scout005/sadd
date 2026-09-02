@@ -8,9 +8,18 @@
 -- minutes and does all the real work (reading live nft counters,
 -- accumulating them, and reloading fw4 — the only mechanism confirmed to
 -- actually reset a counter on this VM, docker/facts.md Section 19). This
--- endpoint itself never shells out to uci, io.popen, or nft at all — it
--- is a pure read of small flat files the sweep already wrote, the
--- simplest GET in this whole directory.
+-- endpoint itself never shells out to nft at all, and its ONLY two
+-- io.popen() shell-outs per request are `uci show firewall` (to find which
+-- MACs are currently priority-marked) and a single `date -u +%Y%m%d` (to
+-- know today's UTC filename suffix) — every device's actual byte total is
+-- a plain io.open()/read of a small flat file the sweep already wrote, not
+-- a shell-out. Simplest GET in this whole directory by a wide margin, but
+-- "pure file read with zero shell-outs" would overstate it — corrected
+-- after code review caught the original header claiming exactly that
+-- while read_bytes_today() called run("date ...") once per MAC per
+-- request; fixed by hoisting that call to once per REQUEST instead (see
+-- the GET handler below), which is also strictly more efficient than the
+-- original per-MAC version, not just more honestly described.
 --
 -- GET response shape: [{"mac":"AA:BB:CC:DD:EE:FF","bytesToday":<int>}, ...]
 -- One entry per device currently marked priority, REGARDLESS of whether
@@ -112,9 +121,8 @@ local function list_priority_macs()
   return macs
 end
 
-local function read_bytes_today(mac)
+local function read_bytes_today(mac, today)
   local mac_nocolon = mac:lower():gsub(":", "")
-  local today = run("date -u +%Y%m%d")
   local path = STATE_DIR .. "/" .. mac_nocolon .. "-" .. today .. ".txt"
   local f = io.open(path, "r")
   if not f then return 0 end
@@ -129,9 +137,13 @@ local method = os.getenv("REQUEST_METHOD") or "GET"
 
 if method == "GET" then
   local macs = list_priority_macs()
+  -- Computed once per request, not once per device (code review finding)
+  -- — every device's file for "today" shares the same UTC date, so there's
+  -- no reason to shell out to `date` more than once here.
+  local today = run("date -u +%Y%m%d")
   local rows = {}
   for _, mac in ipairs(macs) do
-    rows[#rows + 1] = string.format('{"mac":"%s","bytesToday":%d}', json_escape(mac), read_bytes_today(mac))
+    rows[#rows + 1] = string.format('{"mac":"%s","bytesToday":%d}', json_escape(mac), read_bytes_today(mac, today))
   end
   send_headers(200)
   print("[" .. table.concat(rows, ",") .. "]")
