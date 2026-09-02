@@ -205,6 +205,10 @@ if method == "GET" then
     -- device-pause's own per-MAC block rules are ALSO `rule`-type sections that set
     -- src_mac — without this name-prefix check, a paused device would incorrectly show
     -- up here as a "priority device" too.
+    -- KEEP IN SYNC (code review finding, Wave 9): docker/provision/www/api/qos-bandwidth
+    -- carries its own duplicate of this exact filter (list_priority_macs()) to build its
+    -- own device list — if this check ever changes, update that copy too, or the two
+    -- endpoints will silently disagree on which devices are "priority."
     if name:match("^qospriority%-") and mac then
       rows[#rows + 1] = string.format('{"mac":"%s"}', json_escape(mac))
     end

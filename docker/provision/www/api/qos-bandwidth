@@ -114,6 +114,11 @@ local function list_priority_macs()
     -- Load-bearing prefix check, same reasoning as qos-priority's own GET
     -- handler: device-pause's rules are ALSO rule-type sections with
     -- src_mac set, and would incorrectly show up here without this check.
+    -- KEEP IN SYNC (code review finding): this filter is a duplicate of
+    -- qos-priority's own GET handler's identical check — if that one's
+    -- filtering logic ever changes (it already has once, under review),
+    -- update this copy too, or this endpoint's device list will silently
+    -- drift out of agreement with what /api/qos-priority itself reports.
     if name:match("^qospriority%-") and mac then
       macs[#macs + 1] = mac
     end
@@ -129,7 +134,11 @@ local function read_bytes_today(mac, today)
   local content = f:read("*a") or ""
   f:close()
   local n = tonumber((content:gsub("%s+$", "")))
-  if not n then return 0 end
+  -- The sweep script can never produce a negative total (both addends are
+  -- digit-validated and non-negative before its own $(( )) add) — this is
+  -- defense against manual/corrupted state, same "never trust the file"
+  -- spirit as the nil-check above (code review finding).
+  if not n or n < 0 then return 0 end
   return math.floor(n)
 end
 
