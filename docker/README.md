@@ -1455,46 +1455,74 @@ specifically, as a sibling of `luci`, not a replacement for it.
   use), reads that device's real `nft` `mangle_forward` byte counter (tcp
   + udp summed — a single `qos-priority` uci rule with no explicit `proto`
   expands into two separate `nft` rules, one per protocol) and accumulates
-  it onto a persisted per-device-per-UTC-day running total at
-  `/etc/qos-bandwidth/<mac-no-colons>-<YYYYMMDD>.txt`. **Why accumulate
-  instead of trusting the raw counter to hold a full day's traffic:**
-  `nft reset` does not work on this VM — confirmed live, `docker/facts.md`
-  Section 19: every documented reset form (`nft reset counter`, `nft reset
-  rule`, deleting and recreating the rule) left a known non-zero counter
-  completely unchanged. `fw4 reload` DOES reliably zero every counter in
-  the table, but only as a side effect of fully regenerating the whole
-  ruleset from uci config from scratch — and `fw4 reload` is called by
-  every existing write endpoint in this project (`device-pause`,
-  `qos-priority` itself, `device-bedtime`, `firewall-rules`, etc.), not
-  just a purpose-built reset, so the raw counter can be zeroed by something
-  totally unrelated at any moment, not just at a controlled daily boundary.
-  Polling every 5 minutes and adding whatever's accumulated since the last
-  tick onto a persisted total survives that, at the cost of a real,
-  disclosed limitation (see "Known limitations" below): if an unrelated
-  `fw4 reload` happens between two sweep ticks, whatever traffic
-  accumulated in that gap is lost — an undercount, never an overcount, for
-  that one device that day. The sweep itself then calls `fw4 reload` once
-  at the end of every tick — the only working reset mechanism on this VM —
-  to zero every counter for the next window; this is safe to call even
-  when zero devices are currently priority-marked, since `fw4 reload` is
-  idempotent and every other sweep/endpoint here already calls it
-  routinely. No top-level `set -e`, same reasoning as `devpause-sweep.sh`
-  and `bedtime-sweep.sh`: one device's read/write failing shouldn't cancel
-  the sweep for every other device that tick; failures are logged via
-  `logger -t qos-bandwidth-sweep` rather than silently swallowed. Byte
-  totals are defensively stripped of any leading zeros before reaching
-  `$(( ))` arithmetic (a corrupted/manually-edited state file could have
-  one, risking the same octal-misinterpretation bug class
-  `bedtime-sweep.sh` found in `docker/facts.md` Section 16), even though
-  this project's own arithmetic values should never naturally produce one.
-  Confirmed live: seeding `/etc/qos-bandwidth/112233445566-<today>.txt`
-  with `123456` by hand over SSH, then running the sweep manually, left
-  the file's value unchanged at `123456` on this idle VM (its real
-  `mangle_forward` counter for that MAC was genuinely `0`, so the sweep
-  correctly added `0` onto the seeded total rather than overwriting or
-  zeroing it) — proving the script reads-then-adds against real `nft`
-  state rather than just trusting or discarding whatever was already on
-  disk.
+  the **delta since this script's own last observation** onto a persisted
+  per-device-per-UTC-day running total at
+  `/etc/qos-bandwidth/<mac-no-colons>-<YYYYMMDD>.txt`. **Why a delta,
+  not the raw counter value itself:** `nft reset` does not work on this
+  VM — confirmed live, `docker/facts.md` Section 19: every documented
+  reset form (`nft reset counter`, `nft reset rule`, deleting and
+  recreating the rule) left a known non-zero counter completely
+  unchanged. `fw4 reload` DOES reliably zero every counter in the table,
+  but only as a side effect of fully regenerating the whole ruleset from
+  uci config from scratch — and `fw4 reload` is called by every existing
+  write endpoint in this project (`device-pause`, `qos-priority` itself,
+  `device-bedtime`, `firewall-rules`, etc.), not just a purpose-built
+  reset, so the raw counter can be zeroed by something totally unrelated
+  at any moment, not just at a controlled daily boundary.
+  **A real Critical bug, found and fixed via whole-feature integration
+  code review, not merely a hypothetical hardening exercise:** an earlier
+  version of this script always treated the raw counter's current value
+  as "traffic since the last reset," assuming its own end-of-tick
+  `fw4 reload` call always succeeded — but that call's failure was only
+  logged, never otherwise handled. If the reload ever genuinely failed
+  (`fw4`'s own `nft -f` invocation can fail for reasons entirely
+  unrelated to this script), the raw counter kept growing instead of
+  resetting, and the next tick added that entire still-growing value on
+  top of a total that had already counted the earlier portion — a real
+  overcount, directly contradicting the "undercounts, never overcounts"
+  guarantee this file used to claim unconditionally. Fixed by tracking,
+  per device, the raw counter value this script itself last observed
+  (`/etc/qos-bandwidth/<mac-no-colons>.lastraw.txt`, not date-keyed — the
+  hardware counter has no concept of calendar days): if the current raw
+  value is `≥` the last-observed one, only the difference (the genuinely
+  new traffic) is added; if it's `<` the last-observed one, something
+  reset the counter since the last tick and the whole current value is
+  the delta. `lastraw.txt` is updated every tick regardless of whether
+  that tick's own `fw4 reload` call succeeds or fails, which is what
+  makes the accumulation correct independent of the reload's outcome —
+  the reload is no longer load-bearing for correctness, only for keeping
+  the raw counter bounded/small over time. Confirmed live, both
+  directions: hand-setting the counter to grow WITHOUT an intervening
+  reset (simulating a failed reload) now correctly adds only the new
+  portion instead of double-counting the whole value; a genuinely
+  unrelated endpoint's `fw4 reload` firing between two ticks still
+  correctly produces the pre-existing, intentional undercount (that
+  traffic is lost, not double-counted or corrupted) — the one remaining
+  disclosed limitation, and now the ONLY way this feature's numbers can
+  ever be wrong, always in the safe direction. The sweep itself then
+  calls `fw4 reload` once at the end of every tick — the only working
+  reset mechanism on this VM — to keep every counter small for the next
+  window; safe to call even when zero devices are currently
+  priority-marked, since `fw4 reload` is idempotent and every other
+  sweep/endpoint here already calls it routinely. No top-level `set -e`,
+  same reasoning as `devpause-sweep.sh` and `bedtime-sweep.sh`: one
+  device's read/write failing shouldn't cancel the sweep for every other
+  device that tick; failures are logged via `logger -t
+  qos-bandwidth-sweep` rather than silently swallowed. Byte totals (now
+  including the last-observed-raw value too) are defensively stripped of
+  any leading zeros before reaching `$(( ))` arithmetic (a
+  corrupted/manually-edited state file could have one, risking the same
+  octal-misinterpretation bug class `bedtime-sweep.sh` found in
+  `docker/facts.md` Section 16), even though this project's own
+  arithmetic values should never naturally produce one. Confirmed live:
+  seeding `/etc/qos-bandwidth/112233445566-<today>.txt` with `123456` by
+  hand over SSH, then running the sweep manually, left the file's value
+  unchanged at `123456` on this idle VM (its real `mangle_forward`
+  counter for that MAC was genuinely `0` with no prior `lastraw.txt`, so
+  the sweep correctly computed a `0` delta rather than overwriting or
+  zeroing the seeded total) — proving the script reads-then-adds a delta
+  against real `nft` state rather than just trusting or discarding
+  whatever was already on disk.
 - `docker/provision/www/api/qos-bandwidth` — the tracked source of truth
   for the `/api/qos-bandwidth` endpoint, GET-only, for the Traffic & QoS
   screen's "Bandwidth used today" card. `GET /cgi-bin/api/qos-bandwidth`
@@ -1816,7 +1844,17 @@ device.
   aren't constant) and disclosed directly in both
   `docker/provision/lib/qos-bandwidth-sweep.sh`'s and
   `docker/provision/www/api/qos-bandwidth`'s own header comments, not
-  glossed over. Like the QoS mark value above, `/api/qos-bandwidth` only
+  glossed over. **This "undercount, never overcount" claim is now actually
+  enforced by the code, not just asserted** — a whole-feature integration
+  code review caught a real Critical bug where a *failed* (not just
+  unrelated-and-successful) `fw4 reload` could cause a genuine overcount,
+  since the sweep originally assumed its own reload always succeeded
+  without verifying it. Fixed via last-observed-raw-counter delta tracking
+  (see the sweep script's own file note above and its header comment) so
+  the accumulation is correct regardless of whether any given reload
+  succeeds — confirmed live for both directions (a simulated failed
+  reload no longer double-counts; the pre-existing unrelated-reload
+  undercount still behaves exactly as before). Like the QoS mark value above, `/api/qos-bandwidth` only
   reports devices already marked priority via `/api/qos-priority` — a
   device that's never been marked priority has no bandwidth total tracked
   for it at all.
