@@ -386,7 +386,7 @@ curl -s -X POST -d '{"mac":"11:22:33:44:55:66","enabled":false}' http://localhos
 curl -s http://localhost:8081/cgi-bin/api/safe-search  # -> {"enabled":false} on a fresh/never-toggled VM
 curl -s -X POST -d '{"enabled":true}' http://localhost:8081/cgi-bin/api/safe-search  # -> {"ok":true,"enabled":true} — confirmed live: `cat /etc/dnsmasq.blocklist.d/safesearch.conf` shows the 9 fixed `cname=` lines; `ssh root@localhost -p 2223 nslookup www.google.com 127.0.0.1` now shows a real `canonical name = forcesafesearch.google.com` line; throughout, `/etc/dnsmasq.blocklist.d/blocklist.conf` (Ad Blocking's own file) and `nslookup doubleclick.net 127.0.0.1` (still resolving to `0.0.0.0`) are completely unaffected — the two features' files coexist in the same confdir directory with zero interaction; `POST -d '{"enabled":false}'` removes `safesearch.conf` and the CNAME rewrite genuinely stops (`nslookup www.google.com` reverts to a plain `REFUSED`, no canonical name line); both directions are idempotent (a repeat POST for the current state is a no-op success, not an error)
 curl -s http://localhost:8081/cgi-bin/api/blocked-sites  # -> `[]` on a fresh/never-used VM
-curl -s -X POST -d '{"domain":"extra-homework-site.com"}' http://localhost:8081/cgi-bin/api/blocked-sites  # -> {"ok":true,"domain":"extra-homework-site.com"} — confirmed live: `cat /etc/dnsmasq.blocklist.d/custom-extra_homework_site_com.conf` shows `address=/extra-homework-site.com/0.0.0.0`; `ssh root@localhost -p 2223 nslookup extra-homework-site.com 127.0.0.1` now shows a real `Address: 0.0.0.0`; a subsequent GET returns `[{"domain":"extra-homework-site.com"}]`; throughout, `/etc/dnsmasq.blocklist.d/blocklist.conf` (Ad Blocking's own file) and `nslookup doubleclick.net 127.0.0.1` (still resolving to `0.0.0.0`) are completely unaffected — all three features' files coexist in the same confdir directory with zero interaction; a repeat POST for the same domain is idempotent (no-op success, exactly one `custom-*.conf` file for it, confirmed via `ls`); `POST -d '{"domain":"203.0.113.4"}'` is rejected with its own distinct error (`{"ok":false,"error":"IP-address blocking is not supported yet — only domain names (e.g. example.com)"}`), not the generic invalid-domain message; a malformed domain (empty string, `"not a domain"`) gets the generic 400; `GET`/`POST` are the only supported methods, any other verb (e.g. `DELETE`) -> 405
+curl -s -X POST -d '{"domain":"extra-homework-site.com"}' http://localhost:8081/cgi-bin/api/blocked-sites  # -> {"ok":true,"domain":"extra-homework-site.com"} — confirmed live: `cat /etc/dnsmasq.blocklist.d/custom-extra-homework-site.com.conf` shows `address=/extra-homework-site.com/0.0.0.0`; `ssh root@localhost -p 2223 nslookup extra-homework-site.com 127.0.0.1` now shows a real `Address: 0.0.0.0`; a subsequent GET returns `[{"domain":"extra-homework-site.com"}]`; throughout, `/etc/dnsmasq.blocklist.d/blocklist.conf` (Ad Blocking's own file) and `nslookup doubleclick.net 127.0.0.1` (still resolving to `0.0.0.0`) are completely unaffected — all three features' files coexist in the same confdir directory with zero interaction; a repeat POST for the same domain is idempotent (no-op success, exactly one `custom-*.conf` file for it, confirmed via `ls`); `POST -d '{"domain":"203.0.113.4"}'` is rejected with its own distinct error (`{"ok":false,"error":"IP-address blocking is not supported yet — only domain names (e.g. example.com)"}`), not the generic invalid-domain message; a malformed domain (empty string, `"not a domain"`) gets the generic 400; `GET`/`POST` are the only supported methods, any other verb (e.g. `DELETE`) -> 405
 ```
 
 **Step 3 in detail — overwriting the stock landing page is intentional:**
@@ -1286,10 +1286,12 @@ specifically, as a sibling of `luci`, not a replacement for it.
   that file's own `address=/domain/0.0.0.0` content (not decoded from the
   filename, avoiding any lossy-filename-encoding concern). `POST
   /cgi-bin/api/blocked-sites` (body `{"domain": "<domain>"}`) validates the
-  domain, writes a dedicated `custom-<safe-id>.conf` file for it (reusing Ad
+  domain, writes a dedicated `custom-<domain>.conf` file for it — the
+  validated domain used directly as the filename, with no character
+  substitution (see filename-collision note below) — reusing Ad
   Blocking's own literal `address=/domain/0.0.0.0` mechanism, confirmed live
   in `docker/facts.md` Section 17 — adapted here to a dynamic, user-supplied
-  list instead of Ad Blocking's fixed 3-domain one), and restarts dnsmasq to
+  list instead of Ad Blocking's fixed 3-domain one, and restarts dnsmasq to
   apply it. **File ownership:** manages its own `custom-*.conf` files inside
   the same `/etc/dnsmasq.blocklist.d` confdir directory Ad Blocking
   (`blocklist.conf`) and Safe Search (`safesearch.conf`) already use, never
@@ -1302,10 +1304,16 @@ specifically, as a sibling of `luci`, not a replacement for it.
   message rather than being silently treated as an invalid domain.
   **Domain validation** is a dot-separated-labels check (letters/digits/
   hyphens per label, no leading/trailing hyphen, at least two labels)
-  validated before it's ever used to derive a filename or reach a shell
-  command; every shell interpolation also goes through `shell_quote()` as
-  defense in depth, the same double-layered discipline
-  device-pause/qos-priority/device-bedtime already established. Implemented
+  validated before it's ever used to derive a filename or reach file
+  content. Unlike `device-pause`/`qos-priority`/`device-bedtime` (which do
+  interpolate validated values into real shell commands and so rely on
+  `shell_quote()` as defense in depth), this endpoint has **no shell
+  interpolation of the domain at all** — like `safe-search`, it only ever
+  reaches `io.open()`/`f:write()`, never `io.popen()`/`run()` — so there is
+  no `shell_quote()` call here to defend anything (an earlier version of
+  this file defined one anyway; it was unused dead code paired with a
+  comment making this same false claim, and both were removed in code
+  review, commit `2a01857`). Implemented
   as an explicit character-allowlist-plus-per-label-loop rather than the
   single regex the plan originally sketched: Lua patterns (unlike PCRE)
   can't quantify a parenthesized capture group, so that single-pattern form
@@ -1324,7 +1332,21 @@ specifically, as a sibling of `luci`, not a replacement for it.
   file and returns `500` without ever restarting dnsmasq, so an unverified
   write is never applied to the running resolver — this endpoint applies
   that same fix from the start rather than repeating the bug the plan's
-  originally-shown code still had. POST is idempotent per domain (a second
+  originally-shown code still had. **Filename-collision fix (commit
+  `2a01857`):** the first shipped version derived a domain's filename by
+  collapsing both `.` and `-` to `_` (`custom-foo_bar_com.conf`), so two
+  different valid domains — e.g. `foo-bar.com` and `foo.bar.com` — mapped
+  to the identical filename; adding the second silently overwrote and
+  dropped the first from the blocklist with a false `200` (the idempotency
+  check reads domain-string membership across *every* file, not the
+  specific target file's own content, so it couldn't detect the
+  collision). Fixed by using the validated domain directly as the filename
+  with no character substitution at all — `is_valid_domain`'s own
+  charset/label rules already guarantee no `/`, no `..`, and no unsafe
+  character can reach a filename, so distinct domain strings now map to
+  distinct filenames by construction. Verified live post-fix: `foo-bar.com`
+  and `foo.bar.com` (and `a-b.com`/`a.b.com`) coexist correctly, both
+  resolving to `0.0.0.0`. POST is idempotent per domain (a second
   POST for an already-blocked domain is a no-op success, not a duplicate
   file). Confirmed live end-to-end against this running VM: `POST
   {"domain":"extra-homework-site.com"}` makes a real `nslookup
@@ -1467,8 +1489,10 @@ device.
   Priority Devices/WireGuard Clients' precedent from Wave 6. Safe Search
   can be flipped back off through the UI (it's a simple toggle), but an
   individual custom-blocked domain, once added, can only be removed by
-  hand over SSH this wave (`rm /etc/dnsmasq.blocklist.d/custom-*.conf;
-  /etc/init.d/dnsmasq restart`).
+  hand over SSH this wave (`rm /etc/dnsmasq.blocklist.d/custom-<domain>.conf;
+  /etc/init.d/dnsmasq restart` — note the glob `custom-*.conf` matches
+  *every* custom-blocked domain's file at once, not just one; target the
+  specific domain's filename to remove a single entry).
 - **No authentication on `/cgi-bin/api/*`**, and `docker-compose.yml` binds
   port 8081 to all interfaces, not just `localhost` — anyone reachable on
   the local network can add/delete real firewall rules, flip the real guest
