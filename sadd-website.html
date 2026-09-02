@@ -1645,7 +1645,7 @@ html.large-text .scr-title{font-size:1.15em;}
       const validEntries = bandwidthData.filter(e => e && e.mac && typeof e.bytesToday === 'number');
       const totalBytes = validEntries.reduce((sum, e) => sum + e.bytesToday, 0);
       const count = validEntries.length;
-      totalEl.innerHTML = '<div style="font-size:28px;font-weight:700;">'+escapeHtml(formatBytesToday(totalBytes))+'</div><div style="font-size:12px;opacity:.7;">across '+count+' priority device'+(count === 1 ? '' : 's')+' today</div>';
+      totalEl.innerHTML = '<div style="font-size:28px;font-weight:700;">'+formatBytesToday(totalBytes)+'</div><div style="font-size:12px;opacity:.7;">across '+count+' priority device'+(count === 1 ? '' : 's')+' today</div>';
       if(count === 0){
         listEl.innerHTML = '<div class="mini-log-row"><span>No priority devices marked yet</span></div>';
       } else {
@@ -1700,6 +1700,13 @@ html.large-text .scr-title{font-size:1.15em;}
       form.style.display = 'none';
       state.qosPriorityRenderId++;
       renderQosPriorityScreen();
+      // Code review finding: adding a device changes exactly the set of entries
+      // /api/qos-bandwidth returns (Bandwidth used today, the sibling section on
+      // this same screen), so it must refresh here too — otherwise the total/count/
+      // device list stays stale (missing the just-added device) until the user
+      // navigates away and back.
+      state.qosBandwidthRenderId++;
+      renderQosBandwidthScreen();
     } else if(errEl){
       const msg = (result && result.data && result.data.error) ? result.data.error
         : (result === null ? "Can't reach router — device not added." : ('Request failed (status '+result.status+') — device not added.'));
