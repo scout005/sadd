@@ -5,9 +5,10 @@
 # colons stripped>`, see docker/provision/www/api/qos-priority), reads that
 # device's real nft mangle_forward counter (tcp+udp summed — a single
 # qos-priority uci rule with no explicit `proto` expands into TWO separate
-# nft rules, one per protocol, confirmed live docker/facts.md Section
-# 15/19) and accumulates it onto a persisted per-device-per-UTC-day
-# running total.
+# nft rules, one per protocol, confirmed live: docker/README.md's
+# qos-priority section shows the real nft output, one line per protocol;
+# Section 19 below is the reset-mechanism finding, not this one) and
+# accumulates it onto a persisted per-device-per-UTC-day running total.
 #
 # Why accumulate instead of trusting the raw nft counter to hold a full
 # day's traffic: `nft reset` does not work on this VM (confirmed live,
@@ -49,10 +50,17 @@
 # the sweep for every other device this tick.
 
 STATE_DIR="/etc/qos-bandwidth"
-mkdir -p "$STATE_DIR"
+if ! mkdir -p "$STATE_DIR"; then
+  logger -t qos-bandwidth-sweep "ERROR: mkdir -p ${STATE_DIR} failed; every write this tick will fail"
+fi
 
 TODAY="$(date -u +%Y%m%d)"
 
+# `local` inside a function is a busybox ash extension, not POSIX-standard —
+# confirmed working on this VM's actual ash (code review, live-sourced and
+# exercised: "007"->"7", "0"->"0", ""->"0", all EXIT=0), not assumed to work
+# just because it's common. Same scrutiny this project already applied to
+# the `10#$HOUR` ash portability assumption that did NOT hold (Section 16).
 strip_leading_zeros() {
   # "007" -> "7", "0" -> "0", "" -> "0". Avoids $(( )) octal
   # misinterpretation on a leading-zero digit string.
@@ -79,7 +87,8 @@ for id in $(uci show firewall | grep "\.name='qospriority-" | sed -n "s/^firewal
 
   # Sum both nft rule lines' bytes for this device's mark rule (tcp + udp —
   # a single uci rule with no explicit proto expands into both, confirmed
-  # live docker/facts.md Section 15/19). Each matching line looks like:
+  # live in docker/README.md's qos-priority section). Each matching line
+  # looks like:
   #   ... counter packets N bytes M ... comment "!fw4: qospriority-aabbccddeeff"
   BYTES_NOW="$(echo "$NFT_OUTPUT" \
     | grep "\"!fw4: ${RULE_NAME}\"" \
