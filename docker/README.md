@@ -1449,23 +1449,44 @@ device.
   `09-provision-adblock-api.sh`, not a real, maintained, updatable
   third-party blocklist feed — adding/removing domains from the live
   blocklist isn't exposed through the UI or API in this wave.
+- **Safe Search and Custom blocked sites are both real but NETWORK-WIDE, not
+  per-child** — despite sitting on the Parental Controls page under what
+  looks like a specific child's settings in the mockup, both
+  `/api/safe-search`'s DNS-level CNAME rewrites and `/api/blocked-sites`'
+  per-domain `0.0.0.0` blocks apply to every device on the network. This
+  environment's DNS-level filtering has no per-device/per-child split —
+  confirmed in `docker/facts.md` §17's pre-investigation, and disclosed
+  directly in the UI's own description text ("...applies network-wide").
+- **Custom blocked sites is domain-only** — the input's own placeholder
+  text ("e.g. example.com or 203.0.113.4") implies domain-or-IP entry, but
+  IP-based blocking needs a different (firewall-based) mechanism, out of
+  scope this wave. An IP-shaped entry (`POST /api/blocked-sites`) is
+  rejected with its own distinct error message, not silently treated as an
+  invalid domain or otherwise mishandled.
+- **Neither feature has a remove/delete affordance in the UI** — matches
+  Priority Devices/WireGuard Clients' precedent from Wave 6. Safe Search
+  can be flipped back off through the UI (it's a simple toggle), but an
+  individual custom-blocked domain, once added, can only be removed by
+  hand over SSH this wave (`rm /etc/dnsmasq.blocklist.d/custom-*.conf;
+  /etc/init.d/dnsmasq restart`).
 - **No authentication on `/cgi-bin/api/*`**, and `docker-compose.yml` binds
   port 8081 to all interfaces, not just `localhost` — anyone reachable on
   the local network can add/delete real firewall rules, flip the real guest
   Wi-Fi network on/off, flip real ad blocking on/off, flip the real
   WireGuard server on/off, pause/unpause a real device's internet access,
   create or toggle a real WireGuard client peer, mark a real device's
-  traffic for priority, or create/remove a real recurring Bedtime schedule
-  for a device, with a plain `curl` (nine independent write-capable
-  endpoints, verified by method dispatch, not assumed:
+  traffic for priority, create/remove a real recurring Bedtime schedule for
+  a device, flip real DNS-level Safe Search enforcement on/off, or add a
+  real custom DNS-blocked domain, with a plain `curl` (eleven independent
+  write-capable endpoints, verified by method dispatch, not assumed:
   `/api/firewall-rules`, `/api/wifi`, `/api/adblock`, `/api/wireguard`,
   `/api/ssh-key`, `/api/device-pause`, `/api/wireguard-clients`,
-  `/api/qos-priority` (Wave 6), and, as of Wave 7, `/api/device-bedtime` —
-  `/api/ssh-key` is a little different in kind from the rest: it doesn't
-  mutate any persisted uci config the way they do, but a plain
-  unauthenticated `POST` still immediately rotates this VM's real SSH host
-  keys with no confirmation, undo, or operator warning, so it belongs in
-  this list too).
+  `/api/qos-priority` (Wave 6), `/api/device-bedtime` (Wave 7), and, as of
+  Wave 8, `/api/safe-search` and `/api/blocked-sites` — `/api/ssh-key` is a
+  little different in kind from the rest: it doesn't mutate any persisted
+  uci config the way they do, but a plain unauthenticated `POST` still
+  immediately rotates this VM's real SSH host keys with no confirmation,
+  undo, or operator warning, so it belongs in this list too).
   Acceptable only because this is an explicitly local, single-user dev/test
   tool — not something to carry into a later wave or real deployment as-is.
   The **read-only** endpoints (`/api/devices`, `/api/logs`, `/api/system-info`,
@@ -1476,13 +1497,17 @@ device.
   state) and `/api/qos-priority`'s own `GET` (discloses which MACs are
   currently marked for priority), and, as of Wave 7, `/api/device-bedtime`'s
   own `GET` (discloses whether a specific MAC currently has a Bedtime
-  schedule configured and whether it's actively blocking right now)) are
+  schedule configured and whether it's actively blocking right now), and,
+  as of Wave 8, `/api/safe-search`'s own `GET` (discloses whether Safe
+  Search is currently enabled network-wide) and `/api/blocked-sites`' own
+  `GET` (discloses the full list of every custom-blocked domain)) are
   equally unauthenticated — anyone on the local network can silently read
   real device/MAC/IP presence, real log lines, real hardware/uptime info,
   real VLAN topology, real per-device pause status, real WireGuard client
-  identity/key data, real priority-marking status, and real Bedtime
-  schedule status with a plain `curl`. Disclosure rather than mutation, but
-  the same "local, single-user dev tool only" caveat applies.
+  identity/key data, real priority-marking status, real Bedtime schedule
+  status, real Safe Search state, and the real list of custom-blocked
+  domains with a plain `curl`. Disclosure rather than mutation, but the
+  same "local, single-user dev tool only" caveat applies.
 - **Per-device pause is a real firewall block, but not end-to-end
   WAN-testable** — `POST /api/device-pause` creates a genuine `uci`/`fw4`
   `rule` section (`src='lan'`, `src_mac=<device>`, `dest='wan'`,
