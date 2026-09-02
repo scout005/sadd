@@ -1689,14 +1689,17 @@ device.
   schedule configured and whether it's actively blocking right now), and,
   as of Wave 8, `/api/safe-search`'s own `GET` (discloses whether Safe
   Search is currently enabled network-wide) and `/api/blocked-sites`' own
-  `GET` (discloses the full list of every custom-blocked domain)) are
-  equally unauthenticated — anyone on the local network can silently read
-  real device/MAC/IP presence, real log lines, real hardware/uptime info,
-  real VLAN topology, real per-device pause status, real WireGuard client
-  identity/key data, real priority-marking status, real Bedtime schedule
-  status, real Safe Search state, and the real list of custom-blocked
-  domains with a plain `curl`. Disclosure rather than mutation, but the
-  same "local, single-user dev tool only" caveat applies.
+  `GET` (discloses the full list of every custom-blocked domain), and, as
+  of Wave 9, `/api/qos-bandwidth`'s own `GET` (discloses which devices are
+  currently marked priority and their real accumulated byte counts for
+  today)) are equally unauthenticated — anyone on the local network can
+  silently read real device/MAC/IP presence, real log lines, real
+  hardware/uptime info, real VLAN topology, real per-device pause status,
+  real WireGuard client identity/key data, real priority-marking status,
+  real Bedtime schedule status, real Safe Search state, the real list of
+  custom-blocked domains, and real per-device bandwidth totals with a
+  plain `curl`. Disclosure rather than mutation, but the same "local,
+  single-user dev tool only" caveat applies.
 - **Per-device pause is a real firewall block, but not end-to-end
   WAN-testable** — `POST /api/device-pause` creates a genuine `uci`/`fw4`
   `rule` section (`src='lan'`, `src_mac=<device>`, `dest='wan'`,
@@ -1817,6 +1820,26 @@ device.
   reports devices already marked priority via `/api/qos-priority` — a
   device that's never been marked priority has no bandwidth total tracked
   for it at all.
+- **"Bandwidth used today" only covers QoS-priority-marked devices, not
+  every device on the network** — same limitation as the previous bullet's
+  closing point, called out here in its own right because the UI is
+  upfront about it: the Traffic & QoS card's own subtitle text reads
+  "across N priority device(s) today" (`sadd-website.html`), not "across
+  every device," so a household with devices that were never added to
+  Priority Devices simply doesn't see them reflected in this total at all.
+  The same narrow-not-exhaustive shape as Ad Blocking's fixed 3-domain
+  demo blocklist above — a real, honestly-scoped slice of the network, not
+  a whole-network view dressed up to look complete.
+- **No cleanup/rotation mechanism for `/etc/qos-bandwidth/*.txt` state
+  files** — `qos-bandwidth-sweep.sh` writes one file per priority-marked
+  device per UTC calendar day (`<mac-no-colons>-<YYYYMMDD>.txt`) and
+  nothing on this VM ever deletes or archives an old one; the directory
+  accumulates indefinitely in this wave, with no daily/weekly pruning job
+  built. A soft concern in practice rather than a hard one, though — this
+  VM's own state doesn't persist across `docker compose down` anyway (see
+  "State lives only in `boot-image/boot.img`" above), so the accumulation
+  never actually survives a teardown/rebuild cycle; it only matters for
+  however long a single VM instance stays up.
 - The global search feature (built earlier this session, unrelated to this
   work) can't highlight search results on the Devices, Firewall & Ports
   (port-forwarding rules only), and Diagnostics & Logs screens when the
